@@ -18,6 +18,17 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.531.0 - 2026-09-10 · `PENDING` - Custom dashboards: section headings; Creatives and Creative performance apart
+
+- **Section headings.** A Layout group in the module list offers a Section
+  heading, addable as many times as needed. Its title is the heading, drawn
+  as a ruled divider, so a dashboard reads as named groups of modules.
+- **Meta Ads: Creatives and Creative performance are separate modules.** The
+  creatives table (with its pager) and the creative performance cards can be
+  picked on their own.
+
+---
+
 ## v3.530.0 - 2026-09-10 · `d636981` - Key event reach two-up: the column fix, actually shipped
 
 - v3.529.0 described this change but its edit did not land; this release

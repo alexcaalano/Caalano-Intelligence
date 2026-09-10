@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.530.0'
+const APP_VERSION = '3.531.0'
 // The business clock. Every server window is cut on the client's local day
 // (Caalano Systems location timezone), so any day the app derives on its own -
 // preset ranges, "today", CSV dates - must use the same clock rather than the
@@ -3270,8 +3270,7 @@ function MetaDeep({ deep, currency, attr, clientId, range, nonce, pipe: pipeProp
         <Caveat>Spend / Impr. / CVR come from the Meta ads whose creative matches this form's submissions (utm_content); Leads / Booked / Shown / Won / Revenue are the CRM outcomes for leads that came through the form. CPL = spend ÷ CRM leads. Click a form to filter the campaigns, ad sets and creatives above to just the ads that drove it, or click a campaign / ad set / creative to filter this table to the forms it drove.</Caveat>
       </>}
       </Blk>
-      <Blk id="meta:creatives">
-      {deep.meta.coreOnly ? <div className="lvl-title">Creatives <span className="sub">· loading…</span><div className="card" style={{ padding: 14, marginTop: 8 }}><Spinner label="Loading creative-level detail…" /></div></div> : <>
+      {deep.meta.coreOnly ? <Blk id="meta:creatives"><div className="lvl-title">Creatives <span className="sub">· loading…</span><div className="card" style={{ padding: 14, marginTop: 8 }}><Spinner label="Loading creative-level detail…" /></div></div></Blk> : <><Blk id="meta:creatives">
       <div className="lvl-title">Creatives <span className="sub">· {adsFull.length}{sel ? ` in "${sel}"` : ''} · table + visuals · green/red vs account average</span></div>
       <div className="table-wrap"><table className="o360-tbl"><O360ColGroup left={9} green={has360} cols={o360cols} /><thead>{has360 && <C360GrpRow left={9} cols={o360cols} />}<tr>
         <SortTh k="name" sort={creSort} on={onCreSort}>Creative</SortTh><SortTh k="type" sort={creSort} on={onCreSort}>Type</SortTh><SortTh k="spend" sort={creSort} on={onCreSort}>Spend</SortTh><SortTh k="impressions" sort={creSort} on={onCreSort}>Impr.</SortTh><SortTh k="linkCtr" sort={creSort} on={onCreSort}>Link CTR</SortTh><SortTh k="hook" sort={creSort} on={onCreSort}>Hook</SortTh><SortTh k="leads" sort={creSort} on={onCreSort}>Leads</SortTh><SortTh k="cvr" sort={creSort} on={onCreSort}>CVR</SortTh><SortTh k="cpl" sort={creSort} on={onCreSort}>CPL</SortTh>{has360 && <O360Head sort={creSort} on={onCreSort} cols={o360cols} />}</tr></thead>
@@ -3286,6 +3285,7 @@ function MetaDeep({ deep, currency, attr, clientId, range, nonce, pipe: pipeProp
         <span className="pg-info">Page {crePageC + 1} of {creTotalPages} · {adsFull.length} creatives</span>
         <button className="pg-btn" disabled={crePageC >= creTotalPages - 1} onClick={() => setCrePage(crePageC + 1)}>Next ›</button>
       </div>}
+      </Blk><Blk id="meta:creativeperf">
       <div className="lvl-title" style={{ marginTop: 14 }}>Creative performance <span className="sub">· big previews · sortable · 10 per page · green = Caalano360 key events for leads whose ad UTM (utm_content) matches · ▶ plays the Instagram post inline where available</span></div>
       {adsFull.some((a) => (a.spend || 0) > 0)
         ? <MRCreativeSection
@@ -3297,8 +3297,7 @@ function MetaDeep({ deep, currency, attr, clientId, range, nonce, pipe: pipeProp
             clientId={clientId} range={range} channel="meta"
           />
         : <div className="card" style={{ padding: 14 }}><p className="cap" style={{ margin: 0 }}>No creatives with spend in this range.</p></div>}
-      </>}
-      </Blk>
+      </Blk></>}
       <Blk id="meta:daily">
       <div className="lvl-title">Day by day <span className="sub">· {daily.length} days · newest first{m.adDaily ? ' · click a day to break it down' : ''}</span></div>
       <div className="table-wrap"><table><thead><tr><th>Day</th><th>Spend</th><th>CPM</th><th>CTR</th><th>CPC</th><th>Leads</th><th>CPL</th></tr></thead>
@@ -4810,6 +4809,8 @@ function saveDashboard(clientId, d) { SETTINGS.dashboards = { ...(SETTINGS.dashb
 const DashPick = React.createContext(null)
 function Blk({ id, children }) { const pick = React.useContext(DashPick); if (pick && !pick.has(id)) return null; return <>{children}</> }
 const DASH_MODULES = [
+  // A titled divider. May appear any number of times; its title is the heading.
+  { type: 'heading', label: 'Section heading', group: 'Layout', hint: 'A titled divider that groups the modules below it', multi: true },
   { type: 'tiles', label: 'Headline tiles', group: 'Caalano360', hint: 'Ad spend, opportunities, won, revenue, ROAS, blended CAC' },
   { type: 'story', label: 'Story strip', group: 'Caalano360', hint: 'Biggest leak, channels, what moved', internal: true },
   { type: 'reach', label: 'Key event reach', group: 'Caalano360', hint: 'The funnel per pipeline, split by channel', needs: 'ghl' },
@@ -4892,7 +4893,8 @@ const DASH_MODULES = [
   { type: 'meta:adsets', label: 'Ad sets', group: 'Meta Ads', needs: 'meta' },
   { type: 'meta:formats', label: 'Formats', group: 'Meta Ads', needs: 'meta' },
   { type: 'meta:forms', label: 'Lead forms', group: 'Meta Ads', needs: 'meta' },
-  { type: 'meta:creatives', label: 'Creatives & creative performance', group: 'Meta Ads', needs: 'meta' },
+  { type: 'meta:creatives', label: 'Creatives', group: 'Meta Ads', needs: 'meta' },
+  { type: 'meta:creativeperf', label: 'Creative performance', group: 'Meta Ads', needs: 'meta' },
   { type: 'meta:daily', label: 'Day by day', group: 'Meta Ads', needs: 'meta' },
   { type: 'google:scorecards', label: 'Google scorecards', group: 'Google Ads', needs: 'google' },
   { type: 'google:crm', label: 'Caalano360 outcomes', group: 'Google Ads', needs: 'google' },
@@ -8616,6 +8618,7 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
     }
     const shown = (layout.modules || []).map((m, i) => {
       const def = DASH_MODULES.find((x) => x.type === m.type); if (!def) return null
+      if (m.type === 'heading') return <div className="dash-sec-h" key={i}><h3>{m.title || 'Section'}</h3></div>
       if (def.internal && isViewer) return null   // the agency's own reads never reach a client
       const title = m.title || def.label
       if (m.type.startsWith('tab:')) { const node = tabNode(m.type.slice(4)); return node ? <div className="dash-mod" key={i}><div className="cc-group-lab dash-mod-t">{title}</div>{node}</div> : null }
@@ -17991,11 +17994,12 @@ function DashboardBuilder({ client: c }) {
   const [pick, setPick] = useState('')
   const up = (patch) => { setD((x) => ({ ...x, ...patch })); setDirty(true) }
   const avail = DASH_MODULES.filter((m) => dashModuleFits(m, c))
-  const used = new Set(d.modules.map((m) => m.type))
+  const used = new Set(d.modules.filter((m) => !(DASH_MODULES.find((x) => x.type === m.type) || {}).multi).map((m) => m.type))
   const groups = [...new Set(avail.map((m) => m.group))]
   const move = (i, dir) => { const arr = [...d.modules]; const j = i + dir; if (j < 0 || j >= arr.length) return; const t = arr[i]; arr[i] = arr[j]; arr[j] = t; up({ modules: arr }) }
   const remove = (i) => up({ modules: d.modules.filter((_, k) => k !== i) })
   const add = (type) => { if (!type || used.has(type)) return; up({ modules: [...d.modules, { type }] }); setPick('') }
+  const isHeading = (m) => m.type === 'heading'
   const setTitle = (i, title) => up({ modules: d.modules.map((m, k) => (k === i ? { ...m, title: title || undefined } : m)) })
   const preset = (key) => { const p = DASH_PRESETS.find((x) => x.key === key); if (!p) return; up({ modules: p.types.filter((t) => avail.some((m) => m.type === t)).map((type) => ({ type })) }) }
   const save = () => { if (!d.modules.length) return; saveDashboard(c.id, { ...d, name: (d.name || '').trim() || 'Client view', updatedAt: new Date().toISOString() }); setDirty(false); setSavedAt(Date.now()) }
@@ -18020,9 +18024,9 @@ function DashboardBuilder({ client: c }) {
       <div className="dash-presets"><span className="cap">Start from</span>{DASH_PRESETS.map((p) => <button key={p.key} type="button" onClick={() => preset(p.key)}>{p.label}</button>)}</div>
       {d.modules.length ? d.modules.map((m, i) => {
         const def = DASH_MODULES.find((x) => x.type === m.type) || { label: m.type }
-        return <div className="dash-row" key={`${m.type}:${i}`}>
+        return <div className={`dash-row${isHeading(m) ? ' dash-row-h' : ''}`} key={`${m.type}:${i}`}>
           <span className="dash-n">{i + 1}</span>
-          <div className="dash-lab"><b>{def.label}{def.internal ? <span className="dash-int">agency-internal · hidden from viewers</span> : null}</b>{def.hint ? <small>{def.hint}</small> : null}<input value={m.title || ''} onChange={(e) => setTitle(i, e.target.value)} placeholder={`Title shown to the client (default: ${def.label})`} maxLength={60} /></div>
+          <div className="dash-lab"><b>{def.label}{def.internal ? <span className="dash-int">agency-internal · hidden from viewers</span> : null}</b>{def.hint ? <small>{def.hint}</small> : null}<input value={m.title || ''} onChange={(e) => setTitle(i, e.target.value)} placeholder={isHeading(m) ? 'Section title, e.g. Sales performance' : `Title shown to the client (default: ${def.label})`} maxLength={60} /></div>
           <div className="dash-btns"><button type="button" onClick={() => move(i, -1)} disabled={i === 0} title="Move up">▲</button><button type="button" onClick={() => move(i, 1)} disabled={i === d.modules.length - 1} title="Move down">▼</button><button type="button" onClick={() => remove(i)} title="Remove">✕</button></div>
         </div>
       }) : <div className="cap">No modules yet. Add one below, or start from a preset.</div>}

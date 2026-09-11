@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.540.0'
+const APP_VERSION = '3.541.0'
 // The business clock. Every server window is cut on the client's local day
 // (Caalano Systems location timezone), so any day the app derives on its own -
 // preset ranges, "today", CSV dates - must use the same clock rather than the
@@ -5122,7 +5122,7 @@ function calCountMap(attribData, chan) {
   if (Array.isArray(list)) {
     for (const cal of list) {
       const src = (chan && chan !== 'all' && cal.ch && cal.ch[chan]) ? cal.ch[chan] : cal
-      m.set(cal.id, { name: cal.name, count: src.booked || 0, occurred: src.occurred || 0, shown: src.shown || 0, noShow: src.noShow || 0, cancelled: src.cancelled || 0, union: src.union || null })
+      m.set(cal.id, { name: cal.name, count: src.booked || 0, occurred: src.occurred || 0, upcoming: src.upcoming || 0, shown: src.shown || 0, noShow: src.noShow || 0, cancelled: src.cancelled || 0, union: src.union || null })
     }
   }
   return m
@@ -5135,11 +5135,11 @@ function keyEventRows(keyEvents, rmap, calMap, stagePos, wonTotal) {
   const rows = []
   for (const k of resolveKeyEvents(keyEvents, stagePos)) {
     if (k.kind === 'calendar') {
-      let cal = 0, occurred = 0, shown = 0, noShow = 0, cancelled = 0, any = false
+      let cal = 0, occurred = 0, upcoming = 0, shown = 0, noShow = 0, cancelled = 0, any = false
       // Per-calendar split so the merged key event can show which calendars (and how
       // many bookings each) make up its total on hover.
       const perCal = []
-      for (const r of (k.refs || [k.ref])) { const c = calMap && calMap.get(r); if (c) { any = true; cal += c.count; occurred += (c.occurred || 0); shown += c.shown; noShow += (c.noShow || 0); cancelled += (c.cancelled || 0); if (c.count) perCal.push({ name: c.name || 'Calendar', count: c.count, shown: c.shown || 0, occurred: c.occurred || 0 }) } }
+      for (const r of (k.refs || [k.ref])) { const c = calMap && calMap.get(r); if (c) { any = true; cal += c.count; occurred += (c.occurred || 0); upcoming += (c.upcoming || 0); shown += c.shown; noShow += (c.noShow || 0); cancelled += (c.cancelled || 0); if (c.count) perCal.push({ name: c.name || 'Calendar', count: c.count, shown: c.shown || 0, occurred: c.occurred || 0 }) } }
       perCal.sort((a, b) => b.count - a.count)
       // Linked stage acts as a fallback: leads that reached the stage but we have
       // no calendar booking for. Approximated as stageReached - calendar bookings.
@@ -5154,7 +5154,7 @@ function keyEventRows(keyEvents, rmap, calMap, stagePos, wonTotal) {
       const count = union >= 0 ? Math.max(union, cal) : cal + Math.max(0, stageReached - cal)
       const fromStage = Math.max(0, count - cal)
       if (!any && !fromStage) continue
-      rows.push({ label: k.label, count, fromCal: cal, fromStage, stageReached, exact: union >= 0, occurred, shown, noShow, cancelled, perCal, refs: (k.refs || [k.ref]).filter(Boolean), stage: k.stage || null, kind: 'calendar', pipeline: k.pipeline || null })
+      rows.push({ label: k.label, count, fromCal: cal, fromStage, stageReached, exact: union >= 0, occurred, upcoming, shown, noShow, cancelled, perCal, refs: (k.refs || [k.ref]).filter(Boolean), stage: k.stage || null, kind: 'calendar', pipeline: k.pipeline || null })
     } else if (WON_RE.test(k.label)) {
       // Won event counts on the won STATUS (not the pipeline stage).
       const n = wonTotal != null ? wonTotal : stageReachOf(rmap, k.pipeline, k.ref)
@@ -6643,7 +6643,7 @@ function ccKeyEventFunnel(cc, clientId, wonTotal, leadsFallback) {
   const keList = ccKeyEventsOf(cc, clientId)
   const rmap = reachedByStage(pipes)
   const stagePos = stagePosMap(pipes)
-  const calMap = new Map(((cc && cc.bookingByCalendar) || []).map((c) => [c.id, { name: c.calendar, count: c.booked, occurred: c.occurred || 0, shown: c.shown, noShow: c.noShow || 0, cancelled: c.cancelled || 0, union: c.union || null }]))
+  const calMap = new Map(((cc && cc.bookingByCalendar) || []).map((c) => [c.id, { name: c.calendar, count: c.booked, occurred: c.occurred || 0, upcoming: c.upcoming || 0, shown: c.shown, noShow: c.noShow || 0, cancelled: c.cancelled || 0, union: c.union || null }]))
   const rows = (keList && keList.length && pipes.length) ? keyEventRows(keList, rmap, calMap, stagePos, wonTotal) : []
   const leadTotal = leadsFallback || rmap.total || 0
   // Per-pipeline lead totals so a pipeline-scoped key event (multi-pipeline client)
@@ -7289,7 +7289,7 @@ function calShowOf(r, pr) {
   const rateOf = (x) => (x && res(x) ? ((x.shown || 0) / res(x)) * 100 : null)
   const booked = r.fromCal || 0, occurred = r.occurred || 0
   if (!booked && !occurred) return null
-  return { rate: rateOf(r), shown: r.shown || 0, noShow: r.noShow || 0, resulted: res(r), occurred, unresulted: Math.max(0, occurred - res(r)), booked, cancelled: r.cancelled || 0, prevRate: rateOf(pr) }
+  return { rate: rateOf(r), shown: r.shown || 0, noShow: r.noShow || 0, resulted: res(r), occurred, upcoming: r.upcoming || 0, unresulted: Math.max(0, occurred - res(r)), booked, cancelled: r.cancelled || 0, prevRate: rateOf(pr) }
 }
 function KeScorecard({ label, value, prev, isMoney, currency, pctLeads, prevPctLeads, cost, prevCost, costUnit = 'event', show, note, pop, onClick }) {
   const money = (v) => fmtCurrency(v, currency)
@@ -7305,6 +7305,7 @@ function KeScorecard({ label, value, prev, isMoney, currency, pctLeads, prevPctL
       {show ? <div className="kesc-line kesc-show" title="Show rate = shown ÷ resulted (shown + no-show). Appointments cancelled in advance, still to come, or past their time with no result set are left out."><span>{show.rate == null ? 'No resulted appointments yet' : <><b>{Math.round(show.rate)}%</b> show rate</>}</span>{show.prevRate != null && show.rate != null ? <MiniDelta cur={show.rate} prev={show.prevRate} /> : null}</div> : null}
       {show && show.rate != null ? <div className="kesc-line kesc-sub"><span>{fmtNumber(show.shown)} showed of {fmtNumber(show.resulted)} resulted</span></div> : null}
       {show && (show.cancelled || show.unresulted) ? <div className="kesc-line kesc-sub" title="Cancelled = booked in the period and called off in advance, as a share of bookings. Unresulted = past its time with neither showed nor no-show set - ask the team to result these."><span>{show.cancelled ? `${fmtNumber(show.cancelled)} cancelled (${Math.round((show.cancelled / Math.max(1, show.booked)) * 100)}%)` : null}{show.cancelled && show.unresulted ? ' · ' : null}{show.unresulted ? <em className="kesc-unres">{fmtNumber(show.unresulted)} unresulted</em> : null}</span></div> : null}
+      {show && (show.occurred || show.upcoming) ? <div className="kesc-line kesc-sub" title="Occurred = the appointment's time has passed and it was not cancelled (showed, no-show or still unresulted). Still to come = booked in the period, not cancelled, and the appointment is in the future."><span>{fmtNumber(show.occurred)} occurred · {fmtNumber(show.upcoming)} still to come</span></div> : null}
       {note ? <div className="kesc-line">{note}</div> : null}
     </div>
   )
@@ -7323,7 +7324,7 @@ function PipelinePerformance({ cc, pcc, clientId, currency, spend }) {
   const money = (v) => fmtCurrency(v, currency)
   const stagePos = stagePosMap(funnels)
   const keList = loadKeyEvents(clientId)
-  const mkCalMap = (d) => new Map(((d && d.bookingByCalendar) || []).map((c) => [c.id, { name: c.calendar, count: c.booked, occurred: c.occurred, shown: c.shown, noShow: c.noShow || 0, cancelled: c.cancelled || 0, union: c.union || null }]))
+  const mkCalMap = (d) => new Map(((d && d.bookingByCalendar) || []).map((c) => [c.id, { name: c.calendar, count: c.booked, occurred: c.occurred, upcoming: c.upcoming || 0, shown: c.shown, noShow: c.noShow || 0, cancelled: c.cancelled || 0, union: c.union || null }]))
   const rmap = reachedByStage(funnels), calMap = mkCalMap(cc)
   const pRmap = reachedByStage((pcc && pcc.pipelinesFunnel) || []), pCalMap = mkCalMap(pcc)
   const pPipes = {}; for (const p of ((pcc && pcc.pipeContribution) || [])) pPipes[p.id] = p

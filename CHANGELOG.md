@@ -18,6 +18,15 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.541.0 - 2026-09-11 · `PENDING`
+
+**Key-event scorecards: occurred vs still to come**
+- Each calendar key-event tile (Caalano360 Pipeline performance, Meta and Google key events) gains a line "N occurred · M still to come". Occurred = the appointment's time has passed and it was not cancelled; still to come = booked in the period, not cancelled, appointment in the future.
+- "Occurred" now requires the slot to have actually passed. A booking for later today used to count as occurred (and therefore as unresulted); it now reads as still to come until its time.
+- Server: per-contact `upcoming` flag, `upcoming` count per calendar in both the drill (`bookingByCalendar`) and attribution (`appointments.byCalendar`, per channel) payloads.
+
+---
+
 ## v3.540.0 - 2026-09-11 · `905a281`
 
 **Custom dashboards: audience by tier**

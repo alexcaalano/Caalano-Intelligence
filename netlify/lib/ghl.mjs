@@ -933,11 +933,12 @@ async function _fetchAppointments(locTok, locationId, from, to) {
   const startMs = (fromMs != null ? fromMs : Date.now() - 400 * DAY) - 7 * DAY
   const endMs = (toMs != null ? toMs : Date.now()) + 180 * DAY
   const inPeriod = (ms) => !isNaN(ms) && (fromMs == null || ms >= fromMs) && (toMs == null || ms <= toMs)
+  const nowMs = Date.now()
   const markInto = (map, contactId, status, addedMs, startTimeMs) => {
     if (!contactId) return
     const s = String(status || '').toLowerCase()
     const invalid = APPT_INVALID_RE.test(s), cancelled = APPT_CANCEL_RE.test(s)
-    const e = map.get(contactId) || { bookedInPeriod: false, shownByStatus: false, noShowByStatus: false, hasCallInPeriod: false, _live: false, _cancelled: false, firstBookedMs: null }
+    const e = map.get(contactId) || { bookedInPeriod: false, shownByStatus: false, noShowByStatus: false, hasCallInPeriod: false, upcoming: false, _live: false, _cancelled: false, firstBookedMs: null }
     // WHEN the booking was made, independent of the period test above. Call-cadence
     // needs this against each lead's own clock rather than the calendar window, and
     // it is the creation stamp, not the slot: a Tuesday call that books an
@@ -955,7 +956,11 @@ async function _fetchAppointments(locTok, locationId, from, to) {
     // show-rate denominator; a cancellation was called off before it happened and
     // does not. Callers that fall back to "shown by pipeline stage" must check
     // noShowByStatus first, so an explicit no-show is never promoted to a show.
-    if (!invalid && !cancelled && inPeriod(startTimeMs)) e.hasCallInPeriod = true
+    // "Reached its time" means the slot has actually passed: a booking for later
+    // today is still to come, not occurred (and must not read as unresulted).
+    if (!invalid && !cancelled && inPeriod(startTimeMs) && startTimeMs <= nowMs) e.hasCallInPeriod = true
+    // Still to come: a live booking made in the period whose slot is in the future.
+    if (!invalid && !cancelled && inPeriod(addedMs) && isFinite(startTimeMs) && startTimeMs > nowMs) e.upcoming = true
     map.set(contactId, e)
   }
   let events = 0
@@ -4636,17 +4641,17 @@ export async function buildCcDrill(locationId, from, to, channel, basis = 'creat
     // occurred (reached its time, not cancelled), shown / noShow (the status the
     // team set). Resulted = shown + no-show, the show-rate denominator;
     // unresulted = occurred but never given a result.
-    let booked = 0, occurred = 0, shown = 0, noShow = 0, cancelled = 0; const people = []; const bookedSet = new Set()
+    let booked = 0, occurred = 0, shown = 0, noShow = 0, cancelled = 0, upcoming = 0; const people = []; const bookedSet = new Set()
     for (const [cid, f] of rec.byContact) {
       if (chanContacts && !chanContacts.has(cid)) continue
       const isBooked = !!f.bookedInPeriod, isOcc = !!f.hasCallInPeriod, isShown = !!f.shownByStatus, isNoShow = !!f.noShowByStatus && !isShown, isCancelled = !!(f._cancelled && !f._live)
       if (!isBooked && !isOcc && !isShown) continue
-      if (isBooked) { booked++; bookedSet.add(cid) } if (isOcc) occurred++; if (isShown) shown++; if (isNoShow) noShow++; if (isCancelled) cancelled++
+      if (isBooked) { booked++; bookedSet.add(cid) } if (isOcc) occurred++; if (isShown) shown++; if (isNoShow) noShow++; if (isCancelled) cancelled++; if (f.upcoming && !isOcc) upcoming++
       if (people.length < 100) people.push({ name: apptNames.get(cid) || oppNameById.get(cid) || 'Lead', occurred: isOcc, shown: isShown, noShow: isNoShow, cancelled: isCancelled })
     }
     const union = {}; for (const [key, set] of reachSet) { let n = bookedSet.size; for (const c of set) if (!bookedSet.has(c)) n++; union[key] = n }
     const resulted = shown + noShow
-    return { id: rec.id || null, calendar: rec.name || 'Calendar', booked, occurred, shown, noShow, cancelled, resulted, unresulted: Math.max(0, occurred - resulted), people, union }
+    return { id: rec.id || null, calendar: rec.name || 'Calendar', booked, occurred, upcoming, shown, noShow, cancelled, resulted, unresulted: Math.max(0, occurred - resulted), people, union }
   }).filter((c) => c.booked || c.occurred || c.shown).sort((a, b) => b.booked - a.booked)
   const closeArr = [...closeByChannel.values()].map((c) => { const closed = c.won + c.lost; return { channel: c.channel, won: c.won, closed, leads: c.leads, revenue: Math.round(c.revenue), cash: Math.round(c.cash || 0), closeRate: closed ? Math.round((c.won / closed) * 100) : null, deals: c.deals.slice(0, 100) } }).sort((a, b) => b.won - a.won)
   openDeals.sort((a, b) => b.value - a.value)
@@ -5218,9 +5223,9 @@ export async function buildAttribution(locationId, from, to, opts = {}) {
   // one booking per (contact × calendar) upstream in fetchAppointments.
   const byCalendar = []
   if (useAppts && appts.perCalendar instanceof Map) {
-    const mkCh = () => ({ booked: 0, occurred: 0, shown: 0, noShow: 0, cancelled: 0 })
+    const mkCh = () => ({ booked: 0, occurred: 0, upcoming: 0, shown: 0, noShow: 0, cancelled: 0 })
     for (const [calId, rec] of appts.perCalendar) {
-      const cal = { id: calId, name: rec.name, booked: 0, occurred: 0, shown: 0, noShow: 0, cancelled: 0, ch: { meta: mkCh(), google: mkCh(), other: mkCh() } }
+      const cal = { id: calId, name: rec.name, booked: 0, occurred: 0, upcoming: 0, shown: 0, noShow: 0, cancelled: 0, ch: { meta: mkCh(), google: mkCh(), other: mkCh() } }
       const bookedBy = { all: new Set(), meta: new Set(), google: new Set(), other: new Set() }
       for (const [cid, f] of rec.byContact) {
         f.cancelledInPeriod = f._cancelled && !f._live
@@ -5262,6 +5267,7 @@ export async function buildAttribution(locationId, from, to, opts = {}) {
           bumpKey(entIf(dim.url, urlKey(u.url)), 'calsShown', calId)
         }
         if (f.cancelledInPeriod) { cal.cancelled++; cal.ch[ch].cancelled++ }
+        if (f.upcoming && !f.hasCallInPeriod) { cal.upcoming++; cal.ch[ch].upcoming++ }
         // An explicit no-show: resulted, not shown. Carried per entity so the
         // key-event table's show rate can use shown ÷ (shown + no-show).
         if (f.noShowByStatus && !f.shownByStatus) {

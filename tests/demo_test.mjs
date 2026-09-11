@@ -52,10 +52,10 @@ const drill = await buildCcDrill(DEMO_LOCATION, from, to, 'all', 'created')
 // no-shows, occurred exceeds shown and the show rate sits under 100%.
 const fup = drill.bookingByCalendar.filter((c) => /Follow-up/.test(c.calendar))
 ok(fup.length > 0 && fup.every((c) => c.occurred >= c.shown) && fup.some((c) => c.occurred > c.shown), 'no-shows count as occurred but not shown on the calendar tiles')
-// Booked is by the day the booking was made; occurred is by the appointment's
-// time. They are different bases, so neither bounds the other - only the
-// result split is a hard identity.
-ok(fup.every((c) => c.cancelled <= c.booked && c.shown + c.noShow + c.unresulted === c.occurred), 'cancellations sit within bookings and never inside occurred')
+// Everything is over bookings made in the period: a booking is cancelled,
+// occurred (reached its time) or still to come, and the result split sits
+// inside occurred.
+ok(fup.every((c) => c.cancelled + c.occurred + c.upcoming === c.booked && c.shown + c.noShow + c.unresulted === c.occurred), 'cancelled + occurred + still to come = booked; results sit inside occurred')
 ok(drill.bookingByCalendar.every((c) => c.resulted === c.shown + c.noShow && c.unresulted === c.occurred - c.resulted && c.unresulted >= 0), 'resulted = shown + no-show; unresulted = occurred - resulted')
 ok(drill.bookingByCalendar.some((c) => c.cancelled > 0) && drill.bookingByCalendar.every((c) => c.cancelled <= c.booked), 'cancellations are counted per calendar, within bookings')
 ok(drill.bookingByCalendar.every((c) => (c.people || []).every((p) => [p.shown, p.noShow, p.cancelled].filter(Boolean).length <= 1)), 'a person has one result')

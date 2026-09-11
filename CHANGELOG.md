@@ -18,6 +18,18 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.542.0 - 2026-09-11 · `PENDING`
+
+**Calendar key events follow the bookings made in the range**
+- On the key-event scorecards (Pipeline performance, Meta and Google key events, the drill columns behind them) occurred, showed, no-show and still to come are now counted over the appointments **booked in the selected range**, wherever the appointment date falls. Occurred = a live booking whose time has passed. So on every tile cancelled + occurred + still to come = booked, and the show rate uses the same booking cohort as the Appointments tab.
+- Previously occurred / showed / no-show were counted by appointment date inside the range, so a booking made on the 25th for next month never appeared as occurred in the month it was booked.
+- Server: `occurredB` / `shownB` / `noShowB` per contact in `netlify/lib/ghl.mjs`; the per-lead `hasCallInPeriod` / `shownByStatus` flags used by the key-event people tests are unchanged.
+
+**Pipeline performance: cost per lead now differs by pipeline**
+- Each channel's ad spend is allocated across pipelines by that channel's lead share (Meta spend follows Meta-attributed leads, Google spend follows Google's). Allocating the total by overall lead share made every pipeline's cost per lead identical by construction. A channel with spend but no attributed leads falls back to overall lead share.
+
+---
+
 ## v3.541.0 - 2026-09-11 · `1a6312b`
 
 **Key-event scorecards: occurred vs still to come**

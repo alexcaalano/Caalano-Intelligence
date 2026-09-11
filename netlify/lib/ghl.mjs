@@ -938,7 +938,7 @@ async function _fetchAppointments(locTok, locationId, from, to) {
     if (!contactId) return
     const s = String(status || '').toLowerCase()
     const invalid = APPT_INVALID_RE.test(s), cancelled = APPT_CANCEL_RE.test(s)
-    const e = map.get(contactId) || { bookedInPeriod: false, shownByStatus: false, noShowByStatus: false, hasCallInPeriod: false, upcoming: false, _live: false, _cancelled: false, firstBookedMs: null }
+    const e = map.get(contactId) || { bookedInPeriod: false, shownByStatus: false, noShowByStatus: false, hasCallInPeriod: false, occurredB: false, shownB: false, noShowB: false, upcoming: false, _live: false, _cancelled: false, firstBookedMs: null }
     // WHEN the booking was made, independent of the period test above. Call-cadence
     // needs this against each lead's own clock rather than the calendar window, and
     // it is the creation stamp, not the slot: a Tuesday call that books an
@@ -947,6 +947,13 @@ async function _fetchAppointments(locTok, locationId, from, to) {
     if (!invalid && inPeriod(addedMs)) {
       e.bookedInPeriod = true // cancelled still counts as a booking on its creation day
       if (cancelled) e._cancelled = true; else e._live = true
+      // Booking-cohort outcomes (the calendar scorecards): of the bookings MADE
+      // in the period, which have reached their time (occurredB), showed, or
+      // no-showed - wherever the appointment date itself falls. Together with
+      // `upcoming` below they partition the period's bookings.
+      if (!cancelled && isFinite(startTimeMs) && startTimeMs <= nowMs) e.occurredB = true
+      if (apptShown(s)) e.shownB = true
+      if (APPT_NOSHOW_RE.test(s)) e.noShowB = true
     }
     if (apptShown(s) && inPeriod(startTimeMs)) e.shownByStatus = true
     if (APPT_NOSHOW_RE.test(s) && inPeriod(startTimeMs)) e.noShowByStatus = true
@@ -956,8 +963,9 @@ async function _fetchAppointments(locTok, locationId, from, to) {
     // show-rate denominator; a cancellation was called off before it happened and
     // does not. Callers that fall back to "shown by pipeline stage" must check
     // noShowByStatus first, so an explicit no-show is never promoted to a show.
-    // "Reached its time" means the slot has actually passed: a booking for later
-    // today is still to come, not occurred (and must not read as unresulted).
+    // Appointment-date cohort (used by the per-lead key-event tests): the slot
+    // fell in the period and has actually passed - a booking for later today is
+    // still to come, not occurred.
     if (!invalid && !cancelled && inPeriod(startTimeMs) && startTimeMs <= nowMs) e.hasCallInPeriod = true
     // Still to come: a live booking made in the period whose slot is in the future.
     if (!invalid && !cancelled && inPeriod(addedMs) && isFinite(startTimeMs) && startTimeMs > nowMs) e.upcoming = true
@@ -4636,23 +4644,24 @@ export async function buildCcDrill(locationId, from, to, channel, basis = 'creat
   }
   const perCal = appts && appts.perCalendar instanceof Map ? appts.perCalendar : new Map()
   const bookingByCalendar = [...perCal.values()].map((rec) => {
-    // Per contact: booked (a booking made in the period, cancelled or not),
-    // cancelled (booked and then called off, with no live booking left),
-    // occurred (reached its time, not cancelled), shown / noShow (the status the
-    // team set). Resulted = shown + no-show, the show-rate denominator;
-    // unresulted = occurred but never given a result.
+    // Per contact, over bookings MADE in the period: booked (cancelled or not),
+    // cancelled (called off, with no live booking left), occurred (a live booking
+    // that has reached its time, whatever date it was for), upcoming (live and
+    // still in the future), shown / noShow (the status the team set on it).
+    // cancelled + occurred + upcoming = booked. Resulted = shown + no-show, the
+    // show-rate denominator; unresulted = occurred but never given a result.
     let booked = 0, occurred = 0, shown = 0, noShow = 0, cancelled = 0, upcoming = 0; const people = []; const bookedSet = new Set()
     for (const [cid, f] of rec.byContact) {
       if (chanContacts && !chanContacts.has(cid)) continue
-      const isBooked = !!f.bookedInPeriod, isOcc = !!f.hasCallInPeriod, isShown = !!f.shownByStatus, isNoShow = !!f.noShowByStatus && !isShown, isCancelled = !!(f._cancelled && !f._live)
-      if (!isBooked && !isOcc && !isShown) continue
-      if (isBooked) { booked++; bookedSet.add(cid) } if (isOcc) occurred++; if (isShown) shown++; if (isNoShow) noShow++; if (isCancelled) cancelled++; if (f.upcoming && !isOcc) upcoming++
+      const isBooked = !!f.bookedInPeriod, isOcc = !!f.occurredB, isShown = !!f.shownB, isNoShow = !!f.noShowB && !isShown, isCancelled = !!(f._cancelled && !f._live)
+      if (!isBooked) continue
+      booked++; bookedSet.add(cid); if (isOcc) occurred++; if (isShown) shown++; if (isNoShow) noShow++; if (isCancelled) cancelled++; if (f.upcoming && !isOcc) upcoming++
       if (people.length < 100) people.push({ name: apptNames.get(cid) || oppNameById.get(cid) || 'Lead', occurred: isOcc, shown: isShown, noShow: isNoShow, cancelled: isCancelled })
     }
     const union = {}; for (const [key, set] of reachSet) { let n = bookedSet.size; for (const c of set) if (!bookedSet.has(c)) n++; union[key] = n }
     const resulted = shown + noShow
     return { id: rec.id || null, calendar: rec.name || 'Calendar', booked, occurred, upcoming, shown, noShow, cancelled, resulted, unresulted: Math.max(0, occurred - resulted), people, union }
-  }).filter((c) => c.booked || c.occurred || c.shown).sort((a, b) => b.booked - a.booked)
+  }).filter((c) => c.booked).sort((a, b) => b.booked - a.booked)
   const closeArr = [...closeByChannel.values()].map((c) => { const closed = c.won + c.lost; return { channel: c.channel, won: c.won, closed, leads: c.leads, revenue: Math.round(c.revenue), cash: Math.round(c.cash || 0), closeRate: closed ? Math.round((c.won / closed) * 100) : null, deals: c.deals.slice(0, 100) } }).sort((a, b) => b.won - a.won)
   openDeals.sort((a, b) => b.value - a.value)
   // Per-pipeline stage AT-counts (funnel order) so the frontend key-events
@@ -5229,7 +5238,9 @@ export async function buildAttribution(locationId, from, to, opts = {}) {
       const bookedBy = { all: new Set(), meta: new Set(), google: new Set(), other: new Set() }
       for (const [cid, f] of rec.byContact) {
         f.cancelledInPeriod = f._cancelled && !f._live
-        if (!f.bookedInPeriod && !f.shownByStatus && !f.cancelledInPeriod && !f.hasCallInPeriod) continue
+        // Booking cohort: only bookings made in the period; their outcomes follow
+        // the booking wherever its appointment date falls (see markInto).
+        if (!f.bookedInPeriod) continue
         const o = contactUtm.get(cid); if (!o) continue // only attributable leads
         const u = utmOf(o); const ch = channelOf(u)
         if (f.bookedInPeriod) {
@@ -5243,9 +5254,9 @@ export async function buildAttribution(locationId, from, to, opts = {}) {
           bumpKey(entIf(dim.termMatch, termMatchKey(u)), 'cals', calId)
           bumpKey(entIf(dim.url, urlKey(u.url)), 'cals', calId)
         }
-        // Occurred = the appointment's date has passed (call happened in-period),
-        // so it's the correct denominator for show rate (upcoming bookings excluded).
-        if (f.hasCallInPeriod) {
+        // Occurred = a live booking made in the period whose time has passed, so
+        // it's the correct denominator for show rate (upcoming bookings excluded).
+        if (f.occurredB) {
           cal.occurred++; cal.ch[ch].occurred++
           bumpKey(ent(dim.campaign, u.campaign), 'calsOccurred', calId)
           bumpKey(ent(dim.medium, u.medium), 'calsOccurred', calId)
@@ -5255,7 +5266,7 @@ export async function buildAttribution(locationId, from, to, opts = {}) {
           bumpKey(entIf(dim.termMatch, termMatchKey(u)), 'calsOccurred', calId)
           bumpKey(entIf(dim.url, urlKey(u.url)), 'calsOccurred', calId)
         }
-        if (f.shownByStatus) {
+        if (f.shownB) {
           cal.shown++; cal.ch[ch].shown++
           // Per-entity shown-on-this-calendar for the green key-event columns.
           bumpKey(ent(dim.campaign, u.campaign), 'calsShown', calId)
@@ -5267,10 +5278,10 @@ export async function buildAttribution(locationId, from, to, opts = {}) {
           bumpKey(entIf(dim.url, urlKey(u.url)), 'calsShown', calId)
         }
         if (f.cancelledInPeriod) { cal.cancelled++; cal.ch[ch].cancelled++ }
-        if (f.upcoming && !f.hasCallInPeriod) { cal.upcoming++; cal.ch[ch].upcoming++ }
+        if (f.upcoming && !f.occurredB) { cal.upcoming++; cal.ch[ch].upcoming++ }
         // An explicit no-show: resulted, not shown. Carried per entity so the
         // key-event table's show rate can use shown ÷ (shown + no-show).
-        if (f.noShowByStatus && !f.shownByStatus) {
+        if (f.noShowB && !f.shownB) {
           cal.noShow++; cal.ch[ch].noShow++
           bumpKey(ent(dim.campaign, u.campaign), 'calsNoShow', calId)
           bumpKey(ent(dim.medium, u.medium), 'calsNoShow', calId)

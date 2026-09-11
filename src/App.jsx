@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.541.0'
+const APP_VERSION = '3.542.0'
 // The business clock. Every server window is cut on the client's local day
 // (Caalano Systems location timezone), so any day the app derives on its own -
 // preset ranges, "today", CSV dates - must use the same clock rather than the
@@ -7305,7 +7305,7 @@ function KeScorecard({ label, value, prev, isMoney, currency, pctLeads, prevPctL
       {show ? <div className="kesc-line kesc-show" title="Show rate = shown ÷ resulted (shown + no-show). Appointments cancelled in advance, still to come, or past their time with no result set are left out."><span>{show.rate == null ? 'No resulted appointments yet' : <><b>{Math.round(show.rate)}%</b> show rate</>}</span>{show.prevRate != null && show.rate != null ? <MiniDelta cur={show.rate} prev={show.prevRate} /> : null}</div> : null}
       {show && show.rate != null ? <div className="kesc-line kesc-sub"><span>{fmtNumber(show.shown)} showed of {fmtNumber(show.resulted)} resulted</span></div> : null}
       {show && (show.cancelled || show.unresulted) ? <div className="kesc-line kesc-sub" title="Cancelled = booked in the period and called off in advance, as a share of bookings. Unresulted = past its time with neither showed nor no-show set - ask the team to result these."><span>{show.cancelled ? `${fmtNumber(show.cancelled)} cancelled (${Math.round((show.cancelled / Math.max(1, show.booked)) * 100)}%)` : null}{show.cancelled && show.unresulted ? ' · ' : null}{show.unresulted ? <em className="kesc-unres">{fmtNumber(show.unresulted)} unresulted</em> : null}</span></div> : null}
-      {show && (show.occurred || show.upcoming) ? <div className="kesc-line kesc-sub" title="Occurred = the appointment's time has passed and it was not cancelled (showed, no-show or still unresulted). Still to come = booked in the period, not cancelled, and the appointment is in the future."><span>{fmtNumber(show.occurred)} occurred · {fmtNumber(show.upcoming)} still to come</span></div> : null}
+      {show && (show.occurred || show.upcoming) ? <div className="kesc-line kesc-sub" title="Of the appointments booked in the selected range: occurred = its time has passed and it was not cancelled (showed, no-show or still unresulted), wherever the appointment date falls; still to come = not cancelled and the appointment is in the future. Cancelled + occurred + still to come = booked."><span>{fmtNumber(show.occurred)} occurred · {fmtNumber(show.upcoming)} still to come</span></div> : null}
       {note ? <div className="kesc-line">{note}</div> : null}
     </div>
   )
@@ -7314,9 +7314,14 @@ function KeScorecard({ label, value, prev, isMoney, currency, pctLeads, prevPctL
 // Per-pipeline performance for Caalano360 - the same per-pipeline key-event
 // scorecards as the Meta view, but counting ALL channels (not just Meta-attributed)
 // from the ccdrill payload, with a Meta/Google/Other contribution bar per pipeline
-// and vs-prev deltas from the previous-period ccdrill. `spend` = { cur, prev } total
-// ad spend for the active channel scope; it's allocated across pipelines by each
-// pipeline's share of leads to give a blended cost-per-event.
+// and vs-prev deltas from the previous-period ccdrill. `spend` = { meta: { cur,
+// prev }, google: { cur, prev } } for the active channel scope. Each channel's
+// spend is allocated across pipelines by that channel's share of leads - Meta
+// spend follows Meta-attributed leads, Google spend follows Google's - so a
+// pipeline fed mostly by the dearer channel carries a higher cost per lead.
+// (Allocating the total by overall lead share made every pipeline's cost per
+// lead identical by construction.) A channel with spend but no attributed
+// leads falls back to overall lead share.
 function PipelinePerformance({ cc, pcc, clientId, currency, spend }) {
   const pipes = (cc && cc.pipeContribution) || []
   const funnels = (cc && cc.pipelinesFunnel) || []
@@ -7330,16 +7335,28 @@ function PipelinePerformance({ cc, pcc, clientId, currency, spend }) {
   const pPipes = {}; for (const p of ((pcc && pcc.pipeContribution) || [])) pPipes[p.id] = p
   // Blended cost per event: allocate the active scope's ad spend across pipelines
   // by each pipeline's share of leads (paid spend ÷ all leads = blended CAC).
-  const totalLeads = pipes.reduce((s, p) => s + (p.leads || 0), 0)
-  const totalLeadsPrev = Object.values(pPipes).reduce((s, p) => s + (p.leads || 0), 0)
-  const spendCur = (spend && spend.cur) || 0, spendPrev = (spend && spend.prev) || 0
+  const chLeads = (p, k) => (p && p.chan && p.chan[k] && p.chan[k].leads) || 0
+  const allocSpend = (list, p, key) => {
+    if (!p) return 0
+    const totalLeads = list.reduce((s, x) => s + (x.leads || 0), 0)
+    let out = 0
+    for (const k of ['meta', 'google']) {
+      const sp = (spend && spend[k] && spend[k][key]) || 0; if (!sp) continue
+      const tot = list.reduce((s, x) => s + chLeads(x, k), 0)
+      if (tot) out += sp * (chLeads(p, k) / tot)
+      else if (totalLeads) out += sp * ((p.leads || 0) / totalLeads)
+      else if (list.length === 1) out += sp
+    }
+    return out
+  }
+  const pPipeList = Object.values(pPipes)
   return (
     <div className="card">
       <div className="exec-panel-h">Pipeline performance <span className="sub">· overall key events per pipeline (all channels) · count · vs prev · % of leads · blended cost/event · show rate</span></div>
       {pipes.map((p) => {
         const pp = pPipes[p.id]
-        const pipeSpend = totalLeads ? spendCur * ((p.leads || 0) / totalLeads) : 0
-        const pipeSpendPrev = (pp && totalLeadsPrev) ? spendPrev * ((pp.leads || 0) / totalLeadsPrev) : 0
+        const pipeSpend = allocSpend(pipes, p, 'cur')
+        const pipeSpendPrev = pp ? allocSpend(pPipeList, pp, 'prev') : 0
         const rows = keyEventRows(keyEventsForPipe(keList, p.id), rmap, calMap, stagePos, p.won).filter((r) => r.kind !== 'lead' && r.count > 0)
         const pByLabel = {}; for (const r of keyEventRows(keyEventsForPipe(keList, p.id), pRmap, pCalMap, stagePos, pp ? pp.won : 0)) pByLabel[r.label] = r
         const leadsP = p.leads || 0, prevLeadsP = pp ? (pp.leads || 0) : null
@@ -7381,7 +7398,7 @@ function PipelinePerformance({ cc, pcc, clientId, currency, spend }) {
           </div>
         )
       })}
-      <div className="pp-legend"><span><i className="cb-dot cb-meta" /> Meta</span><span><i className="cb-dot cb-google" /> Google</span><span><i className="cb-dot cb-other" /> Other / direct</span><span className="pp-legend-note">Cost/event = ad spend allocated across pipelines by lead share (blended). Counts are all channels.</span></div>
+      <div className="pp-legend"><span><i className="cb-dot cb-meta" /> Meta</span><span><i className="cb-dot cb-google" /> Google</span><span><i className="cb-dot cb-other" /> Other / direct</span><span className="pp-legend-note">Cost/event = each channel's ad spend allocated across pipelines by that channel's lead share (Meta spend follows Meta leads, Google follows Google), blended per pipeline. Counts are all channels.</span></div>
     </div>
   )
 }
@@ -8940,9 +8957,11 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
           channels) + Meta/Google contribution + vs-prev. Staff-only (ccdrill). */}
       {cc ? (() => {
         const chn = h.channels || {}
-        const curSpend = pipeOn ? spendOf(cc, chan) : chan === 'all' ? (k.adSpend || 0) : chan === 'meta' ? (chn.metaSpend || 0) : chan === 'google' ? (chn.googleSpend || 0) : chan === 'paid' ? ((chn.metaSpend || 0) + (chn.googleSpend || 0)) : 0
-        const prevSpend = pipeOn ? (pcc ? spendOf(pcc, chan) : null) : chan === 'all' ? (pv.adSpend || 0) : null // channel-split prev spend isn't available
-        return sec('pipelines', 'Pipeline performance', <PipelinePerformance cc={cc} pcc={pcc} clientId={clientId} currency={currency} spend={{ cur: curSpend, prev: prevSpend }} />)
+        // Per-channel spend for the active scope, from the drill's own spend read,
+        // so each channel's spend can be allocated by that channel's leads.
+        const chSpend = (d, key) => (d && d.spend && (chan === 'all' || chan === 'paid' || chan === key)) ? (d.spend[key] || 0) : 0
+        const spendBy = { meta: { cur: chSpend(cc, 'meta'), prev: pcc ? chSpend(pcc, 'meta') : null }, google: { cur: chSpend(cc, 'google'), prev: pcc ? chSpend(pcc, 'google') : null } }
+        return sec('pipelines', 'Pipeline performance', <PipelinePerformance cc={cc} pcc={pcc} clientId={clientId} currency={currency} spend={spendBy} />)
       })() : null}
 
       {/* Revenue bottleneck funnel - client key events + calendar show-rate.

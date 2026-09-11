@@ -18,6 +18,14 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.543.0 - 2026-09-11 · `PENDING`
+
+**Terms of Use: a newer built-in version supersedes an older stored edit**
+- The live site kept showing terms v1.3 after v1.4 shipped because a copy edited in Settings → Terms is stored separately and took precedence. The loader now prefers the built-in text whenever its version is newer than the stored one, so v1.4 is live on deploy without a manual revert. The stored copy is kept; an edit made on top of the new version (same or higher number) is still honoured.
+- New `tests/terms_test.mjs` pins version compare, the no-re-sign rule and the v1.4 wording.
+
+---
+
 ## v3.542.0 - 2026-09-11 · `bc017f5`
 
 **Calendar key events follow the bookings made in the range**

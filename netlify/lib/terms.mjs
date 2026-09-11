@@ -253,6 +253,13 @@ export async function loadTerms() {
   try {
     const rec = await store().get(LIVE_KEY, { type: 'json' })
     if (rec && rec.terms && Array.isArray(rec.terms.sections) && rec.terms.sections.length) {
+      // A newer built-in version supersedes an older stored edit: shipping a
+      // revision in code takes effect on deploy without anyone having to revert
+      // the stored copy first. The stored document stays in the store, so an
+      // edit made on top of the new version (same or higher number) is honoured.
+      if (cmpTermsVersion(rec.terms.version, DEFAULT_TERMS.version) < 0) {
+        return { terms: DEFAULT_TERMS, minVersion: DEFAULT_MIN_VERSION, custom: false, updatedAt: null, updatedBy: null, superseded: { version: rec.terms.version, updatedAt: rec.updatedAt || null, updatedBy: rec.updatedBy || null } }
+      }
       return {
         terms: rec.terms,
         minVersion: rec.minVersion || rec.terms.version || DEFAULT_MIN_VERSION,

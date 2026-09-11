@@ -18,6 +18,15 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.547.0 - 2026-09-11 · `PENDING`
+
+**Backups: a tested restore path**
+- New `scripts/restore-backup.mjs` writes a `backup-export` file (or one store file from `backups/latest/`) back into a site's Blobs: auth first so people can sign in, then settings, terms and the rest; text blobs preserved; `--dry-run`, `--store`, `--wipe`, confirmation prompt.
+- `tests/backup_restore_test.mjs` proves the round trip on every test run: export, wipe, restore, export again, equal. The test fake store gained write support to make that possible.
+- `BACKUP.md` documents the script, the restore drill, and a status checklist. As of today the daily GitHub backup has never run (`backups/` does not exist), so the checklist starts there.
+
+---
+
 ## v3.546.0 - 2026-09-11 · `f229365`
 
 **Mobile pass 3b: every popup and drilldown readable on a phone**

@@ -12,5 +12,9 @@ export function getStore({ name }) {
   return {
     async list({ cursor } = {}) { const keys = Object.keys(s).sort(); const start = cursor ? Number(cursor) : 0; const page = keys.slice(start, start + 1000); return { blobs: page.map((key) => ({ key })), cursor: start + 1000 < keys.length ? String(start + 1000) : undefined } },
     async get(key, { type } = {}) { const v = s[key]; if (v == null) return null; return type === 'json' ? JSON.parse(v) : v },
+    // Writes, so restore / round-trip tests can exercise the real code paths.
+    async set(key, v) { s[key] = typeof v === 'string' ? v : String(v) },
+    async setJSON(key, v) { s[key] = JSON.stringify(v) },
+    async delete(key) { delete s[key] },
   }
 }

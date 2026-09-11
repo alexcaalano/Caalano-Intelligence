@@ -35,11 +35,42 @@ GitHub), `git checkout vX.Y.Z` for a specific release, push to a new repo,
 connect it to a Netlify site, set the environment variables from the password
 manager.
 
-**Stores:** a restore script has to write each `stores[name].data[key]` back
-with `getStore({ name }).setJSON(key, value)` (or `set` for `_text` values).
-The `caalano-auth` store must be restored before anyone can sign in; restore
-`ghl-auth` from the secrets download or reconnect Caalano Systems through
-Settings → Connect, which mints a new token.
+**Stores:** `scripts/restore-backup.mjs` writes a backup file back into a
+site's Blobs. It takes the whole `backup-export` JSON or one store file from
+`backups/latest/`, restores `caalano-auth` first (nobody can sign in without
+it), then settings, terms and the rest, and wraps text blobs correctly.
+
+```
+node scripts/restore-backup.mjs caalano360-backup-2026-09-11.json --site <site-id> --token <personal-token> --dry-run
+node scripts/restore-backup.mjs caalano360-backup-2026-09-11.json --site <site-id> --token <personal-token>
+node scripts/restore-backup.mjs backups/latest/caalano-settings.json --site <site-id> --token <personal-token> --store caalano-settings
+```
+
+`--dry-run` lists what would be written and touches nothing. `--wipe` also
+deletes keys the backup does not have (default keeps them). Site ID is under
+Site configuration → General; the token is a Netlify personal access token.
+`ghl-auth` is only in a `?secrets=1` export; without it, reconnect Caalano
+Systems through Settings → Connect, which mints a new token.
+
+`tests/backup_restore_test.mjs` proves the round trip on every test run:
+export, wipe, restore, export again, byte-for-byte equal.
 
 **Test the restore once** into a scratch Netlify site. A backup nobody has
-restored from is a hope, not a plan.
+restored from is a hope, not a plan. The drill: create a throwaway Netlify site
+from the same repo, set only `AUTH_SECRET`, run the restore script against it
+with a fresh `backup-export` file, sign in, and check Settings shows the real
+clients and key events. Then delete the site.
+
+## Status checklist (tick these off)
+
+- [ ] `BACKUP_GH_TOKEN` and `BACKUP_GH_REPO` set in Netlify, so the daily job
+      actually runs. As of 2026-09-11 `backups/` does not exist in the repo,
+      which means it has never run. Use a separate private repo
+      (e.g. `alexcaalano/caalano360-backups`) rather than the app repo.
+- [ ] A `backup-export?secrets=1` file saved in the password manager (dated).
+- [ ] The 15 environment variables copied into the password manager entry.
+- [ ] Netlify site settings (domain, production branch, function region,
+      scheduled functions) written into the same entry.
+- [ ] A second git remote (a private mirror) receiving pushes, or a monthly
+      `git bundle` kept off-site.
+- [ ] One restore drill completed into a scratch site, with the date noted here.

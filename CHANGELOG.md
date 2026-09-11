@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.546.0 - 2026-09-11 · `PENDING`
+## v3.546.0 - 2026-09-11 · `f229365`
 
 **Mobile pass 3b: every popup and drilldown readable on a phone**
 - Clicked every distinct clickable element on 15 screens at 390px (about 250 targets), then walked the two-level drills by hand: tile → lead list → CRM notes, stage → deals → notes, rep → funnel, form → answers → people, creative → tag editor, location → leads → answers, appointments → resulted list.

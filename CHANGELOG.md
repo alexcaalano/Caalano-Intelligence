@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.540.0 - 2026-09-11 · `PENDING`
+## v3.540.0 - 2026-09-11 · `905a281`
 
 **Custom dashboards: audience by tier**
 - "Who can see it" in the builder is now Super Admins only / Admin / User / Viewer. A tier opens the dashboard to that role and every role above it: Admin means Admins and Super Admins, User adds agency Users, Viewer opens it to all staff and offers it as the Custom dashboard tick box in each viewer's Permissions (a viewer still sees it only once ticked).

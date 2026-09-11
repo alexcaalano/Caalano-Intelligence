@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.544.0'
+const APP_VERSION = '3.545.0'
 // The business clock. Every server window is cut on the client's local day
 // (Caalano Systems location timezone), so any day the app derives on its own -
 // preset ranges, "today", CSV dates - must use the same clock rather than the
@@ -6488,7 +6488,7 @@ function LostReasonsView({ clientId, range, nonce, currency, pipeName }) {
                 })()}
                 {!rows.length ? <div className="cap">No lost deals match these filters. <button className="link-btn" onClick={() => setFilters({})}>Clear them</button></div>
                   : <>
-                    <table className="mini-tbl users-tbl appt-tbl u-lrv">
+                    <div className="tbl-scroll"><table className="mini-tbl users-tbl appt-tbl u-lrv">
                       <thead><tr>
                         <th className="lft">{LR_LABEL[groupBy]}{cumulative ? ' or later' : ''}</th>
                         <th>Lost</th><th>Value</th><th>Share</th>
@@ -6526,7 +6526,7 @@ function LostReasonsView({ clientId, range, nonce, currency, pipeName }) {
                         {colKeys.map((k) => <td key={k}>{fmtNumber(colTotals.get(k) || 0)}</td>)}
                         {anyOther ? <td>{fmtNumber(otherTot)}</td> : null}
                       </tr></tfoot>
-                    </table>
+                    </table></div>
                     <Caveat>{LR_TIP[groupBy]} {cellMode === 'count' ? 'Column cells are raw counts, which say as much about how big each column is as about the reason - switch “Cells show” to compare them fairly.' : cellMode === 'share' ? `Each cell is that ${(LR_LABEL[groupBy] || '').toLowerCase()}’s share of its OWN column’s losses, so a large column and a small one are read on the same scale - the divisor for each is printed under its heading.` : `Each cell is that ${(LR_LABEL[groupBy] || '').toLowerCase()}’s share of its own column minus its share of all ${fmtNumber(rows.length)} losses, in percentage points. Positive means that column loses deals to it more often than the business as a whole does. Weighted by column size the cells across a row cancel to zero by construction, so a positive figure is genuine concentration and not an artefact of the divisors. Columns under ${LRV_THIN} losses are dimmed: a point or two there is a single deal.`} Every filter above stacks, so you can hold one dimension and pivot the rest - Paid Social lost at a given stage, broken down by reason, for example. {cumulative ? `Each row counts every deal that reached that stage or went past it before being lost, judged inside its own pipeline - so a deal appears in every row it got through and the rows deliberately do not add up to ${fmtNumber(rows.length)}. Switch the stage reading back to "lost at this stage" for an exclusive split that does.` : `Each deal carries exactly one value per dimension and a missing value groups under “Not tagged”, so the rows always add up to the ${fmtNumber(rows.length)} shown.`} Deals are counted by the period they were created in, which is why this can differ from a closed-in-period view: a deal that arrived last quarter and was lost this week is scored against the quarter it arrived. The size of the “Unspecified” reason is a fair read on how consistently the team is setting one at all.{cc.lostFacts && cc.lostFacts.capped ? ` Showing the first ${fmtNumber(facts.length)} of ${fmtNumber(allTot)} lost deals in this period.` : ''}</Caveat>
                   </>}
               </>}
@@ -16059,6 +16059,17 @@ function ClientWorkspace({ client, index, data, config, range, nonce, wonBasis =
   if (loadOptLog(client.id) || cfg.meta || client.meta || cfg.google || client.google) allTabs.push({ id: 'optlog', label: 'Change Log' })
   const tabs = allowedTabsFE(authUser, allTabs)
   const curTab = tabs.some((t) => t.id === tab) ? tab : (tabs[0] ? tabs[0].id : 'overall')
+  // On a phone the tab strip scrolls sideways: keep the active tab in view, and
+  // drop the edge fade once the strip is scrolled to its end.
+  const tabStripRef = useRef(null)
+  useEffect(() => {
+    const el = tabStripRef.current; if (!el) return
+    const act = el.querySelector('button.active')
+    if (act && el.scrollWidth > el.clientWidth + 4) { const r = act.getBoundingClientRect(), b = el.getBoundingClientRect(); if (r.left < b.left || r.right > b.right) el.scrollTo({ left: act.offsetLeft - Math.max(0, (el.clientWidth - act.offsetWidth) / 2), behavior: 'smooth' }) }
+    const mark = () => el.classList.toggle('at-end', el.scrollLeft + el.clientWidth >= el.scrollWidth - 4)
+    mark(); el.addEventListener('scroll', mark, { passive: true })
+    return () => el.removeEventListener('scroll', mark)
+  }, [curTab, tabs.length])
   // Report the active tab up so the URL (?t=) tracks it, incl. any allowed-tab
   // fallback (e.g. a viewer deep-linked to a tab they can't see).
   useEffect(() => { onTabChange && onTabChange(curTab) }, [curTab])
@@ -16096,7 +16107,7 @@ function ClientWorkspace({ client, index, data, config, range, nonce, wonBasis =
               narrow screen and hid the picker off the right edge. */}
           <PipelinePicker pipes={pipes} value={pipe} onChange={setPipe} className="cw-pipe-top" />
         </div>
-        <div className="subtabs v2-tabs" role="tablist">{v2TabGroups(tabs).map((g, gi) => <div key={gi} className="v2-tabgrp">{g.name ? <span className="v2-tabgrp-l">{g.name}</span> : null}{g.tabs.map((t) => <button key={t.id} role="tab" aria-selected={curTab === t.id} className={curTab === t.id ? 'active' : ''} onClick={() => setTab(t.id)}>{t.label}</button>)}</div>)}</div>
+        <div className="subtabs v2-tabs" role="tablist" ref={tabStripRef}>{v2TabGroups(tabs).map((g, gi) => <div key={gi} className="v2-tabgrp">{g.name ? <span className="v2-tabgrp-l">{g.name}</span> : null}{g.tabs.map((t) => <button key={t.id} role="tab" aria-selected={curTab === t.id} className={curTab === t.id ? 'active' : ''} onClick={() => setTab(t.id)}>{t.label}</button>)}</div>)}</div>
       </div>
       <LoadCtx.Provider value={curTab}><IntelPubCtx.Provider value={intelCtx}><div className="v2-page" style={{ marginTop: 16 }}>
         {/* The Intelligence banner is the agency's read of the page. Viewers (client-side logins) get the figures without it. */}

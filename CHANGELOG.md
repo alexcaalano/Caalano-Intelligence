@@ -18,6 +18,18 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.545.0 - 2026-09-11 · `PENDING`
+
+**Mobile pass 3: every screen rendered at phone width and folded to fit**
+- Audited all 33 screens (Home, Daily, Weekly, Forecaster, Cockpit, Curator, Insights, Update, Monthly, Social, Reports, seven Settings sections, fifteen client tabs) at 390px with the demo client; fixed every case of content running off the right edge or squeezing into unreadable columns. Desktop is untouched (all rules sit under the 900px breakpoint).
+- Wide tables scroll inside their own frame with the first column pinned (six or more columns get a floor width, nine or more a wider one); table cells never break a word in the middle ("Blacktow / n", "Da / y 1"). The Users leaderboard and the lost-reasons breakdown table get real column widths and scroll.
+- Social toolbar (client, tabs, Print, PDF) wraps instead of running off-screen; the Cockpit format chip no longer wraps mid-word; Meta creative cards go one per row; Build history stacks version above notes.
+- Strips that scroll sideways (workspace tabs, settings sections, channel toggles) fade at the trailing edge, and the active workspace tab scrolls into view.
+- Touch targets: nav 44px, tabs 42px, toggles and presets 36 to 40px. Form controls at 16px so iOS Safari stops zooming on focus. Safe-area padding for the home indicator. Page subtitles hidden under 560px so the title and controls come first.
+- An empty section wrapper (a panel that rendered nothing) no longer leaves a stray Collapse button, which is what put two Collapse buttons on "Why deals were lost".
+
+---
+
 ## v3.544.0 - 2026-09-11 · `0bba5e1`
 
 **Reliability log: where the CRM time went, and which request it was**

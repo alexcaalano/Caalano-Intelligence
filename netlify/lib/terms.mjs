@@ -14,8 +14,10 @@
 // ---------------------------------------------------------------------------
 import { getStore } from '@netlify/blobs'
 
-export const TERMS_VERSION = '1.4'
-export const TERMS_EFFECTIVE = '2026-09-10'
+export const TERMS_VERSION = '1.5'
+export const TERMS_EFFECTIVE = '2026-09-11'
+// The contracting entity, in full, wherever the agreement names its parties.
+export const TERMS_ENTITY = 'Caalano Digital Pty Ltd (ABN 31 670 857 397)'
 // The oldest acceptance still accepted. Raise it only to force a re-sign.
 // 1.3 is the first version that both covers every future release of the Platform
 // and places a duty on the reader to report anything they can see but shouldn't.
@@ -27,14 +29,14 @@ export const TERMS_MIN_VERSION = '1.3'
 
 
 export const TERMS_TITLE = 'Caalano360 - Terms of Use'
-export const TERMS_INTRO = 'Caalano360 is proprietary software owned and operated by Caalano Digital. Access is granted to named individuals only, and only on the terms set out below.'
+export const TERMS_INTRO = `Caalano360 is proprietary software owned and operated by ${TERMS_ENTITY}, trading as Caalano Digital. Access is granted to named individuals only, and only on the terms set out below.`
 // Shown above the terms in a bordered notice, before anything else. It states
 // plainly that this is a condition of entry and that declining is a real option -
 // which is what separates an agreement from a dialog someone dismissed.
 export const TERMS_NOTICE = {
   h: 'Read this before proceeding',
   p: [
-    'This is a binding legal agreement between you personally and Caalano Digital. It governs your access to and use of Caalano360.',
+    `This is a binding legal agreement between you personally and ${TERMS_ENTITY} ("Caalano Digital"). It governs your access to and use of Caalano360.`,
     'You are required to accept it before you may use the Platform. By signing below and continuing, you agree to be bound by every term in this document, you confirm you have the authority to do so, and you undertake to keep acting in line with it for as long as you have access.',
     'Your signature covers Caalano360 as it is today and every future version of it. We release changes frequently; you will not be asked to sign again for ordinary updates.',
     'If you do not agree to any part of it, do not proceed. Sign out now and contact Caalano Digital. Continuing past this screen without agreeing is not permitted.',
@@ -45,7 +47,7 @@ export const TERMS_SECTIONS = [
   {
     h: '1. What Caalano360 is, and who owns it',
     p: [
-      'Caalano360 (the "Platform") is proprietary software owned by Caalano Digital ("we", "us"). It includes the interface, the reporting views, our proprietary scoring, benchmarking and analysis methods, the data models, the integrations, the source code and the underlying design and structure.',
+      `Caalano360 (the "Platform") is proprietary software owned by ${TERMS_ENTITY} ("Caalano Digital", "we", "us"). It includes the interface, the reporting views, our proprietary scoring, benchmarking and analysis methods, the data models, the integrations, the source code and the underlying design and structure.`,
       'Nothing in these terms transfers ownership of any part of the Platform to you or to your organisation. You are being given access to use it, and nothing more.',
     ],
   },
@@ -154,7 +156,7 @@ export const TERMS_SIGN_STATEMENT = [
   'By signing below, I declare that:',
   'I have read and understood these terms in full, and I have had the opportunity to seek advice on them;',
   'I am the named account holder, I am signing personally, and I have the authority to enter into this agreement;',
-  'I agree to be bound by these terms, and I undertake to remain in compliance with them for as long as I hold access - and, where a term says so, after that access ends;',
+  `I agree to be bound by these terms as an agreement between me and ${TERMS_ENTITY}, and I undertake to remain in compliance with them for as long as I hold access - and, where a term says so, after that access ends;`,
   'I agree that this applies to Caalano360 as it is today and to every future version, release, module and feature of it, and that I will not be asked to sign again for ordinary updates;',
   'I will tell Caalano Digital at alex@caalanodigital.com.au straight away if I can see any data, account or screen that is not mine to see, and I will not use or share it;',
   'I understand that my acceptance is recorded with my name, the date and time, the version of these terms and my signature, and that this record may be relied upon as evidence of my agreement;',

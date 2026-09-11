@@ -18,6 +18,18 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.544.0 - 2026-09-11 · `PENDING`
+
+**Reliability log: where the CRM time went, and which request it was**
+- The `where` column now breaks CRM time down by endpoint family, e.g. `crm 35.1s/36 (opps 20.2s/12, appts 9.8s/15, conv 5.1s/9)`, so a slow build says which reads to attack.
+- New `q` column (table and CSV export): the request's range and the params that fragment its cache key (`2026-08-12..2026-09-10 ch=all wb=closed pipe=… refresh`). A "live" row is only actionable when it says which range the cache did not have.
+- Viewers no longer generate `denied` rows on every page: the navigation audit call is exempt from the agency-wide gate (it records viewers too), and the Home page no longer asks for the agency overview on a viewer's behalf.
+
+**Terms of Use v1.5: contracting entity named in full**
+- The agreement now names Caalano Digital Pty Ltd (ABN 31 670 857 397) as the party in the intro, the notice, clause 1 and the signing declaration. Clarification only: the minimum accepted version stays 1.3, nobody signs again.
+
+---
+
 ## v3.543.0 - 2026-09-11 · `4e3ae67`
 
 **Terms of Use: a newer built-in version supersedes an older stored edit**

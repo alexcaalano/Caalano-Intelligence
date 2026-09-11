@@ -2717,10 +2717,25 @@ const STALE_SLOW_MS = 24 * 60 * 60 * 1000
 const SLOW_SCOPES = new Set(['speed', 'usercalls', 'forms', 'cohorts', 'appts', 'calperf', 'stagetiming', 'enqtimes', 'callcohort', 'clinic', 'social', 'socialtrend', 'updateextra'])
 const staleWindowFor = (scope) => (SLOW_SCOPES.has(scope) ? STALE_SLOW_MS : STALE_ON_ERROR_MS)
 // A compact "where the time went" for the reliability log.
+// The request's shape, for the log: which range and which of the key-fragmenting
+// params were asked for. A slow row that says "live" is only actionable when it
+// also says which range/channel/basis the cache did not have.
+function reqQ(url) {
+  try {
+    const p = url.searchParams, out = []
+    if (p.get('from') || p.get('to')) out.push(`${p.get('from') || '?'}..${p.get('to') || '?'}`)
+    for (const [k, short] of [['channel', 'ch'], ['wonBasis', 'wb'], ['pipeline', 'pipe'], ['weeks', 'weeks'], ['cals', 'cals'], ['user', 'user'], ['preset', 'preset'], ['callsonly', 'callsonly']]) { const v = p.get(k); if (v) out.push(`${short}=${String(v).slice(0, 40)}`) }
+    if (p.get('_r')) out.push('refresh')
+    return out.join(' ')
+  } catch { return '' }
+}
 function whereStr() {
   const s = (ms) => `${(ms / 1000).toFixed(1)}s`
   const parts = []
-  if (upstream.ghlN) parts.push(`crm ${s(upstream.ghl)}/${upstream.ghlN}`)
+  if (upstream.ghlN) {
+    const by = Object.entries(upstream.ghlBy || {}).sort((a, b) => b[1].ms - a[1].ms).slice(0, 4).map(([k, v]) => `${k} ${s(v.ms)}/${v.n}`)
+    parts.push(`crm ${s(upstream.ghl)}/${upstream.ghlN}${by.length > 1 ? ` (${by.join(', ')})` : ''}`)
+  }
   if (upstream.windsorN || upstream.wq || upstream.wqStale) parts.push(`windsor ${s(upstream.windsor)}/${upstream.windsorN}${upstream.wq ? ` +${upstream.wq} cached` : ''}${upstream.wqStale ? ` +${upstream.wqStale} stale` : ''}`)
   if (upstream.blobN) parts.push(`store ${s(upstream.blob)}/${upstream.blobN}`)
   return parts.join(' · ')
@@ -3138,7 +3153,7 @@ export default async (req) => {
     const softErr = status === 200 && obj && obj.error
     // A refused read is logged too: a viewer whose grant does not cover a view
     // shows up as a denied row with their name, not as a blank section.
-    if (status === 403 && obj && obj.error) await diagLog({ sev: 'denied', scope: scope || `channel:${channel}`, client, ms: Date.now() - _t0, error: String(obj.error).slice(0, 240), ..._actor })
+    if (status === 403 && obj && obj.error) await diagLog({ sev: 'denied', scope: scope || `channel:${channel}`, client, ms: Date.now() - _t0, error: String(obj.error).slice(0, 240), q: reqQ(url), ..._actor })
     // Stale-on-error: a transient rebuild failure (upstream timeout / 5xx that the
     // branch caught and returned as a 200 { error }) falls back to the last good
     // payload instead of surfacing an error to the user. Only for cacheable
@@ -3146,18 +3161,18 @@ export default async (req) => {
     // awaited so the failure is durably recorded before the lambda can freeze.
     if (_ckey && _staleHit && softErr && (Date.now() - _staleHit.at) < staleWindowFor(scope)) {
       _cacheStatus = 'stale-error'
-      await diagLog({ sev: 'error-stale', scope: scope || `channel:${channel}`, client, ms: Date.now() - _t0, error: String(obj.error).slice(0, 240), ageMs: Date.now() - _staleHit.at, cache: _cacheStatus, where: whereStr(), ..._actor })
+      await diagLog({ sev: 'error-stale', scope: scope || `channel:${channel}`, client, ms: Date.now() - _t0, error: String(obj.error).slice(0, 240), ageMs: Date.now() - _staleHit.at, cache: _cacheStatus, where: whereStr(), q: reqQ(url), ..._actor })
       // The rebuild's own error rides along, so the page can say WHY it is showing
       // a saved copy instead of leaving a silent, out-of-date number on screen.
       return mkResponse({ ..._staleHit.payload, _cache: { age: Math.round((Date.now() - _staleHit.at) / 1000), stale: true, error: String(obj.error).slice(0, 240) } }, 200, true)
     }
-    if (softErr) await diagLog({ sev: 'error', scope: scope || `channel:${channel}`, client, ms: Date.now() - _t0, error: String(obj.error).slice(0, 240), cache: _cacheStatus, where: whereStr(), ..._actor })
+    if (softErr) await diagLog({ sev: 'error', scope: scope || `channel:${channel}`, client, ms: Date.now() - _t0, error: String(obj.error).slice(0, 240), cache: _cacheStatus, where: whereStr(), q: reqQ(url), ..._actor })
     // Write-through: cache a freshly-built success, and flag builds that came close
     // to the timeout so we can see which scopes to make live-safe first.
     if (_ckey && cache && status === 200 && obj && !obj.error && !obj._cache) {
       writeResultCache(_ckey, obj)
       const ms = Date.now() - _t0
-      if (ms > 6000 && !_warm) await diagLog({ sev: 'slow', scope: scope || `channel:${channel}`, client, ms, cache: _cacheStatus, where: whereStr(), ..._actor })
+      if (ms > 6000 && !_warm) await diagLog({ sev: 'slow', scope: scope || `channel:${channel}`, client, ms, cache: _cacheStatus, where: whereStr(), q: reqQ(url), ..._actor })
     }
     return mkResponse(obj, status, cache)
   }
@@ -3222,7 +3237,9 @@ export default async (req) => {
   if (me) {
     if (client && !canSeeClient(me, client)) return json({ error: 'You don’t have access to this account.' }, 403)
     if (client && restrictedSet.has(client)) return json({ error: 'You don’t have access to this account.' }, 403)
-    if (!client && me.role === 'viewer') return json({ error: 'No access to agency-wide data.' }, 403)
+    // The navigation audit trail records viewers too - it is the one client-less
+    // call a viewer legitimately makes, so it is not an agency-wide read.
+    if (!client && me.role === 'viewer' && scope !== 'navlog') return json({ error: 'No access to agency-wide data.' }, 403)
     // Viewers are further limited to the exact scopes their allocated tabs fetch -
     // so a client can never reach an unassigned view, an agency tool (creative
     // cockpit, report generation, diagnostics) or another view's data by crafting

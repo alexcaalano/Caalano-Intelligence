@@ -38,11 +38,25 @@ const sleep = (ms) => new Promise((res) => setTimeout(res, ms))
 const BUDGET_MIN_MS = 2500      // no attempt is ever given less than this
 const BUDGET_RETRY_MS = 3500    // below this much left, do not start another try
 let _budgetEnd = 0
-export function startRequestBudget(ms) { _budgetEnd = ms ? Date.now() + ms : 0; for (const k of Object.keys(upstream)) upstream[k] = 0 }
+export function startRequestBudget(ms) { _budgetEnd = ms ? Date.now() + ms : 0; for (const k of Object.keys(upstream)) upstream[k] = typeof upstream[k] === 'number' ? 0 : {} }
 // Where a request's time went, per upstream, so a slow row in the reliability
 // log says "CRM 9.1s across 14 calls" rather than just "8 seconds". Reset with
 // the budget at the start of every request.
-export const upstream = { ghl: 0, ghlN: 0, windsor: 0, windsorN: 0, wq: 0, wqStale: 0, blob: 0, blobN: 0 }
+export const upstream = { ghl: 0, ghlN: 0, windsor: 0, windsorN: 0, wq: 0, wqStale: 0, blob: 0, blobN: 0, ghlBy: {} }
+// Which CRM endpoint family a call belongs to, so the log can say WHERE the
+// CRM time went (opportunity pages vs calendar events vs conversations...).
+function ghlFamily(label) {
+  const l = String(label || '')
+  if (l.includes('/opportunities')) return 'opps'
+  if (l.includes('/calendars/events')) return 'appts'
+  if (l.includes('/calendars')) return 'cals'
+  if (l.includes('/conversations')) return 'conv'
+  if (l.includes('/forms')) return 'forms'
+  if (l.includes('/contacts')) return 'contacts'
+  if (l.includes('/users')) return 'users'
+  if (l.includes('locationToken') || l.includes('/oauth')) return 'auth'
+  return 'other'
+}
 const budgetLeft = () => (_budgetEnd ? _budgetEnd - Date.now() : Infinity)
 const budgetedTimeout = (want) => Math.max(BUDGET_MIN_MS, Math.min(want, budgetLeft()))
 const budgetAllowsRetry = () => budgetLeft() > BUDGET_RETRY_MS
@@ -158,7 +172,7 @@ async function ghlFetch(url, opts, { label = 'ghl', timeoutMs = 9000, maxTries =
       }
     }
     throw lastErr || new Error(`${label} failed`)
-  } finally { _ghlDone(); upstream.ghl += Date.now() - _t; upstream.ghlN++ }
+  } finally { _ghlDone(); const dt = Date.now() - _t; upstream.ghl += dt; upstream.ghlN++; const f = ghlFamily(label); const b = upstream.ghlBy[f] || (upstream.ghlBy[f] = { ms: 0, n: 0 }); b.ms += dt; b.n++ }
 }
 
 export async function loadTokens() { try { return await store().get('agency', { type: 'json' }) } catch { return null } }

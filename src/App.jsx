@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.543.0'
+const APP_VERSION = '3.544.0'
 // The business clock. Every server window is cut on the client's local day
 // (Caalano Systems location timezone), so any day the app derives on its own -
 // preset ranges, "today", CSV dates - must use the same clock rather than the
@@ -695,11 +695,13 @@ function useSwrJson(url, opts = {}) {
   }, [url])
   return state
 }
-function useAgencyLive(range, nonce = 0, wonBasis = 'closed') {
+function useAgencyLive(range, nonce = 0, wonBasis = 'closed', enabled = true) {
   const [state, setState] = useState({ status: 'idle', data: null })
   const q = rangeQuery(range)
   useEffect(() => {
     let alive = true
+    // A viewer has no agency-wide view; asking would only be refused (and logged).
+    if (!enabled) { setState({ status: 'idle', data: null }); return () => { alive = false } }
     setState({ status: 'loading', data: null })
     fetch(`/.netlify/functions/windsor?scope=agency&${q}&wonBasis=${wonBasis}${nonce ? `&_r=${nonce}` : ''}`)
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error('http'))))
@@ -17437,12 +17439,12 @@ function LogsPanel({ clients }) {
   // file - so it can be handed off for diagnosis without needing live log access.
   const exportLog = (fmt) => {
     const d = (log && log.data) || {}
-    const entries = (d.entries || []).map((e) => ({ when: new Date(e.t).toISOString(), sev: e.sev, scope: e.scope, client: nameOf(e.client), clientId: e.client || null, user: e.user || null, userName: e.userName || null, userRole: e.userRole || null, ms: e.ms != null ? e.ms : null, ageMs: e.ageMs != null ? e.ageMs : null, cache: e.cache || null, where: e.where || null, error: e.error || null }))
+    const entries = (d.entries || []).map((e) => ({ when: new Date(e.t).toISOString(), sev: e.sev, scope: e.scope, client: nameOf(e.client), clientId: e.client || null, user: e.user || null, userName: e.userName || null, userRole: e.userRole || null, ms: e.ms != null ? e.ms : null, ageMs: e.ageMs != null ? e.ageMs : null, cache: e.cache || null, where: e.where || null, q: e.q || null, error: e.error || null }))
     const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
     let blob, name
     if (fmt === 'csv') {
       const esc = (v) => { const s = v == null ? '' : String(v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s }
-      const head = ['when', 'sev', 'scope', 'client', 'user', 'userName', 'userRole', 'ms', 'ageMs', 'cache', 'where', 'error']
+      const head = ['when', 'sev', 'scope', 'client', 'user', 'userName', 'userRole', 'ms', 'ageMs', 'cache', 'where', 'q', 'error']
       const lines = [head.join(','), ...entries.map((e) => head.map((k) => esc(e[k])).join(','))]
       blob = new Blob([lines.join('\n')], { type: 'text/csv' }); name = `caalano360-reliability-log-${days}d-${stamp}.csv`
     } else {
@@ -17605,7 +17607,7 @@ function LogsPanel({ clients }) {
                       {e.user ? <>{e.userName || e.user}{e.userRole ? <small>{ROLE_LABEL[e.userRole] || e.userRole}</small> : null}</> : <span className="cap">system</span>}
                     </td>
                     <td>{e.ms != null ? fmtNumber(e.ms) : '-'}</td>
-                    <td className="lft logs-detail">{e.error || (e.sev === 'slow' ? 'Slow build (approaching the 10s function limit)' : '')}{e.ageMs != null ? ` · served cached ${Math.round(e.ageMs / 60000)}m old` : ''}{e.where ? <span className="logs-where"> · {e.where}</span> : ''}</td>
+                    <td className="lft logs-detail">{e.error || (e.sev === 'slow' ? 'Slow build (approaching the 10s function limit)' : '')}{e.ageMs != null ? ` · served cached ${Math.round(e.ageMs / 60000)}m old` : ''}{e.where ? <span className="logs-where"> · {e.where}</span> : ''}{e.q ? <span className="logs-where"> · {e.q}</span> : ''}</td>
                   </tr>
                 ) })}</tbody>
               </table></div>
@@ -23813,7 +23815,7 @@ function Dashboard({ authUser, authEnabled, onLogout, realUser, onViewAs }) {
   // starts off so it can never be left on by accident.
   const [present, setPresent] = useState(false)
   const [showTerms, setShowTerms] = useState(false)
-  const agency = useAgencyLive(range, refreshKey, wonBasis)
+  const agency = useAgencyLive(range, refreshKey, wonBasis, !(authUser && authUser.role === 'viewer'))
   useClientLogos() // one-time brand-logo sync from Caalano Systems (avatars)
   // Server-backed settings: re-render on hydrate/change; enabled is a derived
   // write-through value so client on/off persists to the server like the rest.

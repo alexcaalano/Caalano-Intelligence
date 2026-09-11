@@ -18,6 +18,17 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.546.0 - 2026-09-11 · `PENDING`
+
+**Mobile pass 3b: every popup and drilldown readable on a phone**
+- Clicked every distinct clickable element on 15 screens at 390px (about 250 targets), then walked the two-level drills by hand: tile → lead list → CRM notes, stage → deals → notes, rep → funnel, form → answers → people, creative → tag editor, location → leads → answers, appointments → resulted list.
+- Lead drill modal (Timing outcomes, key-event lists) was crushed into one-letter columns inside a modal that hid sideways overflow; it now fills the phone, scrolls sideways with the contact pinned, and the same applies to the key-event people modal.
+- Detail rows that expand inside a sideways-scrolling table (rep funnel, form answers, creative tags, CRM notes, lost-reason people, location leads, drill children) are pinned to the visible frame using container-query units, so they read in place instead of scrolling off with the columns. Rows led by an empty spacer cell get the same treatment.
+- Open-pipeline deals under a stage scroll in place with the contact pinned; generic modals fill the phone with a sideways-scrolling body.
+- Reach bars open their breakdown card on tap as well as hover (hover cards elsewhere already opened on focus).
+
+---
+
 ## v3.545.0 - 2026-09-11 · `be8d181`
 
 **Mobile pass 3: every screen rendered at phone width and folded to fit**

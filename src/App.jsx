@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.545.0'
+const APP_VERSION = '3.546.0'
 // The business clock. Every server window is cut on the client's local day
 // (Caalano Systems location timezone), so any day the app derives on its own -
 // preset ranges, "today", CSV dates - must use the same clock rather than the
@@ -8227,7 +8227,7 @@ function V2ReachBar({ label, count, split, width, prevAt, leak, detail }) {
     setHov({ left, ax: Math.max(14, Math.min(POP_W - 14, x - left)) })
   }
   return (
-    <div ref={ref} className={`v2-bar${leak ? ' leak' : ''}`} onMouseMove={onMove} onMouseLeave={() => setHov(null)}>
+    <div ref={ref} className={`v2-bar${leak ? ' leak' : ''}`} onMouseMove={onMove} onMouseLeave={() => setHov(null)} onClick={(e) => (hov ? setHov(null) : onMove(e))}>
       <div className="track" />
       <div className="fill" style={{ width: `${Math.max(0, Math.min(100, width * 100))}%` }}>
         {split.meta ? <span className="m" style={{ flex: split.meta / tot }} /> : null}

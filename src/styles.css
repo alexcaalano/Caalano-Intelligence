@@ -5032,3 +5032,72 @@ td.lm-ker-n { font-weight: 600; color: var(--muted); font-variant-numeric: tabul
   .head { margin-bottom: 10px; }
   .kesc-v { font-size: 21px; }
 }
+
+/* ===== Mobile pass 3b - popups and drilldowns at phone width ===== */
+@media (max-width: 900px) {
+  /* Lead drill (Timing outcomes, key-event lists): the table used to be crushed
+     into one-letter columns inside a modal that hid sideways overflow. Now the
+     modal fills the phone and its table scrolls with the lead name pinned. */
+  .mr-drill-overlay { padding: 8px; }
+  .mr-drill { width: calc(100vw - 16px); max-width: none; max-height: 92vh; }
+  .mr-drill-head { padding: 12px 14px; }
+  .mr-drill-body { overflow-x: auto; -webkit-overflow-scrolling: touch; padding: 6px 12px 14px; }
+  .mr-drill .mr-table { min-width: 640px; }
+  .mr-drill .mr-table td, .mr-drill .mr-table th { white-space: nowrap; overflow-wrap: normal; word-break: normal; }
+  .mr-drill .mr-table th:first-child, .mr-drill .mr-table td:first-child { position: sticky; left: 0; z-index: 1; background: var(--panel); box-shadow: 1px 0 0 var(--border); }
+  /* Generic modals: the body may scroll sideways for anything wide it holds. */
+  .modal .m-body { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .modal-bg { padding: 8px; }
+  .modal { width: calc(100vw - 16px); max-width: none; }
+  .modal .m-head { padding: 12px 14px; }
+  .modal .m-body { padding: 12px 14px; }
+  /* Leaderboard rep detail sits in a row of a sideways-scrolling table: pin it to
+     the left edge at the visible width (viewport minus page and card padding). */
+  .u-lb tr.u-detail-row > td { padding: 0; position: sticky; left: 0; }
+  .u-detail { width: calc(100vw - 58px); padding: 12px 10px; }
+}
+@media (max-width: 560px) {
+  .u-detail { width: calc(100vw - 54px); }
+}
+@media (max-width: 900px) {
+  /* Key-event people modal: names and status pills stay on one line; the table
+     scrolls inside the modal body with the name pinned. */
+  .kp-tbl { min-width: 760px; }
+  .kp-tbl th, .kp-tbl td { white-space: nowrap !important; overflow-wrap: normal !important; word-break: normal !important; }
+  .kp-tbl td.kp-stage, .kp-tbl td.kp-appt { white-space: normal !important; }
+  .kp-tbl th:first-child, .kp-tbl td:first-child { position: sticky; left: 0; z-index: 1; background: var(--panel); box-shadow: 1px 0 0 var(--border); }
+  .kp-filters { flex-wrap: wrap; }
+}
+@media (max-width: 900px) {
+  /* Detail rows that expand inside a sideways-scrolling table (a rep's funnel,
+     a form's answers, a creative's tags, a lead's CRM notes, drill children):
+     pin the row to the left edge and size it to the frame you can see, so the
+     detail reads in place instead of being scrolled off with the columns.
+     The frame's width comes from a container query unit, so this holds inside
+     a card, a modal or a drill alike. */
+  .table-wrap, .tbl-scroll, .mr-drill-body, .modal .m-body, .fp-wrap { container-type: inline-size; }
+  tr.u-detail-row > td, tr.cc-edit-row > td, tr.form-people-row > td, tr.loc-lead-det > td, tr.lostppl-det > td, tr.lrv-detail > td,
+  tr.sub-row > td, tr.tr-src-drillrow > td, tr.u-notes-row > td, tr.ud-child > td, td.mr-kids-cell {
+    position: sticky; left: 0; z-index: 1; padding: 0; background: var(--panel-2);
+  }
+  tr.u-detail-row > td > *, tr.cc-edit-row > td > *, tr.form-people-row > td > *, tr.loc-lead-det > td > *, tr.lostppl-det > td > *, tr.lrv-detail > td > *,
+  tr.sub-row > td > *, tr.tr-src-drillrow > td > *, tr.u-notes-row > td > *, tr.ud-child > td > *, td.mr-kids-cell > * {
+    width: 100cqw; max-width: 100cqw; box-sizing: border-box;
+  }
+  .u-detail { width: 100cqw; }
+}
+@media (max-width: 900px) {
+  /* Same treatment for detail rows that lead with an empty spacer cell (form
+     answers, segment rows): drop the spacer and pin the detail. */
+  tr > td:first-child:empty:has(+ td[colspan]) { display: none; }
+  tr > td:first-child:empty + td[colspan] { position: sticky; left: 0; z-index: 1; padding: 0; background: var(--panel-2); }
+  tr > td:first-child:empty + td[colspan] > * { width: 100cqw; max-width: 100cqw; box-sizing: border-box; }
+}
+@media (max-width: 900px) {
+  /* Open-pipeline deals under a stage: scroll in place with the contact pinned. */
+  .bn-open-deals { overflow-x: auto; -webkit-overflow-scrolling: touch; container-type: inline-size; }
+  .bn-open-deals table { min-width: 560px; }
+  .bn-open-deals td, .bn-open-deals th { overflow-wrap: normal !important; word-break: normal !important; white-space: nowrap; }
+  .bn-open-deals th:first-child, .bn-open-deals td:first-child { position: sticky; left: 0; z-index: 1; background: var(--panel); box-shadow: 1px 0 0 var(--border); }
+  .bn-open-deals tr.u-notes-row > td { white-space: normal; }
+}

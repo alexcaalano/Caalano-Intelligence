@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.541.0 - 2026-09-11 · `PENDING`
+## v3.541.0 - 2026-09-11 · `1a6312b`
 
 **Key-event scorecards: occurred vs still to come**
 - Each calendar key-event tile (Caalano360 Pipeline performance, Meta and Google key events) gains a line "N occurred · M still to come". Occurred = the appointment's time has passed and it was not cancelled; still to come = booked in the period, not cancelled, appointment in the future.

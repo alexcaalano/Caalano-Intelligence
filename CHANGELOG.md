@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.545.0 - 2026-09-11 · `PENDING`
+## v3.545.0 - 2026-09-11 · `be8d181`
 
 **Mobile pass 3: every screen rendered at phone width and folded to fit**
 - Audited all 33 screens (Home, Daily, Weekly, Forecaster, Cockpit, Curator, Insights, Update, Monthly, Social, Reports, seven Settings sections, fifteen client tabs) at 390px with the demo client; fixed every case of content running off the right edge or squeezing into unreadable columns. Desktop is untouched (all rules sit under the 900px breakpoint).

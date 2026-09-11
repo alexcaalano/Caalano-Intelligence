@@ -38,3 +38,15 @@ ok(TAB_OPTIONS.some((t) => t.id === 'custom'), 'the custom dashboard is a tickab
 ok(DASH_MODULES.filter((m) => m.internal).map((m) => m.type).sort().join() === ['story', 'eff', 'sec:channels', 'sec:movers', 'sec:findings', 'sec:actions'].sort().join(), 'the agency-internal modules are exactly the six guarded ones')
 console.log(f ? `${f}/${n} FAILED` : `${n} assertions passed`)
 process.exit(f ? 1 : 0)
+
+// Audience tiers: a tier opens the dashboard to that role and every role above it.
+{
+  const m = src.match(/const DASH_AUD = \[([^\]]+)\]/)
+  assert.ok(m, 'DASH_AUD present')
+  assert.deepEqual(m[1].match(/'([a-z]+)'/g).map((x) => x.slice(1, -1)), ['super', 'admin', 'user', 'viewer'])
+  assert.ok(/const dashAudience = \(d\) => \{ const a = d && d\.audience; return a === 'viewers' \? 'viewer'/.test(src), 'legacy viewers maps to viewer')
+  assert.ok(/function dashVisibleTo\(role, d\)/.test(src))
+  const win = fs.readFileSync(new URL('../netlify/functions/windsor.mjs', import.meta.url), 'utf8')
+  assert.ok(/d\.audience !== 'viewer' && d\.audience !== 'viewers'/.test(win), 'server accepts both viewer spellings')
+}
+console.log('dash_test audience ok')

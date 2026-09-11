@@ -2652,7 +2652,7 @@ async function dashboardTabsFor(client) {
   try {
     const s = await getStore({ name: 'caalano-settings', consistency: 'strong' }).get('all', { type: 'json' })
     const d = s && s.dashboards && s.dashboards[client]
-    if (!d || d.audience !== 'viewers' || !Array.isArray(d.modules)) return []
+    if (!d || (d.audience !== 'viewer' && d.audience !== 'viewers') || !Array.isArray(d.modules)) return []
     const tabs = new Set()
     for (const m of d.modules) { const t = String((m && m.type) || ''); if (t === 'heading') continue; if (t.startsWith('tab:')) { const x = DASH_TAB_OF[t.slice(4)]; if (x) tabs.add(x) } else if (t.includes(':') && !t.startsWith('sec:')) { const x = DASH_TAB_OF[t.split(':')[0]]; if (x) tabs.add(x) } else tabs.add('overall') }
     return [...tabs]

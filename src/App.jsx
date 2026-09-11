@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.539.0'
+const APP_VERSION = '3.540.0'
 // The business clock. Every server window is cut on the client's local day
 // (Caalano Systems location timezone), so any day the app derives on its own -
 // preset ranges, "today", CSV dates - must use the same clock rather than the
@@ -4802,6 +4802,16 @@ function loadKeyEvents(clientId) {
 // figures, never a variant, so what the custom view shows reconciles with the
 // tabs to the number.
 function loadDashboard(clientId) { const d = SETTINGS.dashboards && SETTINGS.dashboards[clientId]; return d && Array.isArray(d.modules) && d.modules.length ? d : null }
+// Who a custom dashboard is open to: a tier, and everyone above it sees it too.
+// 'viewer' still needs the viewer's Custom dashboard box ticked in Permissions;
+// staff roles see it as soon as their tier is reached. Older saves stored
+// 'viewers' - read as 'viewer'.
+const DASH_AUD = ['super', 'admin', 'user', 'viewer']
+const DASH_AUD_LABEL = { super: 'Super Admins only', admin: 'Admins and above', user: 'Users and above', viewer: 'Viewers (ticked in Permissions) and all staff' }
+const DASH_ROLE_RANK = { superadmin: 0, admin: 1, user: 2, viewer: 3 }
+const dashAudience = (d) => { const a = d && d.audience; return a === 'viewers' ? 'viewer' : (DASH_AUD.includes(a) ? a : 'super') }
+const dashOpenToViewers = (d) => dashAudience(d) === 'viewer'
+function dashVisibleTo(role, d) { if (!d) return false; const r = DASH_ROLE_RANK[role]; return r != null && r <= DASH_AUD.indexOf(dashAudience(d)) }
 function saveDashboard(clientId, d) { SETTINGS.dashboards = { ...(SETTINGS.dashboards || {}), [clientId]: d }; writeLS(DASH_KEY, SETTINGS.dashboards); saveSettingsRemote({ dashboards: { [clientId]: d } }); bumpSettings() }
 // `sec:` modules are the Caalano360 sections by id; the plain ones are that
 // tab's other blocks; `tab:` modules embed a whole tab. `needs` gates a module
@@ -16010,10 +16020,10 @@ function ClientWorkspace({ client, index, data, config, range, nonce, wonBasis =
   // tab that answers "how is the business doing", so it belongs ahead of the
   // channel tabs rather than at the end of them. Self-detecting - it only
   // appears where the practice-management sync has created its patient fields.
-  // A custom dashboard, when one is built for this client. Super Admin only for
-  // now: the builder and the view both sit behind the role.
+  // A custom dashboard, when one is built for this client, shown to the tiers
+  // its audience setting opens it to (the builder stays Super Admin only).
   const dashAll = loadDashboard(client.id)
-  const dash = dashAll && (!authUser || authUser.role === 'superadmin' || (authUser.role === 'viewer' && dashAll.audience === 'viewers')) ? dashAll : null
+  const dash = dashAll && (!authUser || dashVisibleTo(authUser.role, dashAll)) ? dashAll : null
   if (dash) allTabs.push({ id: 'custom', label: dash.name || 'Custom view' })   // viewers still need the tab ticked: allowedTabsFE filters below
   if (isClinic) allTabs.push({ id: 'clinic', label: 'Clinic' })
   if (cfg.meta || client.meta) allTabs.push({ id: 'meta', label: 'Meta Ads' })
@@ -18042,10 +18052,15 @@ function DashboardBuilder({ client: c }) {
       <div className="dash-add">
         <span className="cap">Who can see it</span>
         <span className="chan-toggle sm">
-          <button type="button" className={(d.audience || 'super') === 'super' ? 'on' : ''} onClick={() => up({ audience: 'super' })}>Super Admins only</button>
-          <button type="button" className={d.audience === 'viewers' ? 'on' : ''} onClick={() => up({ audience: 'viewers' })}>Viewers you tick in Permissions</button>
+          {DASH_AUD.map((a) => <button key={a} type="button" className={dashAudience(d) === a ? 'on' : ''} onClick={() => up({ audience: a })}>{a === 'super' ? 'Super Admins only' : a === 'admin' ? 'Admin' : a === 'user' ? 'User' : 'Viewer'}</button>)}
         </span>
-        {d.audience === 'viewers' ? <span className="cap">Opened to viewers: it now appears as a <b>Custom dashboard</b> tick box in each viewer's allocation for this client. Nobody sees it until their box is ticked. Modules marked agency-internal are hidden from viewers automatically.</span> : <span className="cap">Only Super Admins see the tab. Staff and viewers see nothing new.</span>}
+        {(() => {
+          const a = dashAudience(d)
+          if (a === 'viewer') return <span className="cap">Open to <b>everyone</b>: every staff role sees the tab, and it appears as a <b>Custom dashboard</b> tick box in each viewer's allocation for this client - a viewer sees it only once their box is ticked. Modules marked agency-internal are hidden from viewers automatically.</span>
+          if (a === 'user') return <span className="cap">Open to <b>Users, Admins and Super Admins</b>. Viewers (clients) do not see it.</span>
+          if (a === 'admin') return <span className="cap">Open to <b>Admins and Super Admins</b>. Users and viewers do not see it.</span>
+          return <span className="cap">Only Super Admins see the tab. Staff and viewers see nothing new.</span>
+        })()}
       </div>
       <div className="dash-add">
         <label className="dash-name">Tab name <input value={d.name || ''} onChange={(e) => up({ name: e.target.value })} placeholder="Client view" maxLength={32} /></label>
@@ -18516,7 +18531,7 @@ function offeredTabsFor(c) {
   // A client's custom dashboard is offered to viewers only once a Super Admin
   // has opened it to them in the builder; until then it is not a tab they can hold.
   const dash = loadDashboard(c.id)
-  if (dash && dash.audience === 'viewers') out.push({ id: 'custom', label: dash.name || 'Custom view' })
+  if (dash && dashOpenToViewers(dash)) out.push({ id: 'custom', label: dash.name || 'Custom view' })
   if (c.meta) out.push({ id: 'meta', label: 'Meta Ads' })
   if (c.google) out.push({ id: 'google', label: 'Google Ads' })
   if (c.ga4) out.push({ id: 'analytics', label: 'Analytics' })
@@ -18605,7 +18620,7 @@ function AllocationEditor({ value, clients, onChange, actorRole }) {
   const toggleTab = (id) => { const cur = v.tabs == null ? TAB_OPTIONS.map((t) => t.id) : v.tabs; const s = new Set(cur); s.has(id) ? s.delete(id) : s.add(id); onChange({ ...v, tabs: [...s] }) }
   // Custom dashboards among the ticked clients: built at all, and opened to viewers.
   const dashBuilt = (clients || []).filter((c) => (v.clients || []).includes(c.id)).map((c) => ({ c, d: loadDashboard(c.id) })).filter((x) => x.d)
-  const dashOpen = dashBuilt.filter((x) => x.d.audience === 'viewers')
+  const dashOpen = dashBuilt.filter((x) => dashOpenToViewers(x.d))
   const isSuper = actorRole === 'superadmin'
   // Only a Super Admin can grant Admin / Super Admin. Keep the current value as a
   // (disabled) option so an existing role still shows even if you can't set it.
@@ -18636,10 +18651,10 @@ function AllocationEditor({ value, clients, onChange, actorRole }) {
           // The custom-dashboard grant only does something for a ticked client whose
           // dashboard a Super Admin has opened to viewers, so the chip says which.
           const lbl = dashOpen.length ? `Custom dashboard · ${dashOpen.map((x) => x.d.name || x.c.name).join(', ')}` : 'Custom dashboard'
-          const tip = dashOpen.length ? 'The custom dashboards opened to viewers for the ticked clients' : dashBuilt.length ? 'A ticked client has a custom dashboard, but it is still set to Super Admins only. Open it to viewers under that client’s settings → Custom dashboard.' : 'No ticked client has a custom dashboard yet. Build one under the client’s settings → Custom dashboard and open it to viewers.'
+          const tip = dashOpen.length ? 'The custom dashboards opened to viewers for the ticked clients' : dashBuilt.length ? 'A ticked client has a custom dashboard, but its audience is not set to Viewer yet. Set “Who can see it” to Viewer under that client’s settings → Custom dashboard.' : 'No ticked client has a custom dashboard yet. Build one under the client’s settings → Custom dashboard and open it to viewers.'
           return <button type="button" key={t.id} className={`chip ${on ? 'on' : ''}${dashOpen.length ? '' : ' chip-dim'}`} title={tip} onClick={() => toggleTab(t.id)}>{lbl}</button>
         })}</div>
-        {(v.tabs == null || v.tabs.includes('custom')) && !dashOpen.length ? <p className="alloc-note alloc-warn">Custom dashboard is ticked, but {dashBuilt.length ? `${dashBuilt.map((x) => x.c.name).join(', ')} ${dashBuilt.length === 1 ? 'has a dashboard that is' : 'have dashboards that are'} still set to Super Admins only` : 'none of the ticked clients has a custom dashboard yet'}. Nothing will show for this person until a dashboard is opened to viewers under the client’s settings → Custom dashboard.</p> : null}
+        {(v.tabs == null || v.tabs.includes('custom')) && !dashOpen.length ? <p className="alloc-note alloc-warn">Custom dashboard is ticked, but {dashBuilt.length ? `${dashBuilt.map((x) => x.c.name).join(', ')} ${dashBuilt.length === 1 ? 'has a dashboard that is' : 'have dashboards that are'} not open to viewers (audience is ${dashBuilt.map((x) => DASH_AUD_LABEL[dashAudience(x.d)]).filter((x, i, a) => a.indexOf(x) === i).join(' / ')})` : 'none of the ticked clients has a custom dashboard yet'}. Nothing will show for this person until a dashboard’s “Who can see it” is set to Viewer under the client’s settings → Custom dashboard.</p> : null}
         <div className="alloc-lab" style={{ marginTop: 10 }}>Extra access</div>
         <label className="alloc-check"><input type="checkbox" checked={v.reports === true} onChange={(e) => onChange({ ...v, reports: e.target.checked })} /> <b>Monthly Reports</b> - can view the <b>published</b> monthly reports for the clients above</label>
         <p className="alloc-note">Client access - only the ticked clients and tabs, and no agency-wide views. Monthly Reports shows only reports you've <b>published</b> (frozen snapshots), and can be granted on its own.</p>

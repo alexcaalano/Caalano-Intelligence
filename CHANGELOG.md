@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.542.0 - 2026-09-11 · `PENDING`
+## v3.542.0 - 2026-09-11 · `bc017f5`
 
 **Calendar key events follow the bookings made in the range**
 - On the key-event scorecards (Pipeline performance, Meta and Google key events, the drill columns behind them) occurred, showed, no-show and still to come are now counted over the appointments **booked in the selected range**, wherever the appointment date falls. Occurred = a live booking whose time has passed. So on every tile cancelled + occurred + still to come = booked, and the show rate uses the same booking cohort as the Appointments tab.

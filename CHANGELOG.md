@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.544.0 - 2026-09-11 · `PENDING`
+## v3.544.0 - 2026-09-11 · `0bba5e1`
 
 **Reliability log: where the CRM time went, and which request it was**
 - The `where` column now breaks CRM time down by endpoint family, e.g. `crm 35.1s/36 (opps 20.2s/12, appts 9.8s/15, conv 5.1s/9)`, so a slow build says which reads to attack.

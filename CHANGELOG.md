@@ -18,6 +18,20 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.557.0 - 2026-09-12 · `PENDING`
+
+**Docs: launch scope, domain and account area** - `SAAS-DESIGN.md` section
+14 records the launch decisions: new domain with a landing page and the app
+on `app.`, OAuth re-registration and redirect plan; first release limited to
+the client workspace views, workspace settings and (agency plan) the Agency
+Overview, with every other module behind a plan feature flag; the settings
+sections each side of the tenant line; the five-screen Account area
+(Workspaces, Members, Connections, Billing, Branding-later); the sign-up
+flow; and phase 1b inserted for the account area before GoHighLevel
+self-serve. No app changes.
+
+---
+
 ## v3.556.0 - 2026-09-12 · `4c75ab8`
 
 **Docs: Streamlined pricing added to the SaaS design** - the closest

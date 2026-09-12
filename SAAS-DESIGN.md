@@ -757,3 +757,85 @@ agency fee in the same band as theirs while including the agency overview
 they do not have, and makes the Stripe setup simple: one seat price with
 graduated tiers for business, one flat price for agency, one metered AI
 item. The `plans` rows in section 6 already carry this without change.
+
+## 14. Launch scope, domain and the account area (agreed 2026-09-12)
+
+**Domain.** The product launches on a new domain (name to be chosen). The
+root serves a marketing landing page; the app lives on `app.<domain>`.
+`360.caalanodigital.com.au` redirects to the app and keeps working for
+existing users through the changeover. Consequences to plan for:
+
+- OAuth redirect URLs must be re-registered on the new domain before the
+  switch: the GoHighLevel marketplace app (`caalano-connect`), and later the
+  Meta app and the Google OAuth client. The old URLs stay registered until
+  the redirect has been live for a week.
+- The login cookie is per host, so everyone signs in once more after the move.
+- The edge gate, `robots.txt` and the noindex header apply to `app.` only;
+  the landing page is public and indexable.
+- The landing page is a separate small site (Netlify, same account) so a
+  copy change never redeploys the app.
+
+**Launch scope: the client views only.** The first release to outside
+tenants ships:
+
+| Surface | At launch | Notes |
+|---|---|---|
+| Client workspace and all its tabs (overall, custom dashboards, users, meta, google, analytics, cohorts, forms, location, appointments, calendar performance, timing, calls, lost reasons) | yes | this is the product |
+| Settings for a workspace (key events, KPI targets, campaign links, Meta conversions, forms, qualified stage, aliases, logos, timing, catchment, custom dashboards) | yes | |
+| Agency Overview | agency plan only | |
+| Account area (section below) | yes | new |
+| Daily Performance, Weekly Traffic Light, Funnel Forecaster, Creative Cockpit, Meta Insights, Client Update, Organic Social Media | no | later releases, each behind its own feature flag |
+| Monthly Report / Monthly Reports | to confirm with Alex | |
+| Clinic tab, optimisation log, curator, Meta creative-fatigue webhook, competitors | no | Caalano-internal for now |
+
+Every module is a **feature flag in `plans.features`** (`module.trends`,
+`module.weekly`, `module.forecast`, `module.cockpit`, `module.insights`,
+`module.update`, `module.monthly`, `module.social`, `module.agency_overview`)
+checked through `can(ctx, 'module.<name>')`, so a later release is a row
+change, not a deploy. The internal `caalano` plan has all of them, so nothing
+changes for Caalano Digital's own use. The sidebar renders only the modules
+the plan grants; a module the plan lacks is not shown rather than shown
+locked, except where an upgrade prompt is wanted (agency overview on a
+business plan).
+
+Settings sections at launch map as follows. Workspace: `keyevents`, `kpis`,
+`campmap`, `metaconv`, `formmeta`, `qualstage`, `aliases`, `logos`,
+`clientctx`, `geo`, `adnames`, `health`, `dashboards`. Organisation: `ui`,
+`profile`. Not exposed to tenants at launch: `dailyperf`, `forecasts`,
+`creativemeta`, `creativetax`, `fatigue`, `competitors`, `socialkpis`,
+`optlog`, `curator`, `clinic`, `pdfdl`, `insights`. `enabled`/`restricted`
+become workspace status and member scoping; `clients` becomes the
+`workspaces` and `connections` tables.
+
+**The account area.** One new place, "Account", visible to owners and
+admins, with five screens:
+
+1. **Workspaces** - list, add (name, timezone, currency), rename, archive.
+   Adding one changes the Stripe quantity on business plans; the entitlement
+   function refuses the add when the plan's limit is reached and shows the
+   upgrade prompt instead.
+2. **Members** - invite by email with a role and, for viewers, the
+   workspaces and tabs they may see; change role; remove. The existing user
+   management screen, scoped to the organisation.
+3. **Connections** - per workspace, one card per provider (Caalano Systems,
+   Meta, Google Ads, GA4): connected account, status, last read, Connect /
+   Reconnect / Disconnect. Section 7.3.
+4. **Billing** - current plan, workspace count, next invoice, card, invoice
+   history, Upgrade / Downgrade / Cancel. Card, invoices and cancellation go
+   through Stripe's hosted customer portal; plan changes go through our own
+   page so the entitlement change and the Stripe change happen together.
+   Downgrading below the workspace count asks which workspaces to archive
+   first. Past-due puts the organisation into read-only until paid.
+5. **Branding** - white label, hidden behind the `white_label` feature at
+   launch. Logo, colours and custom domain per organisation, stored in
+   `org_branding`. Designed now, built later.
+
+Sign-up flow: email, organisation name, kind (business or agency), first
+workspace name, card via Stripe Checkout with the 14-day trial, then straight
+to Connections for that workspace. A business can add more workspaces at
+any time; the agency kind is a plan change, not a new account.
+
+**Phase plan adjustment.** The account area and module flags become
+**phase 1b**, between moving Caalano Digital in (phase 1) and GoHighLevel
+self-serve (phase 2), because Finr Advisory needs Workspaces, Members,
+Connections and Billing to exist before they can be a tenant.

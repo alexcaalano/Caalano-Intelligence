@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.568.0'
+const APP_VERSION = '3.569.0'
 // The business clock. Every server window is cut on the client's local day
 // (Caalano Systems location timezone), so any day the app derives on its own -
 // preset ranges, "today", CSV dates - must use the same clock rather than the
@@ -16003,7 +16003,7 @@ function OptimisationLog({ clientId, sheet, embedded = false }) {
 // Writes go through the server, which limits an Account User to their own
 // records and logs every change. Cards, not tables, so a phone shows it whole.
 const ACT_SECTIONS = {
-  appts: ['Appointments to result', 'Confirmed appointments whose time has passed with no result yet. Pick one, then Save.'],
+  appts: ['Appointments to result', 'New or confirmed appointments whose time has passed with no result yet. Pick one, then Save.'],
   wonNoValue: ['Won without a value', 'Marked won with no deal value, so revenue is understated.'],
   lostNoReason: ['Lost without a reason', 'Marked lost with no lost reason, so nothing can be learned from it.'],
   inbound: ['Messages with no reply', 'The contact wrote last and no person has replied since (an automation does not count).'],

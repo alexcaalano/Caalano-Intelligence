@@ -18,6 +18,14 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.569.0 - 2026-09-12 · `PENDING`
+
+**Appointments to result: new as well as confirmed** - an appointment past
+its time is listed when the CRM still says new (booked) or confirmed.
+Showed, no-show, cancelled and invalid are results and stay out.
+
+---
+
 ## v3.568.0 - 2026-09-12 · `99752f3`
 
 **Appointments to result: pick, then Save** - the row now shows the CRM's

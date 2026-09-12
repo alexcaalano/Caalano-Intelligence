@@ -5714,9 +5714,9 @@ async function _rawAppointments(locTok, locationId, startMs, endMs) {
   return out
 }
 const _actIsResulted = (s) => APPT_INVALID_RE.test(s) || APPT_CANCEL_RE.test(s) || apptShown(s) || APPT_NOSHOW_RE.test(s)
-// Only a CONFIRMED appointment whose time has passed needs a result; a booking
-// nobody confirmed is the CRM's own reminder flow, not a rep's to-do.
-const _actNeedsResult = (s) => /confirm/.test(s) && !_actIsResulted(s)
+// An appointment whose time has passed needs a result when the CRM still says
+// new (booked) or confirmed; showed, no-show, cancelled and invalid are results.
+const _actNeedsResult = (s) => /confirm|^new$|^booked$|^$/.test(s) && !_actIsResulted(s)
 // Conversations whose last message came from the contact: an enquiry or a
 // reply nobody has answered yet. The conversations search carries the
 // direction of the last message, so this is one call, no message bodies read.

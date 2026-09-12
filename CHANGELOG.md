@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.554.0 - 2026-09-12 · `PENDING`
+## v3.554.0 - 2026-09-12 · `a1b0347`
 
 **Docs: backup plan complete** - the 42 legacy release tags are on GitHub
 (605 tags, every release since v3.0.0 checkable by name) and `BACKUP.md`

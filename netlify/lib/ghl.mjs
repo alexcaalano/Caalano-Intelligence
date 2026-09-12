@@ -5764,12 +5764,22 @@ async function _inboundUnreplied(locTok, locationId) {
   out.sort((a, b) => (b.lastMs || 0) - (a.lastMs || 0))
   return out
 }
+// Notes and e-mail bodies arrive as HTML (a booking workflow writes
+// "<p><strong>Name:</strong> ...</p>"). Reps read text, so: block tags become
+// line breaks, the rest of the markup goes, entities are decoded.
+export function htmlToText(html) {
+  let t = String(html || '')
+  if (!/[<&]/.test(t)) return t.trim()
+  t = t.replace(/<\s*(br|\/p|\/div|\/li|\/h[1-6]|\/tr)\s*\/?>/gi, '\n').replace(/<\s*(p|div|li|tr)[^>]*>/gi, '').replace(/<[^>]+>/g, '')
+  t = t.replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'").replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)))
+  return t.replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim()
+}
 // The past notes on a contact, newest first.
 export async function contactNotes(locationId, contactId) {
   const locTok = await locationTokenOrDemo(locationId)
   if (isDemoToken(locTok)) { const d = demoGhl(`/contacts/${contactId}/notes`, {}); return (d && d.notes) || [] }
   const j = await ghlGet(locTok, `/contacts/${encodeURIComponent(contactId)}/notes`, {}).catch(() => ({ notes: [] }))
-  return (j.notes || []).map((n) => ({ id: n.id || n._id, body: String(n.body || ''), userId: n.userId || null, at: Date.parse(n.dateAdded || n.createdAt) || null })).sort((a, b) => (b.at || 0) - (a.at || 0)).slice(0, 50)
+  return (j.notes || []).map((n) => ({ id: n.id || n._id, body: htmlToText(n.body), userId: n.userId || null, at: Date.parse(n.dateAdded || n.createdAt) || null })).sort((a, b) => (b.at || 0) - (a.at || 0)).slice(0, 50)
 }
 // A contact's most recent conversation: the last messages, who sent them, and
 // the channel to reply on. Read-only; the reply is a separate op.
@@ -5788,7 +5798,7 @@ export async function contactConversation(locationId, { contactId = null, conver
   const raw = (mj && mj.messages && (mj.messages.messages || mj.messages)) || (Array.isArray(mj) ? mj : [])
   const messages = raw.map((m) => ({
     id: m.id || m._id, direction: String(m.direction || '').toLowerCase(), type: m.messageType || m.type || null,
-    body: String(m.body || (m.meta && m.meta.email && m.meta.email.subject) || '').slice(0, 2000),
+    body: htmlToText(m.body || (m.meta && m.meta.email && m.meta.email.subject) || '').slice(0, 2000),
     at: Date.parse(m.dateAdded || m.dateUpdated || m.createdAt) || null, userId: msgUserId(m) || null, source: m.source || null, status: m.status || null,
   })).filter((m) => m.at).sort((a, b) => a.at - b.at).slice(-30)
   const lastIn = [...messages].reverse().find((m) => m.direction === 'inbound')

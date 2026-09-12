@@ -71,3 +71,12 @@ console.log('actions_test ok')
   await assert.rejects(() => buildRepCard(DEMO_LOCATION, { from, to }), /userId/)
 }
 console.log('actions_test (repcard) ok')
+
+// Notes and e-mails arrive as HTML; reps get text.
+{
+  const { htmlToText } = await import('../netlify/lib/ghl.mjs')
+  assert.equal(htmlToText('<p style="padding-left: 0px!important;"><strong>Name: </strong>Lee Horan</p><p><strong>Phone: </strong>0404 807 972</p>'), 'Name: Lee Horan\nPhone: 0404 807 972')
+  assert.equal(htmlToText('Plain text stays'), 'Plain text stays')
+  assert.equal(htmlToText('a &amp; b<br>c'), 'a & b\nc')
+}
+console.log('actions_test (html) ok')

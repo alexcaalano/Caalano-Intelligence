@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.565.0 - 2026-09-12 · `PENDING`
+## v3.565.0 - 2026-09-12 · `14a7f02`
 
 **My results: a sales scorecard per rep** - third screen on Deals &
 Actions. For a rep and a period (7 days to 90 days, this or last month):

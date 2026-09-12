@@ -18,6 +18,16 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.560.0 - 2026-09-12 · `PENDING`
+
+**Docs: provider connection order** - `SAAS-DESIGN.md` phases reordered:
+GoHighLevel private install first, then Meta and Google Ads together (their
+App Review / developer token / OAuth verification are submitted at the start
+of phase 0, once the new domain carries a privacy policy and a deletion
+page), Google Analytics after, Windsor retired last. No app changes.
+
+---
+
 ## v3.559.0 - 2026-09-12 · `67ecb40`
 
 **Backup download buttons removed from Settings → Logs** - the backup runs

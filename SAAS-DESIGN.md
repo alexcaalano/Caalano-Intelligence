@@ -642,14 +642,21 @@ The `ghl` adapter, private-install flow through `caalano-connect.mjs` with
 on a Business plan with a manual Stripe subscription. **DPA and privacy
 policy must be live before this tenant connects.**
 
-**Phase 3 - Google Ads and GA4.**
-Google OAuth app, developer token Standard access, OAuth verification, the
-two adapters. Switch one Caalano workspace from Windsor to direct and
-compare a month of numbers before switching the rest.
+**Phase 3 - Meta and Google Ads, together.** Both are gated by outside
+approvals (Meta App Review; the Google Ads developer token at Standard
+access and OAuth verification), which take longer than the code, so the
+applications are submitted at the start of phase 0, as soon as the new
+domain carries a privacy policy and a data deletion page. The two adapters,
+the Connections cards, the Meta token-expiry job and the Meta data-deletion
+callback are built while the reviews run. Switch one Caalano workspace per
+provider from Windsor to direct and compare a month of numbers before
+switching the rest.
 
-**Phase 4 - Meta.**
-Meta app review, the adapter, data-deletion callback, token-expiry job.
-Same one-workspace comparison. When every Caalano workspace is on direct
+**Phase 3b - Google Analytics (GA4).** Same Google sign-in with one extra
+scope, covered by the same verification; a later release once Meta and
+Google Ads are stable.
+
+**Phase 4 - Retire Windsor.** When every Caalano workspace is on direct
 adapters, drop the Windsor adapter and the Windsor subscription.
 
 **Phase 5 - Billing and self-signup.**

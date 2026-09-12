@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.561.0 - 2026-09-12 · `PENDING`
+## v3.561.0 - 2026-09-12 · `be79abe`
 
 **Docs: Sign in with Google, and how a Caalano Systems install finds its
 account** - `SAAS-DESIGN.md` adds Google sign-in to identity (same OAuth

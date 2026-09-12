@@ -18,6 +18,16 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.570.0 - 2026-09-12 · `PENDING`
+
+**Fix: notes showed raw HTML** - a booking workflow writes its notes as
+HTML, which came through as tags. Notes and e-mail bodies in Deals &
+Actions are now plain text with line breaks kept. (The first push of this
+fix, bec036d, declared a helper twice and would not load; it was live for
+a few minutes and is replaced by this release.)
+
+---
+
 ## v3.569.0 - 2026-09-12 · `642e8f7`
 
 **Appointments to result: new as well as confirmed** - an appointment past

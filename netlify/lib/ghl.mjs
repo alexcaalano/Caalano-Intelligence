@@ -5765,15 +5765,9 @@ async function _inboundUnreplied(locTok, locationId) {
   return out
 }
 // Notes and e-mail bodies arrive as HTML (a booking workflow writes
-// "<p><strong>Name:</strong> ...</p>"). Reps read text, so: block tags become
-// line breaks, the rest of the markup goes, entities are decoded.
-export function htmlToText(html) {
-  let t = String(html || '')
-  if (!/[<&]/.test(t)) return t.trim()
-  t = t.replace(/<\s*(br|\/p|\/div|\/li|\/h[1-6]|\/tr)\s*\/?>/gi, '\n').replace(/<\s*(p|div|li|tr)[^>]*>/gi, '').replace(/<[^>]+>/g, '')
-  t = t.replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'").replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)))
-  return t.replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim()
-}
+// "<p><strong>Name:</strong> ...</p>"); htmlToText above turns them into the
+// text a rep reads. Exported here so the test can reach it.
+export { htmlToText }
 // The past notes on a contact, newest first.
 export async function contactNotes(locationId, contactId) {
   const locTok = await locationTokenOrDemo(locationId)

@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.555.0 - 2026-09-12 · `PENDING`
+## v3.555.0 - 2026-09-12 · `f1f9c35`
 
 **Docs: SaaS design decisions** - `SAAS-DESIGN.md` records the decisions
 taken with Alex: per-workspace pricing (working figure US$97, volume steps

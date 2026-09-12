@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.551.0 - 2026-09-12 · `PENDING`
+## v3.551.0 - 2026-09-12 · `a2ac1dd`
 
 **Fix: the site could not call its own background jobs** - the login gate at
 the edge refused every function call without a session cookie, including the

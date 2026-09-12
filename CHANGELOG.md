@@ -18,6 +18,21 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.549.0 - 2026-09-12 · `PENDING`
+
+**Docs: SaaS tenancy and connection design** - `SAAS-DESIGN.md` is the
+agreed-shape design for turning Caalano360 into a multi-tenant product:
+organisation (agency or business) and workspace tenancy, the Postgres schema
+with row level security, roles and the single `can()` entitlement function,
+plan rows and metering, the provider adapter interface (Meta, Google Ads,
+GA4, GoHighLevel, transitional Windsor) with per-provider review and token
+notes, the worker and sync-job model, credential encryption, a five-phase
+migration from today's Blobs setup, and the compliance checklist (DPA and
+privacy policy before any outside tenant connects). Nothing is implemented;
+the document is for review. No app changes.
+
+---
+
 ## v3.548.0 - 2026-09-12 · `0d28004`
 
 **Backup download that actually arrives, from a button**

@@ -18,6 +18,18 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.558.0 - 2026-09-12 · `PENDING`
+
+**Docs: SaaS and organisation role ladders, monthly reports at launch** -
+`SAAS-DESIGN.md` now has two role ladders modelled on GoHighLevel: the SaaS
+side (`saas_owner`, `saas_admin`, `saas_user`, in a `platform_roles` table
+with an audited impersonation rule) and the organisation side, which keeps
+today's `superadmin`, `admin`, `user`, `viewer` names so no user needs
+remapping. The monthly report module ships at launch as it is, with a later
+phase sketched for customisable report templates. No app changes.
+
+---
+
 ## v3.557.0 - 2026-09-12 · `9097767`
 
 **Docs: launch scope, domain and account area** - `SAAS-DESIGN.md` section

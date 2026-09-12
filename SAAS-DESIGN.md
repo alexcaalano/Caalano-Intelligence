@@ -123,13 +123,17 @@ create table users (
   last_seen_at  timestamptz
 );
 
-create table platform_admins (
-  user_id uuid primary key references users(id)
+create type platform_role as enum ('saas_owner', 'saas_admin', 'saas_user');
+create table platform_roles (                -- the SaaS side; nobody here is a tenant member by default
+  user_id uuid primary key references users(id),
+  role    platform_role not null,
+  granted_by uuid references users(id),
+  created_at timestamptz not null default now()
 );
 
 -- tenancy ----------------------------------------------------------------
 create type org_kind as enum ('agency', 'business');
-create type org_role as enum ('owner', 'admin', 'member', 'viewer');
+create type org_role as enum ('superadmin', 'admin', 'user', 'viewer'); -- same names the app uses today
 
 create table organisations (
   id            uuid primary key default gen_random_uuid(),
@@ -152,7 +156,7 @@ create table memberships (
   user_id    uuid not null references users(id),
   role       org_role not null,
   status     text not null default 'active',      -- active | pending | disabled
-  workspace_ids uuid[] ,                          -- viewers only; null = all
+  workspace_ids uuid[] ,                          -- viewers and restricted users; null = all
   tabs       text[],                              -- viewers only; today's user.tabs
   reports    boolean not null default false,      -- today's viewer.reports
   invited_by uuid references users(id),
@@ -326,20 +330,35 @@ that is allowed to set `app.org_id` per job.
 
 ## 5. Roles and permissions
 
+Two ladders, agreed 2026-09-12, modelled on how GoHighLevel separates the
+SaaS side from the agency side. Platform roles live in `platform_roles`;
+organisation roles live on each `membership`. A person can hold one of each.
+
+**Platform (SaaS) side**
+
 | Role | Who | Can |
 |---|---|---|
-| `platform_admin` | Alex, later support | See every organisation and workspace read-only, impersonate with an audit row, change plans, suspend. Not a member of any organisation by default. |
-| `owner` | The person who signed up, at least one per organisation | Everything `admin` can, plus billing, plan changes, delete organisation, transfer ownership. Last-owner guard, like today's last-superadmin guard. |
-| `admin` | Agency leads | Manage workspaces, connections, settings, invite and remove members (not owners). |
-| `member` | Agency staff, the client's marketing manager | See every workspace, edit workspace settings the plan allows, run reports, no billing, no member management, cannot add or remove connections. |
-| `viewer` | A client's staff, a stakeholder | Read only, limited to `workspace_ids` and `tabs`, `reports` flag for the report tab. |
+| `saas_owner` | Alex | Everything below, plus: grant and revoke platform roles, change plan definitions and prices, delete organisations, see revenue. Cannot be removed by anyone else; at least one must exist. |
+| `saas_admin` | The SaaS operations team | See every organisation, workspace, connection health and usage; impersonate a tenant user with an audit row on entry and exit; change an organisation's plan; suspend or reinstate; resend invites; run a backup or a re-sync. No pricing changes, no deletions. |
+| `saas_user` | Support and sales staff | Read-only across organisations: status, plan, usage, connection health, recent errors. No impersonation, no changes. |
 
-Mapping from today: `superadmin` -> `owner`, `admin` -> `admin`, `user` ->
-`member` (with `allClients=false` becoming a `workspace_ids` restriction on
-a member, which the schema allows), `viewer` -> `viewer`. Custom dashboard
-audiences (`super`, `admin`, `user`, `viewer`) map to `owner`, `admin`,
-`member`, `viewer`, and `dashVisibleTo(role, d)` keeps working with the new
-rank table `{owner:0, admin:1, member:2, viewer:3}`.
+Platform roles never touch tenant data through the normal app screens; they
+use a separate platform console (`/platform`) and are not members of any
+organisation unless explicitly invited, so Caalano Digital's own agency
+organisation is administered through the same membership roles as any tenant.
+
+**Organisation (agency or business) side** - the names the app uses today,
+unchanged, so nothing in the current user list needs remapping:
+
+| Role | Who | Can |
+|---|---|---|
+| `superadmin` | The person who signed up, at least one per organisation | Everything `admin` can, plus billing, plan changes, delete the organisation, transfer ownership. Last-superadmin guard, as today. |
+| `admin` | Agency leads | Manage workspaces, connections, settings, invite and remove members below superadmin. |
+| `user` | Agency staff, the client's marketing manager | See the workspaces they are allowed (all by default, or a restricted list as today's `allClients=false`), edit workspace settings the plan allows, run reports. No billing, no member management, no connections. |
+| `viewer` | A client's staff, a stakeholder | Read only, limited to `workspace_ids` and `tabs`, `reports` flag for the monthly reports. |
+
+Custom dashboard audiences (`super`, `admin`, `user`, `viewer`) and
+`dashVisibleTo(role, d)` keep working unchanged.
 
 **One function decides.** Every handler calls one thing and never reasons
 about roles itself:
@@ -347,14 +366,19 @@ about roles itself:
 ```js
 // netlify/lib/entitle.mjs
 // can(ctx, action, target) -> { ok: true } | { ok: false, reason }
-//   ctx    = { user, org, membership, plan, platformAdmin }
+//   ctx    = { user, org, membership, plan, platformRole?, impersonating? }
 //   action = 'workspace.read' | 'workspace.write' | 'workspace.create'
 //          | 'connection.create' | 'connection.delete' | 'settings.write'
 //          | 'member.invite' | 'member.remove' | 'billing.manage'
-//          | 'report.pdf' | 'insights.ai' | 'dashboard.custom' | ...
+//          | 'report.pdf' | 'insights.ai' | 'dashboard.custom' | 'module.<name>'
+//          | platform: 'org.suspend' | 'org.plan' | 'org.delete' | 'platform.roles' | 'pricing.edit'
 //   target = { workspaceId?, section?, tab?, feature? }
 export function can(ctx, action, target = {}) {
-  if (ctx.platformAdmin) return action.endsWith('.read') ? ok() : deny('platform admins are read-only')
+  if (ctx.platformRole) {                     // SaaS side, acting on a tenant
+    if (ctx.platformRole === 'saas_user') return action.endsWith('.read') ? ok() : deny('read-only')
+    if (PLATFORM_ONLY.has(action)) return ctx.platformRole === 'saas_owner' || (ctx.platformRole === 'saas_admin' && !OWNER_ONLY.has(action)) ? ok() : deny('role')
+    if (!ctx.impersonating) return action.endsWith('.read') ? ok() : deny('impersonate first (audited)')
+  }
   if (!ctx.membership || ctx.membership.status !== 'active') return deny('not a member')
   if (ctx.org.subscription_status === 'past_due' && !READ_ACTIONS.has(action)) return deny('billing')
   const role = ctx.membership.role
@@ -604,8 +628,8 @@ Tests: entitlement matrix, RLS isolation test with two organisations.
 A one-off `scripts/migrate-blobs-to-pg.mjs`: creates organisation
 `caalano` (kind agency, plan `caalano`), one workspace per
 `SETTINGS.clients` key, a `windsor` connection per workspace per provider
-id it has, a membership per `caalano-auth` user with the role mapping in
-section 5, settings sections split into `workspace_settings` and
+id it has, a membership per `caalano-auth` user with the same role name, Alex also
+gets `saas_owner` in `platform_roles`, settings sections split into `workspace_settings` and
 `org_settings`, snapshots, monthly, social, audit and diag rows copied.
 Dual-write for one release (Blobs and Postgres), then read from Postgres,
 then stop writing Blobs. Backups switch to `pg_dump` nightly to the private
@@ -785,7 +809,7 @@ tenants ships:
 | Agency Overview | agency plan only | |
 | Account area (section below) | yes | new |
 | Daily Performance, Weekly Traffic Light, Funnel Forecaster, Creative Cockpit, Meta Insights, Client Update, Organic Social Media | no | later releases, each behind its own feature flag |
-| Monthly Report / Monthly Reports | to confirm with Alex | |
+| Monthly Report (build and publish) and Monthly Reports (viewer side) | yes | as it is today; see the note on customisable reports below |
 | Clinic tab, optimisation log, curator, Meta creative-fatigue webhook, competitors | no | Caalano-internal for now |
 
 Every module is a **feature flag in `plans.features`** (`module.trends`,
@@ -834,6 +858,18 @@ Sign-up flow: email, organisation name, kind (business or agency), first
 workspace name, card via Stripe Checkout with the 14-day trial, then straight
 to Connections for that workspace. A business can add more workspaces at
 any time; the agency kind is a plan change, not a new account.
+
+**Customisable monthly reports (later).** At launch the monthly report is
+the fixed layout it has today. Tenants replacing a reporting tool will want
+to choose what a report contains, so the later design is: a report template
+per organisation (ordered sections chosen from the existing report blocks,
+each with its metric picks and a free-text block), workspace-level
+overrides, organisation branding on the cover once white label exists, and
+a schedule (build on the 1st, publish automatically or after review). The
+data behind every block already exists; this is a layout and picker layer,
+so it is a phase of its own after launch rather than a change to the
+report engine now. Keep the report blocks as separate components so they
+can be reordered later without rework.
 
 **Phase plan adjustment.** The account area and module flags become
 **phase 1b**, between moving Caalano Digital in (phase 1) and GoHighLevel

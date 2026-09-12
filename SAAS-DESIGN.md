@@ -56,6 +56,10 @@ allowed to look.
 | Background work | A worker (Railway or Fly, Sydney) pulling from a queue with per-organisation concurrency limits. Netlify Functions keep serving the UI and the short reads. |
 | Billing | Stripe. Plan and entitlement live in our database; Stripe is the source of truth for whether the subscription is paid. |
 | Hosting | GitHub + Netlify stay for the frontend and functions. Not Firebase. AWS deferred until a concrete need appears. |
+| Pricing model (agreed 2026-09-12) | **Per workspace**, one rate (working figure US$97 a month), with volume steps for agencies. Two sign-up kinds: business (one or several workspaces, no agency panel) and agency (adds the agency overview and performance management). |
+| White label | Not at launch. Schema leaves room (an `org_branding` row per organisation: logo, colours, custom domain) so it can be switched on later without a migration. |
+| First outside tenant | **Finr Advisory** (agreed 2026-09-12). DPA and privacy policy must be live first (section 11). |
+| Database host | **Neon** (agreed 2026-09-12). See section 13 for why, and why the database choice does not change function timeouts. |
 
 ## 3. Tenancy model
 
@@ -374,23 +378,32 @@ that counts.
 
 ## 6. Plans and metering
 
-| Plan | Kind | Workspaces | Connections | Members | Fastest refresh | History | Features |
-|---|---|---|---|---|---|---|---|
-| Business | business | 1 | 4 (one per provider) | 5 | 60 min | 13 months | monthly_report, pdf |
-| Agency Starter | agency | 5 | 20 | 10 | 60 min | 13 months | + custom_dashboards |
-| Agency Growth | agency | 20 | 80 | 30 | 15 min | 25 months | + ai_insights, white_label |
-| Agency Scale | agency | unlimited | unlimited | unlimited | 5 min | 37 months | + api, priority queue |
+Agreed 2026-09-12: pricing is **per workspace**, not per tier. The working
+figure is US$97 per workspace per month; the final number and the volume
+steps are still to be set (section 13 has the market comparison). What the
+plan rows encode:
 
-Prices are Alex's call and are not set here. What the schema fixes is that
-limits and features are **rows in `plans`**, not constants in code, so a
-custom deal is a new row. Stripe webhooks (`customer.subscription.updated`,
-`invoice.payment_failed`) update `organisations.subscription_status` and
-`plan_id`; the worker refuses to schedule warm jobs faster than
-`plan.refresh_minutes` and the entitlement function refuses creates over
-the limits. `usage_daily` is filled nightly from counts and from the worker
-so the billing page and the platform admin view have real numbers.
+| Plan | Kind | Workspaces | Agency panel | Refresh | History | Features |
+|---|---|---|---|---|---|---|
+| Business | business | 1 or more, each billed | no | 15 min | 25 months | monthly_report, pdf, custom_dashboards, ai_insights |
+| Agency | agency | 1 or more, each billed, volume steps | yes | 15 min | 25 months | + agency_overview, performance_management |
+| Caalano (internal) | agency | unlimited | yes | 5 min | unlimited | everything, windsor_bridge |
 
-Caalano Digital's own organisation is on an internal `caalano` plan row with
+Volume steps for agencies (to confirm): full rate for workspaces 1 to 10, a
+lower rate for 11 to 25, lower again above 25. White label is not offered at
+launch and is left as a future feature flag (`white_label`).
+
+The schema fixes that limits and features are **rows in `plans`**, not
+constants in code, so a custom deal is a new row. Stripe webhooks
+(`customer.subscription.updated`, `invoice.payment_failed`) update
+`organisations.subscription_status` and `plan_id`; Stripe's per-seat quantity
+is the workspace count, updated when a workspace is created or deleted. The
+worker refuses to schedule warm jobs faster than `plan.refresh_minutes`.
+`usage_daily` is filled nightly so the billing page and the platform admin
+view have real numbers, and because billing is per workspace an agency can
+see exactly what each client costs and on-charge it.
+
+Caalano Digital's own organisation is on the internal `caalano` plan row with
 no limits and no Stripe subscription.
 
 ## 7. Connections and provider adapters
@@ -641,15 +654,85 @@ organisation level, and the sign-in gains an organisation switcher.
 - [ ] Meta App Review and Google OAuth verification submissions prepared
       (screencast, test accounts, privacy URL, deletion URL).
 
-## 12. Questions for Alex before phase 0 starts
+## 12. Decisions taken on 2026-09-12
 
-1. Supabase or Neon? Both are fine; Supabase gives a built-in auth and
-   dashboard we would not use, Neon is plainer and branchable. My pick is
-   **Neon** for the database only, keeping our own auth.
-2. Prices for the four plans, trial length (14 days suggested), and whether
-   the Business plan should exist at launch or only agencies.
-3. Should agency members see billing usage per workspace (for on-charging
-   clients)? It changes what `usage_daily` records.
-4. White-label (custom domain + logo per organisation) is on Growth in the
-   table above; confirm or move it.
-5. Which existing client becomes the first external tenant in phase 2.
+1. **Database: Neon.** Database only; we keep our own login system.
+2. **Pricing: per workspace**, working figure US$97 a month, volume steps for
+   agencies, exact numbers still to set. Business and agency sign-ups, the
+   agency kind adds the overview panel and performance management.
+3. **Per-workspace usage** comes free with per-workspace billing; agencies can
+   on-charge clients from the bill itself.
+4. **White label: not at launch**, designed for later.
+5. **First outside tenant: Finr Advisory.** DPA and privacy policy first.
+
+## 13. Hosting, speed and cost - the reasoning
+
+**The ten-second timeout is Netlify's, not the database's.** Netlify
+Functions must answer in 10 seconds (26 with a setting), background
+functions get 15 minutes. No database choice changes that. What removes the
+timeouts is moving the heavy work (CRM builds, snapshots, warming) into a
+worker that has no time limit and serving every page from pre-built
+snapshots, which is section 9. The database is where those snapshots live.
+Both Neon and Supabase sit in Sydney on AWS underneath, so query latency to
+a Sydney function or worker is a few milliseconds either way.
+
+**Neon vs Supabase vs AWS**
+
+| | Neon | Supabase | AWS (RDS) |
+|---|---|---|---|
+| What it is | Postgres only | Postgres + auth + storage + realtime + dashboard | Postgres, self-managed on AWS |
+| Sydney region | yes | yes | yes |
+| Idle cost | scales to zero | always on | always on |
+| Branching (copy the DB for a test) | seconds, built in | no (manual dump) | manual snapshot/restore |
+| Extras we would use | none needed | none (we have our own auth) | none |
+| Setup and ops | minutes, none | minutes, none | hours, ongoing (patching, backups, networking) |
+| Cost at launch | ~US$19/month | ~US$25/month | ~US$15-60/month plus time |
+
+Neon because it is the plain thing we need, branching makes every migration
+rehearsable, and it costs nothing while idle. Supabase would be fine and is a
+day's work to switch to. AWS gives control we do not need yet at a cost in
+attention; it stays deferred. Firebase remains rejected (not relational).
+
+**The bundle for launch**
+
+| Piece | Where | Why | Cost |
+|---|---|---|---|
+| Website + light API + OAuth callbacks | Netlify (as now) | already set up: CI, staging, backups, edge gate | current plan |
+| Database | Neon, Sydney | above | ~US$19 |
+| Worker (all heavy reads, snapshots, warming, backups) | Railway or Fly, Sydney, one small service in this repo (`worker/`) | no time limit, per-tenant concurrency, shares `netlify/lib` | ~US$10-20 |
+| Queue | Postgres table (`sync_jobs`) | one less service; Upstash Redis only if it ever bottlenecks | 0 |
+| Billing | Stripe | standard | % of revenue |
+| Backups | Neon point-in-time restore + nightly `pg_dump` to the backups repo | replaces the Blobs job | 0 |
+
+Roughly US$50-80 a month on top of what runs today, before Stripe fees.
+
+**The alternative worth knowing about:** moving everything (site, API,
+worker, database) onto Railway alone. One platform, no timeouts anywhere,
+one bill. It costs about a week to re-host the functions as one Node
+server, and gives up Netlify's CDN, edge gate and the staging/CI setup just
+finished. Not for now. The worker is written as plain Node so that if the
+Netlify side ever becomes the bottleneck, the move is mechanical.
+
+**What actually makes it fast:** every page reads a snapshot the worker
+built minutes ago, and a live read happens only for a range nobody has asked
+for before, which then queues a warm. That is the same design as the current
+Blobs caches, with the keys in Postgres and the work off the request path.
+The database choice is a small part of the speed story; the worker is most
+of it.
+
+**Market comparison used for pricing (USD/month, September 2026)**
+
+| Product | Model | Price |
+|---|---|---|
+| AgencyAnalytics | per client | $20 per client, plans from $59 for 5 |
+| DashThis | per dashboard | from about $42 |
+| Swydo | per data source | $49 for 10, $4.50 each after |
+| Databox | per data source | $3 to $5.60 per extra source |
+| Whatagraph | credits | $812 minimum |
+| Hyros | per tracked revenue | $230 (annual) / $459 (monthly) to $5,249 |
+| GoHighLevel AI Employee add-on | per sub-account | $50 to $97 |
+| Streamlined Analytics (streamlined.so) | AI call review, conversation analysis and reporting for GoHighLevel agencies | 14-day trial; prices not reachable from the agent, Alex to supply |
+
+Report builders sit at $20 to $45 per client; attribution and intelligence
+tools (Hyros) sit at $230 to $5,000+. A $97 per-workspace price is only
+defensible as the second kind, which is the positioning.

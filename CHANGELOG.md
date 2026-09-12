@@ -18,6 +18,20 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.555.0 - 2026-09-12 · `PENDING`
+
+**Docs: SaaS design decisions** - `SAAS-DESIGN.md` records the decisions
+taken with Alex: per-workspace pricing (working figure US$97, volume steps
+for agencies, business and agency sign-up kinds), white label deferred but
+designed for, Finr Advisory as the first outside tenant, Neon as the
+database. New section 13 explains why the ten-second timeout is Netlify's
+and is removed by the worker rather than the database, compares Neon,
+Supabase and AWS, sets out the launch bundle and its cost, and lists the
+market pricing used (AgencyAnalytics, DashThis, Swydo, Databox, Whatagraph,
+Hyros, GoHighLevel add-ons, Streamlined). No app changes.
+
+---
+
 ## v3.554.0 - 2026-09-12 · `a1b0347`
 
 **Docs: backup plan complete** - the 42 legacy release tags are on GitHub

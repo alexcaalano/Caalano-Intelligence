@@ -5103,7 +5103,7 @@ td.lm-ker-n { font-weight: 600; color: var(--muted); font-variant-numeric: tabul
 }
 
 /* Settings → Logs: one-click backup row */
-.logs-backup { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; border: 1px dashed var(--border-2); border-radius: 10px; background: var(--panel-2); margin-bottom: 12px; }
-.logs-backup-btns { display: flex; flex-wrap: wrap; gap: 8px; }
+.logs-backup-line { margin: 0 0 12px; }
+.logs-backup-line a { color: var(--accent); }
 .logs-backup-ok { color: var(--pos); }
 .logs-backup-err { color: var(--neg, #e0566c); }

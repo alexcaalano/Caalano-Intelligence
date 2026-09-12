@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.558.0'
+const APP_VERSION = '3.559.0'
 // The business clock. Every server window is cut on the client's local day
 // (Caalano Systems location timezone), so any day the app derives on its own -
 // preset ranges, "today", CSV dates - must use the same clock rather than the
@@ -17403,34 +17403,29 @@ const auditAgo = (ms) => {
 // function serves, fetched with the session cookie and saved, so nobody has to
 // type a function URL. Three flavours: config only, with the CRM token (goes
 // in the password manager), with the logs (bulky).
-function BackupButtons() {
-  const [busy, setBusy] = useState(null)
-  const [msg, setMsg] = useState(null)
-  const grab = async (kind) => {
-    setBusy(kind); setMsg(null)
-    const qs = kind === 'secrets' ? '?secrets=1' : kind === 'logs' ? '?logs=1' : ''
-    try {
-      const r = await fetch(`/.netlify/functions/backup-export${qs}`, { credentials: 'same-origin' })
-      if (!r.ok) { let t = ''; try { t = (await r.json()).error || '' } catch { /* not json */ } throw new Error(t || `server ${r.status}`) }
-      const blob = await r.blob()
-      const cd = r.headers.get('content-disposition') || ''
-      const name = (cd.match(/filename="([^"]+)"/) || [])[1] || `caalano360-backup-${new Date().toISOString().slice(0, 10)}.json`
-      const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 5000)
-      setMsg({ ok: true, text: `Downloaded ${name} (${Math.round(blob.size / 1024)} KB)${kind === 'secrets' ? ' - this one holds the CRM token: keep it in the password manager only.' : ''}` })
-    } catch (e) { setMsg({ ok: false, text: `Backup failed: ${String((e && e.message) || e)}` }) }
-    setBusy(null)
-  }
-  return (
-    <div className="logs-backup">
-      <span className="cap"><b>Backup</b> · everything that lives only on the server (settings, users, terms, history). The code is on GitHub already.</span>
-      <div className="logs-backup-btns">
-        <button className="set-relink" disabled={!!busy} onClick={() => grab('plain')}>{busy === 'plain' ? 'Preparing…' : '⤓ Download backup'}</button>
-        <button className="set-relink" disabled={!!busy} onClick={() => grab('secrets')} title="Adds the Caalano Systems token. Store this file in your password manager, nowhere else.">{busy === 'secrets' ? 'Preparing…' : '⤓ With CRM token'}</button>
-        <button className="set-relink" disabled={!!busy} onClick={() => grab('logs')} title="Adds the reliability and activity logs. Bulky; the daily job keeps these too.">{busy === 'logs' ? 'Preparing…' : '⤓ With logs'}</button>
-      </div>
-      {msg ? <p className={`cap ${msg.ok ? 'logs-backup-ok' : 'logs-backup-err'}`} style={{ margin: '6px 0 0' }}>{msg.text}</p> : null}
-    </div>
-  )
+// One quiet line: when the daily backup last ran. The download buttons that
+// used to sit here are gone - the backup is automatic now and the file holds
+// everything sensitive, so it is not something to leave a button for on a
+// page people share screenshots of. Superadmins can still fetch it by URL
+// (see BACKUP.md).
+function BackupStatus() {
+  const [st, setSt] = useState(null)
+  useEffect(() => {
+    let dead = false
+    fetch('/.netlify/functions/settings-backup-now?status=1&format=json', { credentials: 'same-origin' })
+      .then((r) => (r.ok ? r.json() : null)).then((j) => { if (!dead) setSt(j || { error: true }) }).catch(() => { if (!dead) setSt({ error: true }) })
+    return () => { dead = true }
+  }, [])
+  if (!st) return null
+  const ago = (iso) => { const m = Math.round((Date.now() - Date.parse(iso || 0)) / 60000); return !isFinite(m) ? 'never' : m < 60 ? `${m} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} days ago` }
+  let text, cls = ''
+  if (st.error) { text = 'Daily backup status unavailable.'; cls = 'logs-backup-err' }
+  else if (!st.configured) { text = 'Daily backup is not set up (BACKUP_GH_TOKEN / BACKUP_GH_REPO).'; cls = 'logs-backup-err' }
+  else if (!st.last) text = 'Daily backup: has not run yet.'
+  else if (st.last.state === 'ok') { const r = st.last.result || {}; text = `Daily backup: last succeeded ${ago(st.last.finishedAt)} (${r.files || 0} files, ${Math.round((r.bytes || 0) / 1024)} KB).`; cls = 'logs-backup-ok' }
+  else if (st.last.state === 'running') text = `Daily backup: running (started ${ago(st.last.startedAt)}).`
+  else { text = `Daily backup: last run ${st.last.state} ${ago(st.last.finishedAt)}${st.last.error ? ` - ${st.last.error}` : ''}.`; cls = 'logs-backup-err' }
+  return <p className={`cap logs-backup-line ${cls}`}>{text} <a href="/.netlify/functions/settings-backup-now?status=1" target="_blank" rel="noreferrer">Details</a></p>
 }
 
 function LogsPanel({ clients }) {
@@ -17512,7 +17507,7 @@ function LogsPanel({ clients }) {
             <button className={tab === 'activity' ? 'on' : ''} onClick={() => setTab('activity')}>Activity trail</button>
           </div>
         </div>
-        <BackupButtons />
+        <BackupStatus />
       </div>
       {tab === 'versions' && (
         <div className="card">

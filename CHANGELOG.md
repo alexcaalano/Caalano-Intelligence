@@ -18,6 +18,16 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.559.0 - 2026-09-12 · `PENDING`
+
+**Backup download buttons removed from Settings → Logs** - the backup runs
+by itself now and the file holds everything sensitive, so the three download
+buttons are gone. In their place one line says when the daily backup last
+ran (files, size) with a Details link to the status page. The downloads are
+still available to superadmins by URL, as `BACKUP.md` describes.
+
+---
+
 ## v3.558.0 - 2026-09-12 · `69f7b88`
 
 **Docs: SaaS and organisation role ladders, monthly reports at launch** -

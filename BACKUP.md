@@ -16,10 +16,21 @@ someone who has never seen the app could do it from this page.
 
 ## Taking a backup now
 
-1. Signed in as a superadmin, open Settings → Logs and press **Download backup**. A JSON file downloads with every store above except the token and the two log stores.
-2. Press **With CRM token** for the version that includes the token store. Store that one in the password manager only. **With logs** adds the reliability and activity logs (bulky; the daily job keeps those too).
-   The same three downloads are also at `/.netlify/functions/backup-export`, `?secrets=1` and `?logs=1` on the site's own domain.
-3. `git bundle create caalano360-YYYYMMDD.bundle --all` from a checkout (after `git fetch --tags`) gives one file holding the whole history.
+The daily job (next section) is the backup. To take one by hand, signed in as
+a superadmin, open these on the site's own domain; each downloads a JSON file:
+
+- `/.netlify/functions/backup-export` - every store except the token and the
+  two log stores.
+- `/.netlify/functions/backup-export?secrets=1` - adds the Caalano Systems
+  token store. Keep this file in the password manager only.
+- `/.netlify/functions/backup-export?logs=1` - adds the reliability and
+  activity logs (bulky).
+
+There are no buttons for these in the app any more: the file holds
+everything sensitive and the backup runs by itself, so Settings → Logs only
+shows when the last daily backup ran. `git bundle create
+caalano360-YYYYMMDD.bundle --all` from a checkout gives one file with the
+whole code history.
 
 ## Automatic daily backup
 

@@ -18,6 +18,17 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.561.0 - 2026-09-12 · `PENDING`
+
+**Docs: Sign in with Google, and how a Caalano Systems install finds its
+account** - `SAAS-DESIGN.md` adds Google sign-in to identity (same OAuth
+client as Google Ads, non-sensitive scopes, `google_sub` on users) and
+spells out both install routes for the private GoHighLevel app: from inside
+the app with a signed state, or from GoHighLevel's side via an unclaimed
+install that is attached after sign-in. No app changes.
+
+---
+
 ## v3.560.0 - 2026-09-12 · `4996597`
 
 **Docs: provider connection order** - `SAAS-DESIGN.md` phases reordered:

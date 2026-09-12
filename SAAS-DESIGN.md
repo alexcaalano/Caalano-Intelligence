@@ -49,7 +49,7 @@ allowed to look.
 |---|---|
 | Tenant unit | **Organisation**. `kind` is `agency` or `business`. A business is an organisation limited to one workspace. |
 | Reporting unit | **Workspace** = today's "client". Every setting section, snapshot, connection and log row hangs off a workspace or an organisation. |
-| Identity | One `users` table, global. A person can belong to several organisations with a different role in each. Email + magic link or password; the current `AUTH_SECRET` session cookie stays. |
+| Identity | One `users` table, global. A person can belong to several organisations with a different role in each. Email + password or magic link, **plus Sign in with Google** (agreed 2026-09-12: the same Google OAuth client used for Google Ads; the sign-in scopes are non-sensitive so they need no verification wait). The current `AUTH_SECRET` session cookie stays. |
 | Database | Postgres (Supabase or Neon, Sydney region) with row level security keyed on the organisation. Netlify Blobs kept only for caches that can be rebuilt. |
 | Credentials | Never stored in plain text. AES-256-GCM per connection, key encryption key in the environment, wrapped data key per row (section 8). |
 | Data path | Provider adapters that call Meta, Google Ads, GA4 and GoHighLevel directly and return the same row shape `windsorFetch` returns today. Windsor stays as a third adapter for Caalano Digital's own workspaces during migration. |
@@ -117,7 +117,8 @@ create table users (
   id            uuid primary key default gen_random_uuid(),
   email         citext unique not null,
   name          text not null default '',
-  password_hash text,                       -- null when magic-link only
+  password_hash text,                       -- null when magic-link or Google only
+  google_sub    text unique,                -- Google account id once they have signed in with Google
   terms_version text, terms_accepted_at timestamptz,
   created_at    timestamptz not null default now(),
   last_seen_at  timestamptz
@@ -520,6 +521,35 @@ over per workspace with a feature flag.
   update is a single `update ... where id = ? and cred_iv = ?` compare-and-set.
 - `ghl.mjs` currently keys everything by `locationId`; it becomes
   `connection.external_id`, no other change.
+- **How an install reaches the right customer account.** Two routes, both
+  land on the same callback:
+  1. *From inside the app* (the documented route). Account -> Connections ->
+     Connect Caalano Systems. We send the person to GoHighLevel's
+     choose-location screen with a signed `state` carrying
+     `{orgId, workspaceId, userId}`. They pick their location (or, for an
+     agency install, their agency and then the locations), approve the nine
+     read scopes, and come back to the callback, which already knows which
+     workspace the location belongs to. A green card, nothing to log in to
+     again.
+  2. *From GoHighLevel's side* (someone finds the private install link
+     first). The callback arrives with no `state`. We hold the tokens in a
+     short-lived "unclaimed install" row, show the sign-in / sign-up screen,
+     and after sign-in ask "attach this location to which workspace?" with
+     the option to create one. If nobody claims it within an hour the
+     tokens are revoked and discarded.
+  An agency-level install mints one location token per chosen location
+  through `locations.readonly`, exactly as Caalano's own install does today,
+  so an agency customer installs once and picks locations from a list. A
+  "private" marketplace app is simply unlisted: it needs no GoHighLevel
+  review and is installed only through our link.
+
+**Sign in with Google.** The Google OAuth client registered for Google Ads
+also offers "Continue with Google" on the login page (`openid email
+profile`). A Google sign-in that matches a pending invitation or an existing
+user's email signs that user in; any other Google account is offered
+sign-up. Google then carries the person's 2FA, which is the security gain.
+Email + password stays for anyone without Google. Microsoft sign-in can be
+added the same way later.
 
 **Windsor (transitional)**
 - Adapter wraps today's `windsorFetch`. Only Caalano Digital's organisation

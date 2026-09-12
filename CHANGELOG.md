@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.567.0 - 2026-09-12 · `PENDING`
+## v3.567.0 - 2026-09-12 · `0b3793c`
 
 **Link a person to their CRM user** - in Team, under each ticked account
 for an Account Admin or Account User, a "Link to their CRM user" dropdown

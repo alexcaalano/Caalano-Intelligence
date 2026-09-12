@@ -16,8 +16,9 @@ someone who has never seen the app could do it from this page.
 
 ## Taking a backup now
 
-1. Signed in as a superadmin, open `/.netlify/functions/backup-export`. A JSON file downloads with every store above except the token.
-2. Open `/.netlify/functions/backup-export?secrets=1` for the version that includes the token store. Store that one in the password manager only.
+1. Signed in as a superadmin, open Settings → Logs and press **Download backup**. A JSON file downloads with every store above except the token and the two log stores.
+2. Press **With CRM token** for the version that includes the token store. Store that one in the password manager only. **With logs** adds the reliability and activity logs (bulky; the daily job keeps those too).
+   The same three downloads are also at `/.netlify/functions/backup-export`, `?secrets=1` and `?logs=1` on the site's own domain.
 3. `git bundle create caalano360-YYYYMMDD.bundle --all` from a checkout (after `git fetch --tags`) gives one file holding the whole history.
 
 ## Automatic daily backup

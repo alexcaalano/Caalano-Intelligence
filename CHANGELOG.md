@@ -18,6 +18,14 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.548.0 - 2026-09-12 · `PENDING`
+
+**Backup download that actually arrives, from a button**
+- Settings → Logs gains a Backup row with three buttons: Download backup, With CRM token, With logs. No function URL to type.
+- The export read every key one at a time, so on a site with a few thousand log rows it ran past the function limit and the download never came. Reads now run twelve at a time, the two bulky log stores are left out unless asked (the daily job keeps them), and a store that still runs out of time is cut short and marked rather than losing the whole file.
+
+---
+
 ## v3.547.0 - 2026-09-11 · `3eab99f`
 
 **Backups: a tested restore path**

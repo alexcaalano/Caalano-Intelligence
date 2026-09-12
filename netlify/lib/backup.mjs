@@ -21,8 +21,8 @@ export const BACKUP_STORES = [
   { name: 'caalano-monthly', what: 'Monthly report snapshots' },
   { name: 'caalano-social', what: 'Organic social snapshots' },
   { name: 'caalano-clinic', what: 'Clinic snapshots' },
-  { name: 'caalano-audit', what: 'Who opened what, when' },
-  { name: 'caalano-diag', what: 'Reliability log', cap: 4000 },
+  { name: 'caalano-audit', what: 'Who opened what, when', logs: true },
+  { name: 'caalano-diag', what: 'Reliability log', cap: 4000, logs: true },
   { name: 'meta-webhooks', what: 'Meta creative-fatigue verdicts' },
   { name: 'caalano-speedscan', what: 'Speed-to-lead scan state' },
 ]
@@ -34,34 +34,49 @@ const NOT_BACKED_UP = ['caalano-cache', 'caalano-oppcache', 'caalano-pipecache',
 
 // One store -> { key: value }. Values are JSON where they parse and text where
 // they do not, so nothing is dropped for being an unexpected shape.
-async function dumpStore(name, cap = 20000) {
+// Reads run twelve at a time: one at a time, a store with a few thousand keys
+// took longer than a function is allowed to run, and the download never came.
+async function dumpStore(name, cap = 20000, deadline = 0) {
   const store = getStore({ name, consistency: 'strong' })
   const out = {}
-  let cursor, n = 0, truncated = false
+  let cursor, n = 0, truncated = false, cutShort = false
+  const keys = []
   do {
     const page = await store.list({ cursor })
-    for (const b of page.blobs || []) {
-      if (n >= cap) { truncated = true; break }
-      const txt = await store.get(b.key, { type: 'text' }).catch(() => null)
-      if (txt == null) continue
-      try { out[b.key] = JSON.parse(txt) } catch { out[b.key] = { _text: txt } }
-      n++
-    }
+    for (const b of page.blobs || []) { if (keys.length >= cap) { truncated = true; break } keys.push(b.key) }
     cursor = truncated ? null : page.cursor
   } while (cursor)
-  return { keys: n, truncated, data: out }
+  let i = 0
+  const worker = async () => {
+    while (i < keys.length) {
+      if (deadline && Date.now() > deadline) { cutShort = true; return }
+      const key = keys[i++]
+      const txt = await store.get(key, { type: 'text' }).catch(() => null)
+      if (txt == null) continue
+      try { out[key] = JSON.parse(txt) } catch { out[key] = { _text: txt } }
+      n++
+    }
+  }
+  await Promise.all(Array.from({ length: 12 }, worker))
+  return { keys: n, truncated, ...(cutShort ? { cutShort: true } : {}), data: out }
 }
 
 // Everything, as one object. `includeSecrets` adds the token store.
-export async function collectBackup({ includeSecrets = false } = {}) {
+// `includeLogs` adds the two log stores (reliability, activity), which are the
+// bulky ones; the interactive download leaves them out unless asked so it always
+// finishes inside the function limit. `budgetMs` cuts a store short rather than
+// losing the whole download; a cut-short store is marked so a restore knows.
+export async function collectBackup({ includeSecrets = false, includeLogs = true, budgetMs = 0 } = {}) {
   const at = new Date().toISOString()
+  const started = Date.now()
   const stores = {}
-  const list = includeSecrets ? [...BACKUP_STORES, ...SECRET_STORES] : BACKUP_STORES
+  const list = (includeSecrets ? [...BACKUP_STORES, ...SECRET_STORES] : BACKUP_STORES).filter((s) => includeLogs || !s.logs)
   for (const s of list) {
-    try { stores[s.name] = { what: s.what, ...(await dumpStore(s.name, s.cap)) } }
+    try { stores[s.name] = { what: s.what, ...(await dumpStore(s.name, s.cap, budgetMs ? started + budgetMs : 0)) } }
     catch (e) { stores[s.name] = { what: s.what, error: String((e && e.message) || e).slice(0, 200), keys: 0, data: {} } }
   }
-  return { format: 'caalano360-backup/2', at, site: process.env.URL || null, includesSecrets: includeSecrets, notBackedUp: NOT_BACKED_UP, stores }
+  const skippedLogs = includeLogs ? [] : BACKUP_STORES.filter((s) => s.logs).map((s) => s.name)
+  return { format: 'caalano360-backup/2', at, site: process.env.URL || null, includesSecrets: includeSecrets, includesLogs: includeLogs, notBackedUp: [...NOT_BACKED_UP, ...skippedLogs], stores }
 }
 
 // The scheduled path: every non-secret store to the GitHub repo, as one file

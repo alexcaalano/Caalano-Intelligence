@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.559.0 - 2026-09-12 · `PENDING`
+## v3.559.0 - 2026-09-12 · `67ecb40`
 
 **Backup download buttons removed from Settings → Logs** - the backup runs
 by itself now and the file holds everything sensitive, so the three download

@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.569.0 - 2026-09-12 · `PENDING`
+## v3.569.0 - 2026-09-12 · `642e8f7`
 
 **Appointments to result: new as well as confirmed** - an appointment past
 its time is listed when the CRM still says new (booked) or confirmed.

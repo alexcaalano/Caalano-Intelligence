@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.560.0 - 2026-09-12 · `PENDING`
+## v3.560.0 - 2026-09-12 · `4996597`
 
 **Docs: provider connection order** - `SAAS-DESIGN.md` phases reordered:
 GoHighLevel private install first, then Meta and Google Ads together (their

@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.568.0 - 2026-09-12 · `PENDING`
+## v3.568.0 - 2026-09-12 · `99752f3`
 
 **Appointments to result: pick, then Save** - the row now shows the CRM's
 current status next to the time, only confirmed appointments whose time has

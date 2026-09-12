@@ -427,8 +427,16 @@ if (token) {
 
 export const config = {
   path: '/*',
-  // Always-public endpoints: the login API, the GoHighLevel OAuth callback, and
-  // the Meta Ads webhook receiver (Meta calls it server-side with no cookie; it
-  // secures itself with the X-Hub-Signature-256 HMAC check instead).
-  excludedPath: ['/.netlify/functions/auth', '/.netlify/functions/caalano-connect', '/.netlify/functions/meta-webhook'],
+  // Always-public endpoints: the login API, the GoHighLevel OAuth callback, the
+  // Meta Ads webhook receiver (Meta calls it server-side with no cookie; it
+  // secures itself with the X-Hub-Signature-256 HMAC check instead), and the
+  // two background jobs the site fires at itself over HTTP (the warmer and the
+  // daily backup). Those carry no cookie either; each refuses any request
+  // without the shared warm token (constant-time compare in lib/warm.mjs).
+  // Without this exemption the gate answered them 401 and the scheduled
+  // warmers were silently running inline inside their own short limit.
+  excludedPath: [
+    '/.netlify/functions/auth', '/.netlify/functions/caalano-connect', '/.netlify/functions/meta-webhook',
+    '/.netlify/functions/warm-background', '/.netlify/functions/settings-backup-background',
+  ],
 }

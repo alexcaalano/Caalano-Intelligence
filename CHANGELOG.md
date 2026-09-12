@@ -18,6 +18,20 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.551.0 - 2026-09-12 · `PENDING`
+
+**Fix: the site could not call its own background jobs** - the login gate at
+the edge refused every function call without a session cookie, including the
+site firing `warm-background` and the new `settings-backup-background` at
+itself. The backup page reported "Could not start the backup: 401", and the
+scheduled warmers had been silently falling back to an inline run inside
+their own short limit, which is part of why some views were never warm. Both
+background functions are now exempt from the gate; each already refuses any
+request without the shared warm token. `tests/edge_exclusions_test.mjs`
+pins the exemption list and that both functions check the token.
+
+---
+
 ## v3.550.0 - 2026-09-12 · `f880a61`
 
 **Fix: the daily GitHub backup never finished** - `settings-backup-now`

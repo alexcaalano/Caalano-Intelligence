@@ -1,22 +1,27 @@
-// Daily automatic backup of the live settings (Netlify Blobs) to the GitHub repo.
+// Daily automatic backup of the live settings (Netlify Blobs) to a GitHub repo.
 //
 // The CODE is already backed up on GitHub every push. What ISN'T in git is the
 // app's live configuration - key events, KPI targets, client mappings, form
-// meta, working hours, sales-cycle overrides, AI briefings - which lives in the
-// `caalano-settings` blob. This snapshots it to the repo under backups/ daily.
+// meta, working hours, users, terms acceptances, health and report history -
+// which lives in Netlify Blobs. This snapshots every store to the repo under
+// backups/ daily, as one commit.
 //
-// Scheduled functions can't be invoked over HTTP in production - use the
-// companion `settings-backup-now` endpoint to test on demand. Requires two
-// Netlify env vars (Site configuration -> Environment variables):
+// The work itself runs in `settings-backup-background` (15-minute ceiling);
+// this scheduled function only kicks it. Use `settings-backup-now` to run and
+// check on demand. Requires two Netlify env vars:
 //   BACKUP_GH_TOKEN  - GitHub token with Contents: read & write on the repo
-//   BACKUP_GH_REPO   - "owner/name", e.g. "alexcaalano/Caalano-Intelligence"
+//   BACKUP_GH_REPO   - "owner/name", e.g. "alexcaalano/caalano360-backups"
 //   BACKUP_GH_BRANCH - optional; defaults to the repo's default branch
 // Without the token/repo it safely no-ops.
-import { backupSettings } from '../lib/backup.mjs'
+import { runBackupJob, triggerBackup } from '../lib/backup.mjs'
+import { warmToken } from '../lib/warm.mjs'
 
 export const config = { schedule: '@daily' }
 
 export default async () => {
-  try { const r = await backupSettings(); return Response.json(r) }
-  catch (e) { return Response.json({ ok: false, error: String((e && e.message) || e).slice(0, 300) }, { status: 500 }) }
+  if (!process.env.BACKUP_GH_TOKEN || !process.env.BACKUP_GH_REPO) return Response.json({ ok: false, skipped: true, reason: 'BACKUP_GH_TOKEN / BACKUP_GH_REPO not set' })
+  const t = await triggerBackup(warmToken())
+  if (t.triggered) return Response.json({ ok: true, started: true })
+  // No site URL to call ourselves on (local dev): do it inline.
+  return Response.json(await runBackupJob())
 }

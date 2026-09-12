@@ -18,6 +18,22 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.550.0 - 2026-09-12 · `PENDING`
+
+**Fix: the daily GitHub backup never finished** - `settings-backup-now`
+returned a 502 the first time it was set up: it read every store and then
+wrote 23 files to GitHub one round trip at a time, inside a function that must
+answer in ten seconds. The work now runs in a background function
+(`settings-backup-background`, 15-minute ceiling) and lands as one commit
+through the git data API, with a file-by-file fallback and first-commit
+bootstrap for an empty repository. The daily schedule and the on-demand page
+both just start that job. `settings-backup-now` is a plain page: it starts a
+backup and shows the last run (files, size, commit, any store that failed);
+`?status=1` only looks. New test `tests/backup_github_test.mjs` covers the
+single commit, the empty repo, the fallback and the recorded status.
+
+---
+
 ## v3.549.0 - 2026-09-12 · `2bff5d6`
 
 **Docs: SaaS tenancy and connection design** - `SAAS-DESIGN.md` is the

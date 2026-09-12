@@ -83,36 +83,130 @@ export async function collectBackup({ includeSecrets = false, includeLogs = true
 // per store under a dated folder plus a stable "latest" copy that is easy to
 // diff. Skips cleanly when the token is not configured - and says so, so the
 // -now endpoint can tell you the daily job has never actually run.
-export async function backupSettings() {
+//
+// Runs inside `settings-backup-background` (15-minute ceiling). The first
+// version wrote each file with its own GitHub round trip from a plain function
+// and was cut off at ten seconds with a 502 before it finished. All files now
+// go up as ONE commit through the git data API (blobs in parallel, one tree,
+// one commit, one ref update); if that path fails for any reason it falls back
+// to the one-file-at-a-time contents API, which the background budget allows.
+export async function backupSettings({ budgetMs = 120000, fetchImpl = globalThis.fetch } = {}) {
   const token = process.env.BACKUP_GH_TOKEN
   const repo = process.env.BACKUP_GH_REPO
   if (!token || !repo) return { ok: false, skipped: true, reason: 'Set BACKUP_GH_TOKEN and BACKUP_GH_REPO env vars to enable backups to GitHub. Until then use backup-export to download one by hand.' }
+  const t0 = Date.now()
   const auth = () => ({ Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json', 'content-type': 'application/json', 'User-Agent': 'caalano360-backup' })
-  let branch = process.env.BACKUP_GH_BRANCH
-  if (!branch) { const rr = await fetch(`${GH}/repos/${repo}`, { headers: auth() }); branch = rr.ok ? (await rr.json()).default_branch : 'main' }
-  const put = async (path, body, message) => {
-    const url = `${GH}/repos/${repo}/contents/${path}`
-    let sha
-    const g = await fetch(`${url}?ref=${branch}`, { headers: auth() })
-    if (g.ok) { const j = await g.json(); sha = j.sha }
-    const content = Buffer.from(body, 'utf8').toString('base64')
-    const r = await fetch(url, { method: 'PUT', headers: auth(), body: JSON.stringify({ message, content, branch, ...(sha ? { sha } : {}) }) })
-    if (!r.ok) throw new Error(`${path}: ${r.status} ${(await r.text()).slice(0, 200)}`)
+  const gh = async (method, path, body) => {
+    const r = await fetchImpl(`${GH}/repos/${repo}${path}`, { method, headers: auth(), ...(body ? { body: JSON.stringify(body) } : {}) })
+    const txt = await r.text()
+    let j = null; try { j = txt ? JSON.parse(txt) : null } catch { /* not json */ }
+    return { ok: r.ok, status: r.status, json: j, text: txt }
   }
-  const all = await collectBackup({ includeSecrets: false })
+  let branch = process.env.BACKUP_GH_BRANCH
+  if (!branch) { const rr = await gh('GET', ''); if (rr.status === 401 || rr.status === 404) throw new Error(`GitHub says ${rr.status} for ${repo}: check BACKUP_GH_REPO is owner/name and the token has access to that repository`); branch = (rr.ok && rr.json && rr.json.default_branch) || 'main' }
+
+  const all = await collectBackup({ includeSecrets: false, budgetMs })
   const day = all.at.slice(0, 10)
+  const files = []
   const written = []
   let bytes = 0
   for (const [name, s] of Object.entries(all.stores)) {
     if (s.error) continue
-    const body = JSON.stringify({ store: name, what: s.what, at: all.at, keys: s.keys, truncated: s.truncated, data: s.data }, null, 1)
+    const body = JSON.stringify({ store: name, what: s.what, at: all.at, keys: s.keys, truncated: s.truncated, cutShort: s.cutShort, data: s.data }, null, 1)
     bytes += body.length
-    await put(`backups/latest/${name}.json`, body, `chore(backup): ${name} ${all.at}`)
-    await put(`backups/daily/${day}/${name}.json`, body, `chore(backup): ${name} snapshot ${day}`)
-    written.push({ store: name, keys: s.keys, bytes: body.length })
+    files.push({ path: `backups/latest/${name}.json`, body })
+    files.push({ path: `backups/daily/${day}/${name}.json`, body })
+    written.push({ store: name, keys: s.keys, bytes: body.length, ...(s.cutShort ? { cutShort: true } : {}) })
   }
   // Keep the old single-file path alive for anything that reads it.
   const settings = all.stores['caalano-settings']
-  if (settings && !settings.error && settings.data.all) await put('backups/settings-latest.json', JSON.stringify(settings.data.all, null, 2), `chore(backup): settings ${all.at}`)
-  return { ok: true, backedUp: true, at: all.at, branch, stores: written, bytes, errors: Object.entries(all.stores).filter(([, s]) => s.error).map(([n, s]) => `${n}: ${s.error}`) }
+  if (settings && !settings.error && settings.data.all) files.push({ path: 'backups/settings-latest.json', body: JSON.stringify(settings.data.all, null, 2) })
+  const message = `chore(backup): ${day} ${all.at}`
+
+  // One file through the contents API (creates the branch on an empty repo).
+  const putOne = async (path, body, msg) => {
+    const g = await gh('GET', `/contents/${path}?ref=${encodeURIComponent(branch)}`)
+    const sha = g.ok && g.json ? g.json.sha : undefined
+    const r = await gh('PUT', `/contents/${path}`, { message: msg, content: Buffer.from(body, 'utf8').toString('base64'), branch, ...(sha ? { sha } : {}) })
+    if (!r.ok) throw new Error(`${path}: ${r.status} ${r.text.slice(0, 200)}`)
+  }
+  // Everything as one commit.
+  const commitAll = async () => {
+    let ref = await gh('GET', `/git/ref/heads/${encodeURIComponent(branch)}`)
+    if (!ref.ok) {
+      // 409 = empty repository, 404 = branch does not exist yet. The contents
+      // API is the one call that can create the first commit / the branch.
+      await putOne('backups/README.md', `# Caalano360 backups\n\nWritten automatically by the site's daily backup. One folder per day under daily/, the newest copy under latest/. Restore with scripts/restore-backup.mjs in the app repository.\n`, 'chore(backup): initialise')
+      ref = await gh('GET', `/git/ref/heads/${encodeURIComponent(branch)}`)
+      if (!ref.ok) throw new Error(`ref: ${ref.status} ${ref.text.slice(0, 200)}`)
+    }
+    const headSha = ref.json.object.sha
+    const head = await gh('GET', `/git/commits/${headSha}`)
+    if (!head.ok) throw new Error(`commit: ${head.status}`)
+    const blobs = new Array(files.length)
+    let i = 0
+    const worker = async () => {
+      while (i < files.length) {
+        const k = i++
+        const b = await gh('POST', '/git/blobs', { content: Buffer.from(files[k].body, 'utf8').toString('base64'), encoding: 'base64' })
+        if (!b.ok) throw new Error(`blob ${files[k].path}: ${b.status} ${b.text.slice(0, 120)}`)
+        blobs[k] = b.json.sha
+      }
+    }
+    await Promise.all(Array.from({ length: 6 }, worker))
+    const tree = await gh('POST', '/git/trees', { base_tree: head.json.tree.sha, tree: files.map((f, k) => ({ path: f.path, mode: '100644', type: 'blob', sha: blobs[k] })) })
+    if (!tree.ok) throw new Error(`tree: ${tree.status} ${tree.text.slice(0, 120)}`)
+    const commit = await gh('POST', '/git/commits', { message, tree: tree.json.sha, parents: [headSha] })
+    if (!commit.ok) throw new Error(`commit: ${commit.status} ${commit.text.slice(0, 120)}`)
+    const upd = await gh('PATCH', `/git/refs/heads/${encodeURIComponent(branch)}`, { sha: commit.json.sha })
+    if (!upd.ok) throw new Error(`ref update: ${upd.status} ${upd.text.slice(0, 120)}`)
+    return commit.json.sha
+  }
+  let commitSha = null, mode = 'commit', fallbackReason = null
+  try { commitSha = await commitAll() }
+  catch (e) {
+    fallbackReason = String((e && e.message) || e).slice(0, 200)
+    mode = 'files'
+    for (const f of files) await putOne(f.path, f.body, message)
+  }
+  return { ok: true, backedUp: true, at: all.at, repo, branch, mode, ...(fallbackReason ? { fallbackReason } : {}), commit: commitSha, files: files.length, stores: written, bytes, ms: Date.now() - t0, errors: Object.entries(all.stores).filter(([, s]) => s.error).map(([n, s]) => `${n}: ${s.error}`) }
+}
+
+// --- running it in the background --------------------------------------------
+// The daily job and the -now endpoint both just kick `settings-backup-background`
+// and return; the result of the last run is kept in the warm store (not backed
+// up itself: it is only a status line) so the -now page can show it.
+const STATUS_STORE = 'caalano-warm'
+const STATUS_KEY = 'backup:last'
+export async function readBackupStatus() {
+  return getStore({ name: STATUS_STORE, consistency: 'strong' }).get(STATUS_KEY, { type: 'json' }).catch(() => null)
+}
+export async function writeBackupStatus(v) {
+  await getStore({ name: STATUS_STORE, consistency: 'strong' }).setJSON(STATUS_KEY, v).catch(() => {})
+}
+// Runs the backup and records how it went. What the background function calls.
+export async function runBackupJob() {
+  const startedAt = new Date().toISOString()
+  await writeBackupStatus({ state: 'running', startedAt })
+  try {
+    const r = await backupSettings()
+    await writeBackupStatus({ state: r.ok ? 'ok' : 'skipped', startedAt, finishedAt: new Date().toISOString(), result: r })
+    return r
+  } catch (e) {
+    const error = String((e && e.message) || e).slice(0, 300)
+    await writeBackupStatus({ state: 'error', startedAt, finishedAt: new Date().toISOString(), error })
+    return { ok: false, error }
+  }
+}
+// Kicks the background function. Returns as soon as Netlify has accepted the
+// job. `token` is the warm token (same shared secret the warmer uses).
+export async function triggerBackup(token) {
+  const base = process.env.URL
+  if (!base || !token) return { triggered: false, reason: !base ? 'no site URL (local dev?)' : 'no secret to derive a token from' }
+  try {
+    const r = await fetch(`${base}/.netlify/functions/settings-backup-background`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-warm-token': token }, body: '{}', signal: AbortSignal.timeout(4000) })
+    return { triggered: r.status === 202 || r.ok, status: r.status }
+  } catch (e) {
+    return { triggered: false, reason: String((e && e.message) || e).slice(0, 120) }
+  }
 }

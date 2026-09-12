@@ -23,11 +23,14 @@ someone who has never seen the app could do it from this page.
 
 ## Automatic daily backup
 
-`settings-backup` runs daily and writes one file per store to `backups/latest/`
-and `backups/daily/YYYY-MM-DD/` in the repo named by `BACKUP_GH_REPO`. It
-silently skips when the token is unset - open `/.netlify/functions/settings-backup-now`
-to see whether it ran and what it wrote. If `backups/` does not exist in the
-repo, it has never run.
+`settings-backup` runs daily. The work happens in `settings-backup-background`
+(a background function, so it has 15 minutes rather than 10 seconds) and lands
+in the repo named by `BACKUP_GH_REPO` as one commit: one file per store under
+`backups/latest/` and `backups/daily/YYYY-MM-DD/`. It silently skips when the
+token is unset. Open `/.netlify/functions/settings-backup-now` as a superadmin
+to start a backup by hand and see how the last one went (files, size, commit,
+and any store that failed); add `?status=1` to look without starting one. If
+`backups/` does not exist in the repo, it has never run.
 
 ## Restoring
 
@@ -68,10 +71,10 @@ clients and key events. Then delete the site.
       actually runs. As of 2026-09-11 `backups/` does not exist in the repo,
       which means it has never run. Use a separate private repo
       (e.g. `alexcaalano/caalano360-backups`) rather than the app repo.
-- [ ] A `backup-export?secrets=1` file saved in the password manager (dated).
-- [ ] The 15 environment variables copied into the password manager entry.
-- [ ] Netlify site settings (domain, production branch, function region,
-      scheduled functions) written into the same entry.
+- [x] A `backup-export?secrets=1` file saved in the password manager (2026-09-12).
+- [x] The environment variables copied into the password manager entry (2026-09-12; the two Meta ones wait on a Meta admin approval, `WARM_SECRET` is not set and not needed).
+- [x] Netlify site settings (domain, production branch, function region)
+      written into the same entry (2026-09-12).
 - [ ] A second git remote (a private mirror) receiving pushes, or a monthly
       `git bundle` kept off-site.
 - [ ] One restore drill completed into a scratch site, with the date noted here.

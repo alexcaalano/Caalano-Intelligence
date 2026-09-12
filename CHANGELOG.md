@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.566.0 - 2026-09-12 · `PENDING`
+## v3.566.0 - 2026-09-12 · `7465848`
 
 **Five tiers** - Super Admin, Agency Admin, Agency User, Account Admin and
 Account User are now five real roles, named as the CRM names them. Account

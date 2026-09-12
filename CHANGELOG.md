@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.558.0 - 2026-09-12 · `PENDING`
+## v3.558.0 - 2026-09-12 · `69f7b88`
 
 **Docs: SaaS and organisation role ladders, monthly reports at launch** -
 `SAAS-DESIGN.md` now has two role ladders modelled on GoHighLevel: the SaaS

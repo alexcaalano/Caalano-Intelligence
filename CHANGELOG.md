@@ -18,6 +18,19 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.568.0 - 2026-09-12 · `PENDING`
+
+**Appointments to result: pick, then Save** - the row now shows the CRM's
+current status next to the time, only confirmed appointments whose time has
+passed are listed, and nothing is highlighted until you choose. Tap Showed,
+No-show or Cancelled, then Save; the same goes for moving a deal's stage,
+which now has a Save stage button instead of writing on the first change.
+
+**Days to close** - a new tile on My results: the rep's average deal cycle,
+against the team average, with their rank.
+
+---
+
 ## v3.567.0 - 2026-09-12 · `0b3793c`
 
 **Link a person to their CRM user** - in Team, under each ticked account

@@ -5714,6 +5714,9 @@ async function _rawAppointments(locTok, locationId, startMs, endMs) {
   return out
 }
 const _actIsResulted = (s) => APPT_INVALID_RE.test(s) || APPT_CANCEL_RE.test(s) || apptShown(s) || APPT_NOSHOW_RE.test(s)
+// Only a CONFIRMED appointment whose time has passed needs a result; a booking
+// nobody confirmed is the CRM's own reminder flow, not a rep's to-do.
+const _actNeedsResult = (s) => /confirm/.test(s) && !_actIsResulted(s)
 // Conversations whose last message came from the contact: an enquiry or a
 // reply nobody has answered yet. The conversations search carries the
 // direction of the last message, so this is one call, no message bodies read.
@@ -5873,7 +5876,7 @@ export async function buildActions(locationId, { email = null, userId = null, mi
   const anyByContact = new Map()
   for (const r of opps) if (r.contactId && !anyByContact.has(r.contactId)) anyByContact.set(r.contactId, r)
   const apptRows = appts
-    .filter((a) => a.id && !done[a.id] && Number.isFinite(a.startMs) && a.startMs <= now - ACT_APPT_GRACE_MS && !_actIsResulted(a.status))
+    .filter((a) => a.id && !done[a.id] && Number.isFinite(a.startMs) && a.startMs <= now - ACT_APPT_GRACE_MS && _actNeedsResult(a.status))
     .map((a) => {
       const o = (a.contactId && (openByContact.get(a.contactId) || anyByContact.get(a.contactId))) || null
       const uid = a.userId || (o && o.userId) || null
@@ -6061,8 +6064,8 @@ export async function buildRepCard(locationId, { userId, from, to, hours = null,
     appointments: ap,
     speed: sp ? { full: !!sp.full, medianMin: sp.medianMin ?? null, avgMin: sp.avgMin ?? null, within5Pct: sp.within5Pct ?? null, measured: sp.measured ?? null, measuredAll: sp.measuredAll ?? null, sampled: sp.sampled ?? null, totalLeads: sp.totalLeads ?? null, inHours: sp.totalLeads != null ? sp.totalLeads - ((sp.after && sp.after.count) || 0) : null, buckets: sp.buckets || null, after: sp.after || null, hours: sp.hours || null, viaAppt: sp.viaAppt ?? null, viaMessage: sp.viaMessage ?? null } : null,
     now: { open: openNow.length, openValue: Math.round(openValue), stale },
-    rank: { leads: rankOf('leads'), booked: rankOf('booked'), winRate: rankOf('winRate'), revenue: rankOf('revenue'), showRate: rankOf('showRate') },
-    team: { reps: team.length, leads: perf.leads, avgWinRate: team.length ? Math.round(team.reduce((sum, u) => sum + (u.winRate || 0), 0) / team.length) : null, avgShowRate: (() => { const v = team.map((u) => u.showRate).filter((x) => x != null); return v.length ? Math.round(v.reduce((a, b) => a + b, 0) / v.length) : null })() },
+    rank: { leads: rankOf('leads'), booked: rankOf('booked'), winRate: rankOf('winRate'), revenue: rankOf('revenue'), showRate: rankOf('showRate'), closeDays: rankOf('avgCloseDays', false) },
+    team: { reps: team.length, leads: perf.leads, avgCloseDays: (() => { const v = team.map((u) => u.avgCloseDays).filter((x) => x != null); return v.length ? Math.round(v.reduce((a, b) => a + b, 0) / v.length) : null })(), avgWinRate: team.length ? Math.round(team.reduce((sum, u) => sum + (u.winRate || 0), 0) / team.length) : null, avgShowRate: (() => { const v = team.map((u) => u.showRate).filter((x) => x != null); return v.length ? Math.round(v.reduce((a, b) => a + b, 0) / v.length) : null })() },
     pipelines: perf.pipelines,
   }
 }

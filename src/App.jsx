@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.567.0'
+const APP_VERSION = '3.568.0'
 // The business clock. Every server window is cut on the client's local day
 // (Caalano Systems location timezone), so any day the app derives on its own -
 // preset ranges, "today", CSV dates - must use the same clock rather than the
@@ -16003,7 +16003,7 @@ function OptimisationLog({ clientId, sheet, embedded = false }) {
 // Writes go through the server, which limits an Account User to their own
 // records and logs every change. Cards, not tables, so a phone shows it whole.
 const ACT_SECTIONS = {
-  appts: ['Appointments to result', 'The time has passed and nobody has marked showed, no-show or cancelled.'],
+  appts: ['Appointments to result', 'Confirmed appointments whose time has passed with no result yet. Pick one, then Save.'],
   wonNoValue: ['Won without a value', 'Marked won with no deal value, so revenue is understated.'],
   lostNoReason: ['Lost without a reason', 'Marked lost with no lost reason, so nothing can be learned from it.'],
   inbound: ['Messages with no reply', 'The contact wrote last and no person has replied since (an automation does not count).'],
@@ -16092,6 +16092,8 @@ function ActConversation({ clientId, row, data, canWrite, write, busy, loc, user
 }
 // Move a deal along, or close it, from one compact control set.
 function ActDealControls({ d, data, busy, write, currency }) {
+  const [stage, setStage] = useState(d.stageId || '')
+  useEffect(() => { setStage(d.stageId || '') }, [d.stageId])
   const [close, setClose] = useState('')
   const [val, setVal] = useState(d.value > 0 ? String(d.value) : '')
   const [reason, setReason] = useState('')
@@ -16100,11 +16102,12 @@ function ActDealControls({ d, data, busy, write, currency }) {
   return (
     <div className="act-ctl">
       {stages.length ? <label className="act-sel">Stage
-        <select value={d.stageId || ''} disabled={busy} onChange={(e) => write({ op: 'opp', oppId: d.id, patch: { pipelineStageId: e.target.value, ...(pipe ? { pipelineId: pipe.id } : {}) } }, d.id, { stageId: e.target.value, stage: (stages.find((s) => s.id === e.target.value) || {}).name })}>
+        <select value={stage} disabled={busy} onChange={(e) => setStage(e.target.value)}>
           {!d.stageId ? <option value="">-</option> : null}
           {stages.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
         </select>
       </label> : null}
+      {stage && stage !== (d.stageId || '') ? <button type="button" className="btn-primary act-btn" disabled={busy} onClick={async () => { const ok = await write({ op: 'opp', oppId: d.id, patch: { pipelineStageId: stage, ...(pipe ? { pipelineId: pipe.id } : {}) } }, d.id, { stageId: stage, stage: (stages.find((s) => s.id === stage) || {}).name }); if (!ok) setStage(d.stageId || '') }}>Save stage</button> : null}
       <label className="act-sel">Close as
         <select value={close} disabled={busy} onChange={(e) => setClose(e.target.value)}><option value="">-</option><option value="won">Won</option><option value="lost">Lost</option></select>
       </label>
@@ -16211,6 +16214,7 @@ function RepCardView({ clientId, authUser, currency, reps, meId, nonce, onGoActi
         <RepTile label="Lost" value={fmtNumber(d.lost || 0)} sub={d.lostReasons && d.lostReasons[0] ? `mostly "${d.lostReasons[0].reason}"` : null} />
         <RepTile label="Open now" value={fmtNumber(now.open || 0)} sub={now.openValue ? money(now.openValue) + ' in play' : null} />
         <RepTile label="Stale" value={fmtNumber(stale.count || 0)} sub={stale.count ? `of ${stale.of} open · avg ${stale.avgIdle} days idle · oldest ${stale.oldest}` : (stale.of ? `of ${stale.of} open · ${stale.threshold}+ days` : null)} tone={stale.count ? 'warn' : 'good'} />
+        <RepTile label="Days to close" value={d.avgCloseDays != null ? `${d.avgCloseDays} d` : '-'} rank={rk.closeDays} sub={d.avgCloseDays != null ? `average deal cycle${team.avgCloseDays != null ? ` · team ${team.avgCloseDays} d` : ''}` : 'no wins in this period'} tone={d.avgCloseDays != null && team.avgCloseDays != null ? (d.avgCloseDays <= team.avgCloseDays ? 'good' : 'warn') : ''} />
         <RepTile label="Speed to lead" value={sp && sp.medianMin != null ? repMin(sp.medianMin) : '-'} sub={sp ? (sp.medianMin != null ? `median · ${sp.within5Pct != null ? `${sp.within5Pct}% under 5 min` : ''}` : 'no replies measured') : 'not measured'} tone={sp && sp.medianMin != null ? (sp.medianMin <= 5 ? 'good' : sp.medianMin <= 60 ? '' : 'warn') : ''} />
       </div>
       <RepLeaderboard rows={d.leaderboard || []} meId={d.userId} currency={currency} />
@@ -16229,7 +16233,7 @@ function RepCardView({ clientId, authUser, currency, reps, meId, nonce, onGoActi
         <div className="card rep-card">
           <h4>How far your leads got</h4>
           {stageRows.length ? stageRows.map(([n, v]) => <RepBar key={n} label={n} value={v} max={stageMax} text={`${fmtNumber(v)} · ${d.leads ? Math.round((v / d.leads) * 100) : 0}%`} />) : <p className="cap">No leads in this period.</p>}
-          {d.qualified != null && d.leads ? <p className="cap">Qualified: {fmtNumber(d.qualified)} ({pct(d.qualRate)}){d.avgCloseDays != null ? ` · average ${d.avgCloseDays} days to close` : ''}</p> : null}
+          {d.qualified != null && d.leads ? <p className="cap">Qualified: {fmtNumber(d.qualified)} ({pct(d.qualRate)})</p> : null}
         </div>
         <div className="card rep-card">
           <h4>Speed to lead</h4>
@@ -16477,21 +16481,7 @@ function DealsActionsView({ clientId, authUser, currency, nonce }) {
       {screen !== 'results' && screen !== 'compare' && mine && !data.meMatched ? <p className="cap act-ro">Your login e-mail does not match a user in this CRM, so the list shows everyone.</p> : null}
       {screen === 'results' || screen === 'compare' ? null : screen === 'actions' ? (
         todo === 0 && st.status === 'ok' ? <div className="card act-clear"><b>All clear.</b> <span className="cap">Nothing needs fixing{mine ? ' on your deals' : ''} right now.</span></div> : <>
-          {sec('appts', ...ACT_SECTIONS.appts, lists.appts, (a) => (
-            <div className="act-row" key={a.id}>
-              {who(a)}
-              <div className="act-meta"><span>{actWhen(a.startMs, tz)}</span><span className="cap">{a.calendar}{a.title ? ` · ${a.title}` : ''} · {actAgo(a.daysAgo)}</span></div>
-              <div className="act-ctl">
-                {canWrite ? <>
-                  <button type="button" className="btn-primary act-btn" disabled={busy[a.id]} onClick={() => write({ op: 'appt', eventId: a.id, status: 'showed' }, a.id, null, true)}>Showed</button>
-                  <button type="button" className="btn-ghost act-btn" disabled={busy[a.id]} onClick={() => write({ op: 'appt', eventId: a.id, status: 'noshow' }, a.id, null, true)}>No-show</button>
-                  <button type="button" className="btn-ghost act-btn" disabled={busy[a.id]} onClick={() => write({ op: 'appt', eventId: a.id, status: 'cancelled' }, a.id, null, true)}>Cancelled</button>
-                </> : null}
-                <ActNotes clientId={clientId} contactId={a.contactId} canWrite={canWrite} write={write} busy={!!busy[a.contactId]} userName={userName} />
-                <ActOpen href={crmLink(loc, a.contactId)} />
-              </div>
-            </div>
-          ))}
+          {sec('appts', ...ACT_SECTIONS.appts, lists.appts, (a) => <ActApptRow key={a.id} a={a} tz={tz} busy={!!busy[a.id]} canWrite={canWrite} write={write} loc={loc} who={who} clientId={clientId} userName={userName} />)}
           {sec('wonNoValue', ...ACT_SECTIONS.wonNoValue, lists.wonNoValue, (d) => <ActValueRow key={d.id} d={d} busy={!!busy[d.id]} canWrite={canWrite} write={write} currency={currency} loc={loc} who={who} clientId={clientId} userName={userName} />)}
           {sec('lostNoReason', ...ACT_SECTIONS.lostNoReason, lists.lostNoReason, (d) => <ActReasonRow key={d.id} d={d} data={data} busy={!!busy[d.id]} canWrite={canWrite} write={write} loc={loc} who={who} clientId={clientId} userName={userName} />)}
           {sec('inbound', ...ACT_SECTIONS.inbound, lists.inbound, (c) => (
@@ -16526,6 +16516,26 @@ function DealsActionsView({ clientId, authUser, currency, nonce }) {
         </div>
       )}
       {screen !== 'results' && screen !== 'compare' ? <p className="cap act-foot">CRM snapshot from {data.snapshotAt ? actWhen(data.snapshotAt, tz) : '-'} · re-reads every minute while open{data.truncated ? ' · the snapshot is capped, so very old deals may be missing' : ''}.</p> : null}
+    </div>
+  )
+}
+// An appointment past its time: the CRM's current status, a result to pick,
+// and a Save to confirm it - nothing is written on the first tap.
+function ActApptRow({ a, tz, busy, canWrite, write, loc, who, clientId, userName }) {
+  const [pick, setPick] = useState('')
+  const cur = String(a.status || 'booked').replace(/_/g, ' ')
+  const opts = [['showed', 'Showed'], ['noshow', 'No-show'], ['cancelled', 'Cancelled']]
+  return (
+    <div className="act-row">
+      {who(a)}
+      <div className="act-meta"><span>{actWhen(a.startMs, tz)} <span className="act-status">{cur}</span></span><span className="cap">{a.calendar}{a.title ? ` · ${a.title}` : ''} · {actAgo(a.daysAgo)}</span></div>
+      <div className="act-ctl-col">
+        {canWrite ? <div className="act-ctl">
+          <div className="act-seg">{opts.map(([v, l]) => <button type="button" key={v} className={pick === v ? 'on' : ''} disabled={busy} onClick={() => setPick(pick === v ? '' : v)}>{l}</button>)}</div>
+          {pick ? <button type="button" className="btn-primary act-btn" disabled={busy} onClick={() => write({ op: 'appt', eventId: a.id, status: pick }, a.id, null, true)}>Save {opts.find(([v]) => v === pick)[1].toLowerCase()}</button> : null}
+        </div> : null}
+        <div className="act-ctl"><ActNotes clientId={clientId} contactId={a.contactId} canWrite={canWrite} write={write} busy={busy} userName={userName} /><ActOpen href={crmLink(loc, a.contactId)} /></div>
+      </div>
     </div>
   )
 }

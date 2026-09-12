@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.550.0 - 2026-09-12 · `PENDING`
+## v3.550.0 - 2026-09-12 · `f880a61`
 
 **Fix: the daily GitHub backup never finished** - `settings-backup-now`
 returned a 502 the first time it was set up: it read every store and then

@@ -3241,6 +3241,7 @@ export async function buildSpeedToLead(locationId, from, to, opts = {}) {
     const created = Date.parse(o.createdAt); if (!isFinite(created)) continue
     if (fromMs != null && created < fromMs) continue
     if (toMs != null && created > toMs) continue
+    if (opts.userId && o.assignedTo !== opts.userId) continue   // one rep's own leads (the rep scorecard)
     // True lead-in = when the CONTACT entered the CRM (dateAdded), which can be
     // earlier than the opportunity being created (a workflow / user often makes
     // the opp later). Anchoring on the opp made responses look instant. Use the
@@ -5702,9 +5703,9 @@ async function _rawAppointments(locTok, locationId, startMs, endMs) {
         id: ev.id || ev._id || null, contactId: cid,
         contactName: (ev.contact && (ev.contact.name || [ev.contact.firstName, ev.contact.lastName].filter(Boolean).join(' '))) || ev.contactName || null,
         calendarId: calId, calendar: cal.name || cal.calendarName || 'Calendar',
-        startMs: Date.parse(ev.startTime), endMs: Date.parse(ev.endTime),
+        startMs: Date.parse(ev.startTime), endMs: Date.parse(ev.endTime), addedMs: Date.parse(ev.dateAdded || ev.createdAt),
         status: String(ev.appointmentStatus || ev.appoinmentStatus || ev.status || '').toLowerCase(),
-        userId: apptUserId(ev), title: ev.title || ev.appointmentTitle || null,
+        userId: apptUserId(ev), title: ev.title || ev.appointmentTitle || null, by: apptBookedBy(ev),
       })
     }
   }))
@@ -5891,4 +5892,82 @@ export async function applyAction(locationId, act, { onlyUserId = null } = {}) {
     return { ok: true, op, id }
   }
   throw new Error(`unknown op ${op || '(none)'}`)
+}
+
+// --- The rep scorecard ("My results") ------------------------------------------
+// One person's numbers for a period, from the same builders the Users tab and
+// Speed to Lead use, so a rep and their manager read the same figures. Leads
+// are the opportunities assigned to the rep that were created in the period;
+// appointments are the ones assigned to them (or booked for their leads) in
+// the period; speed is their own first manual reply. Rank places them among
+// the reps who had leads in the period.
+export async function buildRepCard(locationId, { userId, from, to, hours = null, staleDays = 30 } = {}) {
+  if (!userId) throw new Error('userId required')
+  const locTok = await locationTokenOrDemo(locationId)
+  const now = Date.now()
+  const tz = await locationTimezone(locationId)
+  const fromMs = from ? zonedStartMs(from, tz) : null
+  const toMs = to ? zonedEndMs(to, tz) : null
+  const inPeriod = (ms) => Number.isFinite(ms) && (fromMs == null || ms >= fromMs) && (toMs == null || ms <= toMs)
+  const [inp, snap, rawAppts, speed] = await Promise.all([
+    _userPerfInputs(locationId, from, to),
+    oppSnapshot(locTok, locationId),
+    _rawAppointments(locTok, locationId, (fromMs != null ? fromMs : now - 30 * ACT_DAY) - 7 * ACT_DAY, (toMs != null ? toMs : now) + 90 * ACT_DAY),
+    buildSpeedToLead(locationId, from, to, { sample: 40, budgetMs: 7000, hours, userId }).catch(() => null),
+  ])
+  const perf = _aggregateUserPerf(inp, {})
+  const me = (perf.users || []).find((u) => u.id === userId) || null
+  const team = (perf.users || []).filter((u) => u.leads > 0)
+  const rankOf = (key, desc = true) => {
+    if (!me) return null
+    const vals = team.map((u) => u[key]).filter((v) => v != null)
+    if (!vals.length || me[key] == null) return null
+    const better = vals.filter((v) => (desc ? v > me[key] : v < me[key])).length
+    return { rank: better + 1, of: vals.length }
+  }
+  // Appointments this rep is responsible for, made in the period.
+  const myOppContacts = new Set()
+  for (const o of (snap.opps || [])) if (o.assignedTo === userId) { const cid = o.contactId || (o.contact && (o.contact.id || o.contact._id)); if (cid) myOppContacts.add(cid) }
+  const mine = rawAppts.filter((a) => (a.userId === userId || (!a.userId && a.contactId && myOppContacts.has(a.contactId))) && inPeriod(a.addedMs))
+  const ap = { booked: 0, byStaff: 0, byCustomer: 0, showed: 0, noShow: 0, cancelled: 0, unresulted: 0, upcoming: 0 }
+  for (const a of mine) {
+    const st = a.status
+    if (APPT_INVALID_RE.test(st)) continue
+    ap.booked++
+    if (a.by === 'self') ap.byCustomer++; else ap.byStaff++
+    if (APPT_CANCEL_RE.test(st)) { ap.cancelled++; continue }
+    if (apptShown(st)) ap.showed++
+    else if (APPT_NOSHOW_RE.test(st)) ap.noShow++
+    else if (Number.isFinite(a.startMs) && a.startMs > now) ap.upcoming++
+    else ap.unresulted++
+  }
+  ap.showRate = (ap.showed + ap.noShow) ? Math.round((ap.showed / (ap.showed + ap.noShow)) * 100) : null
+  // Stale and open, from the live snapshot (not the period): what is on their desk now.
+  const openNow = (snap.opps || []).filter((o) => o.assignedTo === userId && String(o.status || '').toLowerCase() === 'open')
+  const idleOf = (o) => { const u = Math.max(Date.parse(o.updatedAt) || 0, Date.parse(o.lastStatusChangeAt) || 0, Date.parse(o.lastStageChangeAt) || 0) || Date.parse(o.createdAt); return Number.isFinite(u) ? Math.max(0, Math.round((now - u) / ACT_DAY)) : null }
+  const idles = openNow.map(idleOf).filter((d) => d != null)
+  const staleList = openNow.map((o) => ({ o, idle: idleOf(o) })).filter((x) => x.idle != null && x.idle >= staleDays)
+  const openValue = openNow.reduce((sum, o) => sum + num(o.monetaryValue), 0)
+  const stale = {
+    count: staleList.length, of: openNow.length, threshold: staleDays,
+    avgIdle: staleList.length ? Math.round(staleList.reduce((sum, x) => sum + x.idle, 0) / staleList.length) : null,
+    oldest: staleList.length ? Math.max(...staleList.map((x) => x.idle)) : null,
+    medianIdleAll: idles.length ? idles.slice().sort((a, b) => a - b)[Math.floor(idles.length / 2)] : null,
+  }
+  const sp = speed && speed.connected !== false ? speed : null
+  return {
+    connected: true, tz, userId, name: me ? me.name : ((inp.userRows || []).find((u) => (u.id || u._id) === userId) || {}).name || null,
+    period: { from, to },
+    leads: me ? me.leads : 0, qualified: me ? me.qualified : 0, qualRate: me ? me.qualRate : null,
+    open: me ? me.open : 0, won: me ? me.won : 0, lost: me ? me.lost : 0, revenue: me ? me.revenue : 0,
+    winRate: me ? me.winRate : null, avgDeal: me ? me.avgDeal : null, avgCloseDays: me ? me.avgCloseDays : null,
+    bookRate: me ? me.bookRate : null, pipelineValue: me ? me.pipelineValue : 0, wonValue: me ? me.wonValue : 0, lostValue: me ? me.lostValue : 0,
+    stages: me ? me.stages : {}, stageOpen: me ? me.stageOpen : {}, lostReasons: me ? me.lostReasons : [], byPipeline: me ? me.byPipeline : [],
+    appointments: ap,
+    speed: sp ? { medianMin: sp.medianMin ?? null, avgMin: sp.avgMin ?? null, within5Pct: sp.within5Pct ?? null, measured: sp.measured ?? null, sampled: sp.sampled ?? null, totalLeads: sp.totalLeads ?? null, buckets: sp.buckets || null, after: sp.after || null, hours: sp.hours || null } : null,
+    now: { open: openNow.length, openValue: Math.round(openValue), stale },
+    rank: { leads: rankOf('leads'), booked: rankOf('booked'), winRate: rankOf('winRate'), revenue: rankOf('revenue'), showRate: rankOf('showRate') },
+    team: { reps: team.length, leads: perf.leads, avgWinRate: team.length ? Math.round(team.reduce((sum, u) => sum + (u.winRate || 0), 0) / team.length) : null, avgShowRate: (() => { const v = team.map((u) => u.showRate).filter((x) => x != null); return v.length ? Math.round(v.reduce((a, b) => a + b, 0) / v.length) : null })() },
+    pipelines: perf.pipelines,
+  }
 }

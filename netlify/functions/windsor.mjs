@@ -10,7 +10,7 @@
 // debug call; they live in one place (FIELDS) so they are trivial to correct.
 
 import { createHash } from 'node:crypto'
-import { buildAttribution, sampleAttribution, sampleChannels, buildCrm, auditLocation, isConnected, bookedTrends, crmTrends, attributionCoverage, wonInPeriod, monthlyDeals, oppTimestampFields, socialDMs, tagAudit, locationTimezone, locationProfile, periodBounds, listCalendars, listPipelines, ghlOpportunityRows, ghlPipelineRows, ghlUserRows, listLocations, checkLocationAccess, customClients, deletedClients, sampleForms, buildForms, buildSpeedToLead, speedLeadList, speedScanChunk, finalizeSpeed, buildAppointmentInsights, buildUserPerformance, buildUserPerformanceCombos, buildCreativePerf, buildUpdateExtra, fetchOppNotes, deriveBusinessHours, isQualified, buildCohorts as ghlCohorts, buildCcDrill, buildKeyPeople, buildStageTiming, buildEnquiryTimes, buildUserCalls, buildCallCohort, buildClinic, warmOppSnapshot, resilientFetch, startRequestBudget, buildCalPerf, clinicConfig, dayListBetween, buildActions, applyAction, ghlUserIdForEmail } from '../lib/ghl.mjs'
+import { buildAttribution, sampleAttribution, sampleChannels, buildCrm, auditLocation, isConnected, bookedTrends, crmTrends, attributionCoverage, wonInPeriod, monthlyDeals, oppTimestampFields, socialDMs, tagAudit, locationTimezone, locationProfile, periodBounds, listCalendars, listPipelines, ghlOpportunityRows, ghlPipelineRows, ghlUserRows, listLocations, checkLocationAccess, customClients, deletedClients, sampleForms, buildForms, buildSpeedToLead, speedLeadList, speedScanChunk, finalizeSpeed, buildAppointmentInsights, buildUserPerformance, buildUserPerformanceCombos, buildCreativePerf, buildUpdateExtra, fetchOppNotes, deriveBusinessHours, isQualified, buildCohorts as ghlCohorts, buildCcDrill, buildKeyPeople, buildStageTiming, buildEnquiryTimes, buildUserCalls, buildCallCohort, buildClinic, warmOppSnapshot, resilientFetch, startRequestBudget, buildCalPerf, clinicConfig, dayListBetween, buildActions, applyAction, ghlUserIdForEmail, buildRepCard } from '../lib/ghl.mjs'
 import { DEMO_CLIENT_ID, DEMO_LOCATION, DEMO_META_ACCT, DEMO_GOOGLE_ACCT, DEMO_GA4_PROP, demoWindsor } from '../lib/demo.mjs'
 // Stand-in for the Windsor API key, used only when the request is for the demo
 // client. windsorFetch reads it as "generate, don't fetch".
@@ -2625,6 +2625,7 @@ const VIEWER_REQ_TABS = {
   // The CRM to-do list and live deals. Its own tab, so a client-side rep can be
   // given exactly this and nothing else.
   'scope:actions': ['actions'],
+  'scope:repcard': ['actions'],
   'scope:speedscan': ['timing'],
   // The other two sections on the Timing tab. Both were added after this map and
   // never registered in it, and the map denies by default - so a viewer granted
@@ -2778,7 +2779,7 @@ function resultTtlFor(scope, channel, to) {
 const cacheStore = () => getStore({ name: 'caalano-cache', consistency: 'strong' })
 // Scopes safe to cache: client-scoped, GET, identical for every authorised
 // caller. (Agency-wide aggregates are filtered per-caller, so they're excluded.)
-const CACHEABLE_SCOPES = new Set(['spenddaily', 'bizloc', 'users', 'callcohort', 'ccdrill', 'speed', 'appts', 'cohorts', 'forms', 'weekly', 'ovrow', 'health', 'updateextra', 'anomalies', 'social', 'socialtrend', 'stagetiming', 'enqtimes', 'usercalls', 'clinic', 'calperf'])
+const CACHEABLE_SCOPES = new Set(['repcard', 'spenddaily', 'bizloc', 'users', 'callcohort', 'ccdrill', 'speed', 'appts', 'cohorts', 'forms', 'weekly', 'ovrow', 'health', 'updateextra', 'anomalies', 'social', 'socialtrend', 'stagetiming', 'enqtimes', 'usercalls', 'clinic', 'calperf'])
 const CACHEABLE_CHANNELS = new Set(['meta', 'google', 'attribution', 'blend'])
 // Agency-wide scopes that carry NO client param. They ARE the slowest first-load
 // calls (whole-roster Windsor + GHL fan-out), so caching them is the single
@@ -3376,6 +3377,23 @@ export default async (req) => {
   // Client-side failure beacon: the browser POSTs a failure (502 / timeout /
   // parse error it saw) so the same log captures browser-visible breakages the
   // function itself never got to record.
+  // One rep's scorecard (Deals & Actions -> My results). A client-side rep
+  // always gets their own; staff may name any rep with ?user=. Cached like the
+  // Users tab, keyed on the URL, so the rep filter is part of the key.
+  if (scope === 'repcard') {
+    const cc = clientCfg(client)
+    if (!cc || !cc.ghl) return json({ scope: 'repcard', client, ghl: false, error: 'This account has no Caalano Systems connection.' })
+    const isViewerHere = !!(me && me.role === 'viewer')
+    try {
+      let userId = isViewerHere ? null : (url.searchParams.get('user') || null)
+      if (!userId) userId = me ? await ghlUserIdForEmail(cc.ghl, me.email) : null
+      if (!userId) return json({ scope: 'repcard', client, ghl: true, error: isViewerHere ? 'Your login e-mail does not match a user in this CRM, so there are no results to show. Ask your admin to match the e-mails.' : 'Pick a rep, or sign in with an e-mail that matches a CRM user.' })
+      const staleDays = Math.max(3, Math.min(180, Number(url.searchParams.get('stale')) || 30))
+      const hours = parseHours(url)
+      return json({ scope: 'repcard', client, ghl: true, period: { from, to, preset }, ...(await buildRepCard(cc.ghl, { userId, from, to, hours, staleDays })) })
+    } catch (e) { return json({ scope: 'repcard', client, ghl: true, error: String((e && e.message) || e).slice(0, 240) }) }
+  }
+
   // The CRM to-do list and live deals (Deals & Actions tab). GET builds it from
   // the snapshots; POST writes one fix back to the CRM. Never served from the
   // result cache: a list of things to fix must be as current as the snapshot.

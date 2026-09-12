@@ -991,3 +991,51 @@ when its connection carries the new scopes.
 **Prevention** stays in the CRM: the conditional required fields on Won
 (value, product) that clients are already testing, and a required lost
 reason on Lost. The action list is the catch-up for what slips past.
+
+## 16. Client-side role names, the rep scorecard, and single sub-account installs (2026-09-12)
+
+**Names that match the CRM.** The client side of an organisation has two
+levels, named as GoHighLevel names them so nobody has to translate:
+
+| Name | What it is underneath | Sees |
+|---|---|---|
+| **Account Admin** | `viewer` with ticked tabs | the dashboards for their account, read-only |
+| **Account User** | `viewer` with only the Deals & Actions tab and the CRM-updates grant | their own deals, action list and results; can update their own records |
+
+Built in v3.565.0 as labels and a one-click preset ("Make this an Account
+User") in Team; no new role underneath, so nothing in the current user list
+changed. In the SaaS schema these become the two client-side `org_role`
+values for a business organisation (`account_admin`, `account_user`) beside
+the agency-side `superadmin`, `admin`, `user`; the entitlement table maps
+`account_user` to `module.actions` only.
+
+**My results (the rep scorecard).** Third screen on Deals & Actions, per
+rep and per period: leads, appointments booked (by the rep vs by the
+customer), show rate, win rate, won and revenue, lost with the top reason,
+open now with value, stale count with average and oldest idle days, speed
+to lead (median, within-5-minutes share, buckets, after-hours), how far
+their leads got by stage, lost reasons, and rank among the team on leads,
+bookings, win rate and revenue. Built from the same code as the Users tab
+and Speed to Lead, so rep and manager read the same numbers. An Account
+User sees only their own; staff pick any rep.
+
+**Installing on one sub-account that belongs to another agency.** Yes: a
+marketplace app installs at location level through the same choose-location
+screen, whichever agency owns the location, as long as the person installing
+has access to that location and the owning agency has not blocked
+marketplace installs for its sub-accounts (a white-label agency can hide the
+marketplace; the person can still use our direct install link). Two things
+the code must handle, planned for phase 2:
+
+1. **Location-level tokens.** Today the exchange asks for a Company token and
+   mints location tokens from it. A sub-account install returns a Location
+   token that is used directly and refreshed on its own; `connections.kind`
+   records `agency` or `location`, and the token refresh path branches on it.
+2. **No agency context.** A location-only install cannot list other
+   locations, read agency users or use agency-level endpoints; the
+   Connections card shows the single location and the Users list comes from
+   the location's own `/users/` call, which is what the app reads already.
+
+To be confirmed with a real test install on a friendly sub-account under a
+white-label agency before Finr Advisory: that the standard marketplace
+login works for a user who normally signs in through the white-label domain.

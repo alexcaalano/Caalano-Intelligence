@@ -52,3 +52,22 @@ if (a.inbound.length) { await applyAction(DEMO_LOCATION, { op: 'dismiss', id: a.
 // The tab exists for permissions.
 assert.ok(ALL_TABS.includes('actions'), 'actions is a grantable tab')
 console.log('actions_test ok')
+
+// The rep scorecard: one person's period numbers, ranks among the team, and
+// what sits on their desk now.
+{
+  const { buildRepCard } = await import('../netlify/lib/ghl.mjs')
+  const to = new Date().toISOString().slice(0, 10), from = new Date(Date.now() - 29 * 86400000).toISOString().slice(0, 10)
+  const c = await buildRepCard(DEMO_LOCATION, { userId: rep.id, from, to })
+  assert.equal(c.userId, rep.id); assert.ok(c.name, 'rep is named')
+  assert.ok(c.leads > 0, 'the rep had leads')
+  assert.equal(c.won + c.lost + c.open, c.leads, 'won + lost + open = leads')
+  for (const k of ['booked', 'byStaff', 'byCustomer', 'showed', 'noShow', 'cancelled', 'unresulted', 'upcoming']) assert.ok(Number.isInteger(c.appointments[k]), `appointments.${k}`)
+  assert.equal(c.appointments.byStaff + c.appointments.byCustomer, c.appointments.booked, 'booked splits into staff and customer')
+  assert.ok(c.now.open >= c.now.stale.count, 'stale is a subset of open')
+  assert.ok(c.rank.leads && c.rank.leads.rank >= 1 && c.rank.leads.rank <= c.rank.leads.of, 'ranked among the team')
+  assert.ok(c.team.reps >= 1 && Array.isArray(c.pipelines), 'team and pipelines present')
+  assert.ok(c.speed == null || c.speed.sampled == null || c.speed.sampled >= (c.speed.measured || 0), 'speed sample is coherent')
+  await assert.rejects(() => buildRepCard(DEMO_LOCATION, { from, to }), /userId/)
+}
+console.log('actions_test (repcard) ok')

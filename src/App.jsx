@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.564.0'
+const APP_VERSION = '3.565.0'
 // The business clock. Every server window is cut on the client's local day
 // (Caalano Systems location timezone), so any day the app derives on its own -
 // preset ranges, "today", CSV dates - must use the same clock rather than the
@@ -4809,7 +4809,7 @@ function loadDashboard(clientId) { const d = SETTINGS.dashboards && SETTINGS.das
 // staff roles see it as soon as their tier is reached. Older saves stored
 // 'viewers' - read as 'viewer'.
 const DASH_AUD = ['super', 'admin', 'user', 'viewer']
-const DASH_AUD_LABEL = { super: 'Super Admins only', admin: 'Admins and above', user: 'Users and above', viewer: 'Viewers (ticked in Permissions) and all staff' }
+const DASH_AUD_LABEL = { super: 'Super Admins only', admin: 'Admins and above', user: 'Users and above', viewer: 'Account Admins (ticked in Permissions) and all staff' }
 const DASH_ROLE_RANK = { superadmin: 0, admin: 1, user: 2, viewer: 3 }
 const dashAudience = (d) => { const a = d && d.audience; return a === 'viewers' ? 'viewer' : (DASH_AUD.includes(a) ? a : 'super') }
 const dashOpenToViewers = (d) => dashAudience(d) === 'viewer'
@@ -16067,6 +16067,117 @@ function ActDealControls({ d, data, busy, write, currency }) {
     </div>
   )
 }
+// ---- My results: the rep scorecard --------------------------------------------
+// One person's numbers for a period, built by the same code as the Users tab
+// and Speed to Lead so a rep and their manager see the same figures. Leads
+// are the deals assigned to them created in the period; appointments the ones
+// they own; speed their own first manual reply; stale what sits on their desk
+// right now. Tiles first, then the detail, and it reads on a phone.
+const REP_PERIODS = [['last_7d', 'Last 7 days'], ['last_14d', 'Last 14 days'], ['last_30d', 'Last 30 days'], ['this_month', 'This month'], ['last_month', 'Last month'], ['last_90d', 'Last 90 days']]
+const repMin = (m) => (m == null ? '-' : m < 60 ? `${Math.round(m)} min` : m < 1440 ? `${(m / 60).toFixed(1)} h` : `${(m / 1440).toFixed(1)} d`)
+function RepTile({ label, value, sub, tone }) {
+  return <div className={`rep-tile ${tone || ''}`}><div className="rep-tile-l">{label}</div><div className="rep-tile-v">{value}</div>{sub ? <div className="rep-tile-s">{sub}</div> : null}</div>
+}
+function RepBar({ label, value, max, text, tone }) {
+  const w = max > 0 ? Math.max(2, Math.round((value / max) * 100)) : 0
+  return <div className="rep-bar"><div className="rep-bar-l"><span>{label}</span><b>{text != null ? text : fmtNumber(value)}</b></div><div className="rep-bar-t"><div className={`rep-bar-f ${tone || ''}`} style={{ width: `${w}%` }} /></div></div>
+}
+function RepCardView({ clientId, authUser, currency, users, meId, nonce, onGoActions }) {
+  const isViewer = !!(authUser && authUser.role === 'viewer')
+  const [period, setPeriod] = useState('last_30d')
+  const [rep, setRep] = useState(meId || '')
+  const [st, setSt] = useState({ status: 'loading', data: null })
+  const [tick, setTick] = useState(0)
+  useEffect(() => { if (!rep && meId) setRep(meId) }, [meId]) // eslint-disable-line
+  useEffect(() => {
+    if (!isViewer && !rep) { setSt({ status: 'pick', data: null }); return }
+    let dead = false
+    setSt((s) => ({ status: s.data ? 'refreshing' : 'loading', data: s.data }))
+    const r = presetRange(period)
+    const qs = `scope=repcard&client=${encodeURIComponent(clientId)}&${rangeQuery(r)}&preset=${period}${!isViewer && rep ? `&user=${encodeURIComponent(rep)}` : ''}${hoursQuery(loadHours(clientId))}${tick || nonce ? `&_r=${tick}.${nonce || 0}` : ''}`
+    fetch(`/.netlify/functions/windsor?${qs}`, { credentials: 'same-origin' })
+      .then((x) => x.json().catch(() => ({ error: `server ${x.status}` })))
+      .then((j) => { if (!dead) setSt({ status: j && j.error ? 'err' : 'ok', data: j }) })
+      .catch((e) => { if (!dead) setSt({ status: 'err', data: { error: String((e && e.message) || e) } }) })
+    return () => { dead = true }
+  }, [clientId, period, rep, isViewer, tick, nonce])
+  const d = st.data || {}
+  const money = (v) => fmtCurrency(v || 0, currency)
+  const pct = (v) => (v == null ? '-' : `${v}%`)
+  const rk = (r) => (r && r.of > 1 ? `#${r.rank} of ${r.of}` : null)
+  const head = (
+    <div className="act-bar">
+      <div className="act-filters">
+        {!isViewer ? <label className="act-sel"><select value={rep} onChange={(e) => setRep(e.target.value)}><option value="">Pick a rep…</option>{(users || []).map((u) => <option key={u.id} value={u.id}>{u.name}{u.id === meId ? ' (me)' : ''}</option>)}</select></label> : null}
+        <label className="act-sel"><select value={period} onChange={(e) => setPeriod(e.target.value)}>{REP_PERIODS.map(([id, l]) => <option key={id} value={id}>{l}</option>)}</select></label>
+        <button type="button" className="btn-ghost sm" disabled={st.status === 'refreshing'} onClick={() => setTick((t) => t + 1)}>{st.status === 'refreshing' ? 'Refreshing…' : 'Refresh'}</button>
+      </div>
+    </div>
+  )
+  if (st.status === 'pick') return <div className="act-wrap">{head}<div className="card act-clear"><span className="cap">Pick a rep to see their results.</span></div></div>
+  if (st.status === 'loading') return <div className="act-wrap">{head}<div className="card"><Spinner label="Adding up the period…" /></div></div>
+  if (st.status === 'err') return <div className="act-wrap">{head}<div className="card"><p className="cap" style={{ color: 'var(--neg)', margin: 0 }}>{d.error || 'Could not load.'}</p></div></div>
+  const ap = d.appointments || {}
+  const sp = d.speed
+  const now = d.now || { stale: {} }
+  const stale = now.stale || {}
+  const team = d.team || {}
+  const stageNames = (() => { const out = []; for (const p of (d.pipelines || [])) for (const s of (p.stages || [])) if (!out.includes(s)) out.push(s); return out })()
+  const stageRows = stageNames.map((n) => [n, (d.stages || {})[n] || 0]).filter(([, v]) => v > 0)
+  const stageMax = Math.max(1, ...stageRows.map(([, v]) => v))
+  const bkt = (sp && sp.buckets) || null
+  const bktMax = bkt ? Math.max(1, ...bkt.map((b) => b.count || 0)) : 1
+  return (
+    <div className="act-wrap rep-wrap">
+      {head}
+      <div className="rep-head"><b>{d.name || 'Rep'}</b><span className="cap">{(REP_PERIODS.find(([id]) => id === period) || [])[1]}{d.period && d.period.from ? ` · ${d.period.from} to ${d.period.to}` : ''}</span></div>
+      <div className="rep-tiles">
+        <RepTile label="Leads" value={fmtNumber(d.leads || 0)} sub={rk(d.rank && d.rank.leads) ? `${rk(d.rank.leads)} in the team` : null} />
+        <RepTile label="Appointments booked" value={fmtNumber(ap.booked || 0)} sub={ap.booked ? `${ap.byStaff} by you · ${ap.byCustomer} by the customer` : (d.bookRate != null ? `${d.bookRate}% of leads` : null)} />
+        <RepTile label="Show rate" value={pct(ap.showRate)} sub={team.avgShowRate != null ? `team ${team.avgShowRate}%` : null} tone={ap.showRate != null && team.avgShowRate != null ? (ap.showRate >= team.avgShowRate ? 'good' : 'warn') : ''} />
+        <RepTile label="Win rate" value={pct(d.winRate)} sub={team.avgWinRate != null ? `team ${team.avgWinRate}%${rk(d.rank && d.rank.winRate) ? ` · ${rk(d.rank.winRate)}` : ''}` : null} tone={d.winRate != null && team.avgWinRate != null ? (d.winRate >= team.avgWinRate ? 'good' : 'warn') : ''} />
+        <RepTile label="Won" value={fmtNumber(d.won || 0)} sub={d.revenue ? `${money(d.revenue)}${d.avgDeal ? ` · avg ${money(d.avgDeal)}` : ''}` : null} tone="good" />
+        <RepTile label="Lost" value={fmtNumber(d.lost || 0)} sub={d.lostReasons && d.lostReasons[0] ? `mostly "${d.lostReasons[0].reason}"` : null} />
+        <RepTile label="Open now" value={fmtNumber(now.open || 0)} sub={now.openValue ? money(now.openValue) + ' in play' : null} />
+        <RepTile label="Stale" value={fmtNumber(stale.count || 0)} sub={stale.count ? `of ${stale.of} open · avg ${stale.avgIdle} days idle · oldest ${stale.oldest}` : (stale.of ? `of ${stale.of} open · ${stale.threshold}+ days` : null)} tone={stale.count ? 'warn' : 'good'} />
+        <RepTile label="Speed to lead" value={sp && sp.medianMin != null ? repMin(sp.medianMin) : '-'} sub={sp ? (sp.medianMin != null ? `median · ${sp.within5Pct != null ? `${sp.within5Pct}% under 5 min` : ''}` : 'no replies measured') : 'not measured'} tone={sp && sp.medianMin != null ? (sp.medianMin <= 5 ? 'good' : sp.medianMin <= 60 ? '' : 'warn') : ''} />
+      </div>
+      <div className="rep-grid">
+        <div className="card rep-card">
+          <h4>Appointments</h4>
+          {ap.booked ? <>
+            <RepBar label="Showed" value={ap.showed} max={ap.booked} tone="good" />
+            <RepBar label="No-show" value={ap.noShow} max={ap.booked} tone="bad" />
+            <RepBar label="Cancelled" value={ap.cancelled} max={ap.booked} />
+            <RepBar label="Still to come" value={ap.upcoming} max={ap.booked} />
+            {ap.unresulted ? <RepBar label="Passed, not resulted" value={ap.unresulted} max={ap.booked} tone="warn" /> : null}
+            {ap.unresulted && onGoActions ? <button type="button" className="btn-ghost sm" onClick={onGoActions}>Result them in the Action list</button> : null}
+          </> : <p className="cap">No appointments booked in this period.</p>}
+        </div>
+        <div className="card rep-card">
+          <h4>How far your leads got</h4>
+          {stageRows.length ? stageRows.map(([n, v]) => <RepBar key={n} label={n} value={v} max={stageMax} text={`${fmtNumber(v)} · ${d.leads ? Math.round((v / d.leads) * 100) : 0}%`} />) : <p className="cap">No leads in this period.</p>}
+          {d.qualified != null && d.leads ? <p className="cap">Qualified: {fmtNumber(d.qualified)} ({pct(d.qualRate)}){d.avgCloseDays != null ? ` · average ${d.avgCloseDays} days to close` : ''}</p> : null}
+        </div>
+        <div className="card rep-card">
+          <h4>Speed to lead</h4>
+          {sp && sp.medianMin != null ? <>
+            <p className="cap">Median {repMin(sp.medianMin)}{sp.avgMin != null ? ` · average ${repMin(sp.avgMin)}` : ''}{sp.hours ? ' · in business hours' : ''} · {sp.measured} of {sp.sampled} sampled leads had a reply</p>
+            {bkt ? bkt.map((b) => <RepBar key={b.key || b.label} label={b.label} value={b.count || 0} max={bktMax} tone={/Under 5|5-15/.test(b.label) ? 'good' : /Over 24|4-24/.test(b.label) ? 'bad' : ''} />) : null}
+            {sp.after && sp.after.count ? <p className="cap">{sp.after.count} leads arrived outside business hours{sp.after.medianMin != null ? `; those were answered a median ${repMin(sp.after.medianMin)} after opening` : ''}.</p> : null}
+          </> : <p className="cap">{sp ? 'No first replies could be measured for this period.' : 'Speed to lead was not measured for this period.'}</p>}
+        </div>
+        <div className="card rep-card">
+          <h4>Lost reasons</h4>
+          {d.lostReasons && d.lostReasons.length ? d.lostReasons.slice(0, 6).map((r) => <RepBar key={r.reason} label={r.reason} value={r.count} max={d.lostReasons[0].count} tone="bad" />) : <p className="cap">Nothing lost in this period.</p>}
+          {d.byPipeline && d.byPipeline.length > 1 ? <p className="cap">By pipeline: {d.byPipeline.map((p) => `${p.name} ${p.leads} leads, ${p.won} won`).join(' · ')}</p> : null}
+        </div>
+      </div>
+      <p className="cap act-foot">Leads are the deals assigned to {isViewer ? 'you' : 'this rep'} that were created in the period. Won and lost count deals from those leads. Open and stale are what is on the desk right now. Ranks are among the {team.reps || 0} reps who had leads in the period.</p>
+    </div>
+  )
+}
+
 function DealsActionsView({ clientId, authUser, currency, nonce }) {
   const isViewer = !!(authUser && authUser.role === 'viewer')
   const [screen, setScreen] = useState('actions')
@@ -16155,8 +16266,9 @@ function DealsActionsView({ clientId, authUser, currency, nonce }) {
         <div className="subtabs act-screens">
           <button type="button" className={screen === 'actions' ? 'active' : ''} onClick={() => setScreen('actions')}>Action list{todo ? <span className="act-pill">{todo}</span> : null}</button>
           <button type="button" className={screen === 'deals' ? 'active' : ''} onClick={() => setScreen('deals')}>Live deals{deals.length ? <span className="act-pill dim">{deals.length}</span> : null}</button>
+          <button type="button" className={screen === 'results' ? 'active' : ''} onClick={() => setScreen('results')}>My results</button>
         </div>
-        <div className="act-filters">
+        {screen === 'results' ? null : <div className="act-filters">
           {data.meMatched ? <label className="act-sel"><select value={mine ? 'mine' : 'all'} onChange={(e) => { setMine(e.target.value === 'mine'); setRep('all') }}><option value="mine">Mine</option><option value="all">Everyone</option></select></label> : null}
           {!mine ? <label className="act-sel"><select value={rep} onChange={(e) => setRep(e.target.value)}><option value="all">All reps</option><option value="none">No rep</option>{users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}</select></label> : null}
           {screen === 'actions' && (data.calendars || []).length > 1 ? <label className="act-sel"><select value={cal} onChange={(e) => setCal(e.target.value)}><option value="all">All calendars</option>{(data.calendars || []).map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}</select></label> : null}
@@ -16164,12 +16276,13 @@ function DealsActionsView({ clientId, authUser, currency, nonce }) {
           {screen === 'deals' && (data.pipelines || []).length > 1 ? <label className="act-sel"><select value={pipeF} onChange={(e) => { setPipeF(e.target.value); setStageF('all') }}><option value="all">All pipelines</option>{(data.pipelines || []).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label> : null}
           {screen === 'deals' && pipeSel ? <label className="act-sel"><select value={stageF} onChange={(e) => setStageF(e.target.value)}><option value="all">All stages</option>{pipeSel.stages.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></label> : null}
           <button type="button" className="btn-ghost sm" disabled={st.status === 'refreshing'} onClick={() => setTick((t) => t + 1)} title="Re-read the CRM now">{st.status === 'refreshing' ? 'Refreshing…' : 'Refresh'}</button>
-        </div>
+        </div>}
       </div>
-      {msg ? <p className={`cap act-msg ${msg.ok ? 'ok' : 'bad'}`}>{msg.text}</p> : null}
-      {!canWrite ? <p className="cap act-ro">Read-only: you can see the list and open each record in the CRM, but not update it from here.{isViewer ? ' Ask your admin for CRM updates access.' : ''}</p> : null}
-      {mine && !data.meMatched ? <p className="cap act-ro">Your login e-mail does not match a user in this CRM, so the list shows everyone.</p> : null}
-      {screen === 'actions' ? (
+      {screen === 'results' ? <RepCardView clientId={clientId} authUser={authUser} currency={currency} users={users} meId={data.meId || null} nonce={nonce} onGoActions={() => setScreen('actions')} /> : null}
+      {screen !== 'results' && msg ? <p className={`cap act-msg ${msg.ok ? 'ok' : 'bad'}`}>{msg.text}</p> : null}
+      {screen !== 'results' && !canWrite ? <p className="cap act-ro">Read-only: you can see the list and open each record in the CRM, but not update it from here.{isViewer ? ' Ask your admin for CRM updates access.' : ''}</p> : null}
+      {screen !== 'results' && mine && !data.meMatched ? <p className="cap act-ro">Your login e-mail does not match a user in this CRM, so the list shows everyone.</p> : null}
+      {screen === 'results' ? null : screen === 'actions' ? (
         todo === 0 && st.status === 'ok' ? <div className="card act-clear"><b>All clear.</b> <span className="cap">Nothing needs fixing{mine ? ' on your deals' : ''} right now.</span></div> : <>
           {sec('appts', ACT_SECTIONS[0][1], ACT_SECTIONS[0][2], lists.appts, (a) => (
             <div className="act-row" key={a.id}>
@@ -16225,7 +16338,7 @@ function DealsActionsView({ clientId, authUser, currency, nonce }) {
           {data.open && data.open.length >= 400 ? <p className="cap">Showing the 400 most recently touched open deals.</p> : null}
         </div>
       )}
-      <p className="cap act-foot">CRM snapshot from {data.snapshotAt ? actWhen(data.snapshotAt, tz) : '-'} · re-reads every minute while open{data.truncated ? ' · the snapshot is capped, so very old deals may be missing' : ''}.</p>
+      {screen !== 'results' ? <p className="cap act-foot">CRM snapshot from {data.snapshotAt ? actWhen(data.snapshotAt, tz) : '-'} · re-reads every minute while open{data.truncated ? ' · the snapshot is capped, so very old deals may be missing' : ''}.</p> : null}
     </div>
   )
 }
@@ -17853,7 +17966,7 @@ function LogsPanel({ clients }) {
                       <tbody>{(audit.data.summary || []).map((u) => (
                         <tr key={u.user} className="terms-row" onClick={() => setAUser(u.user === aUser ? '' : u.user)} title="Filter the timeline to this person">
                           <td className="lft">{u.name || u.user}<small style={{ display: 'block', color: 'var(--faint)' }}>{u.user}</small></td>
-                          <td className="lft"><span className={`u-role-tag r-${u.role}`}>{ROLE_LABEL[u.role] || u.role || '-'}</span></td>
+                          <td className="lft"><span className={`u-role-tag r-${u.role}`}>{roleLabelOf(u) || '-'}</span></td>
                           <td className="lft">{u.views}</td>
                           <td className="lft">{auditMins(Math.round(u.ms / 60000))}</td>
                           <td className="lft" title={(u.clientList || []).map(nameOf).join(', ')}>{u.clients || '-'}</td>
@@ -18028,7 +18141,7 @@ function SettingsPage({ config, enabled, setEnabled, restricted = {}, setRestric
       {authEnabled && section === 'account' && (
         <div className="card">
           <h3 style={{ marginTop: 0 }}>Your account</h3>
-          <p className="cap" style={{ marginTop: -4 }}>Signed in as <b>{authUser ? (authUser.name || authUser.email) : ''}</b>{authUser ? ` · ${ROLE_LABEL[authUser.role] || authUser.role}` : ''}. Change your password below.</p>
+          <p className="cap" style={{ marginTop: -4 }}>Signed in as <b>{authUser ? (authUser.name || authUser.email) : ''}</b>{authUser ? ` · ${roleLabelOf(authUser)}` : ''}. Change your password below.</p>
           <ChangePasswordCard />
           <SignOutEverywhereCard />
         </div>
@@ -18671,7 +18784,13 @@ function allowedTabsFE(user, offered) {
   const keep = offered.filter((t) => user.tabs.includes(t.id))
   return keep.length ? keep : offered.slice(0, 1)
 }
-const ROLE_LABEL = { superadmin: 'Super Admin', admin: 'Admin', user: 'User', viewer: 'Viewer' }
+const ROLE_LABEL = { superadmin: 'Super Admin', admin: 'Admin', user: 'User', viewer: 'Account Admin' }
+// The client side has two levels, named to match the CRM: an Account Admin
+// (a viewer with dashboards) and an Account User (a viewer holding only Deals &
+// Actions, with CRM updates - a sales rep). Same role underneath; the label
+// says which setup the person has.
+const isAccountUser = (u) => !!(u && u.role === 'viewer' && u.crm === true && Array.isArray(u.tabs) && u.tabs.length && u.tabs.every((t) => t === 'actions'))
+const roleLabelOf = (u) => (u ? (isAccountUser(u) ? 'Account User' : (ROLE_LABEL[u.role] || u.role)) : '')
 // Super Admin only: pick a person, or a role, and see the app as they do. The
 // people come from the same users list Settings shows; the two role presets
 // stand in for "a typical viewer" and "a typical admin" when no one specific
@@ -18703,7 +18822,7 @@ function ViewAsControl({ current, onViewAs }) {
   return <div className="side-viewas"><select autoFocus onChange={(e) => pickValue(e.target.value)} onBlur={() => setOpen(false)} aria-label="View as">
     <option value="">{users == null ? 'Loading people…' : 'Choose a person or a role'}</option>
     {viewAsPresets().map((p) => <option key={p.key} value={p.key}>{p.label}</option>)}
-    {(users || []).map((u) => <option key={u.email} value={u.email}>{u.name || u.email} · {ROLE_LABEL[u.role] || u.role}</option>)}
+    {(users || []).map((u) => <option key={u.email} value={u.email}>{u.name || u.email} · {roleLabelOf(u)}</option>)}
   </select></div>
 }
 function LoginForm({ onSignedIn }) {
@@ -18969,7 +19088,7 @@ function AllocationEditor({ value, clients, onChange, actorRole }) {
   const isSuper = actorRole === 'superadmin'
   // Only a Super Admin can grant Admin / Super Admin. Keep the current value as a
   // (disabled) option so an existing role still shows even if you can't set it.
-  const opts = [['user', 'User - agency staff'], ['viewer', 'Viewer - client']]
+  const opts = [['user', 'User - agency staff'], ['viewer', 'Account Admin / Account User - client side']]
   if (isSuper) opts.unshift(['superadmin', 'Super Admin - owner control'], ['admin', 'Admin - full control'])
   else if (isAdminishFE(v.role)) opts.unshift([v.role, ROLE_LABEL[v.role] + ' - (only a Super Admin can change this)'])
   return (
@@ -19002,7 +19121,8 @@ function AllocationEditor({ value, clients, onChange, actorRole }) {
         {(v.tabs == null || v.tabs.includes('custom')) && !dashOpen.length ? <p className="alloc-note alloc-warn">Custom dashboard is ticked, but {dashBuilt.length ? `${dashBuilt.map((x) => x.c.name).join(', ')} ${dashBuilt.length === 1 ? 'has a dashboard that is' : 'have dashboards that are'} not open to viewers (audience is ${dashBuilt.map((x) => DASH_AUD_LABEL[dashAudience(x.d)]).filter((x, i, a) => a.indexOf(x) === i).join(' / ')})` : 'none of the ticked clients has a custom dashboard yet'}. Nothing will show for this person until a dashboard’s “Who can see it” is set to Viewer under the client’s settings → Custom dashboard.</p> : null}
         <div className="alloc-lab" style={{ marginTop: 10 }}>Extra access</div>
         <label className="alloc-check"><input type="checkbox" checked={v.crm === true} onChange={(e) => onChange({ ...v, crm: e.target.checked })} /> <b>CRM updates</b> - can fix things from the <b>Deals &amp; Actions</b> tab (result appointments, set deal values and lost reasons, move stages, add notes) for the deals assigned to them</label>
-        <button type="button" className="btn-ghost sm" style={{ alignSelf: 'flex-start' }} onClick={() => onChange({ ...v, tabs: ['actions'], crm: true })} title="Deals & Actions only, with CRM updates: the setup for a sales rep">Use the CRM user preset</button>
+        <button type="button" className="btn-ghost sm" style={{ alignSelf: 'flex-start' }} onClick={() => onChange({ ...v, tabs: ['actions'], crm: true })} title="Deals & Actions only, with CRM updates: the setup for a sales rep">Make this an Account User (Deals &amp; Actions only, with CRM updates)</button>
+        <p className="alloc-note"><b>Account Admin</b> = the ticked tabs for their account, read-only dashboards. <b>Account User</b> = a rep: Deals &amp; Actions only, can update their own deals and appointments, sees their own results.</p>
         <label className="alloc-check"><input type="checkbox" checked={v.reports === true} onChange={(e) => onChange({ ...v, reports: e.target.checked })} /> <b>Monthly Reports</b> - can view the <b>published</b> monthly reports for the clients above</label>
         <p className="alloc-note">Client access - only the ticked clients and tabs, and no agency-wide views. Monthly Reports shows only reports you've <b>published</b> (frozen snapshots), and can be granted on its own.</p>
       </>)}
@@ -19228,7 +19348,7 @@ function UsersAdmin({ authUser, authEnabled, clients }) {
               <tr key={u.email}>
                 <td className="lft">{u.name || <span className="cap">-</span>}{self && <span className="u-you">you</span>}</td>
                 <td className="lft">{u.email}</td>
-                <td className="lft"><span className={`u-role-tag r-${u.role}`}>{ROLE_LABEL[u.role] || u.role}</span></td>
+                <td className="lft"><span className={`u-role-tag r-${u.role}`}>{roleLabelOf(u)}</span></td>
                 <td className="lft"><span className="cap">{accessSummary(u)}</span></td>
                 {seeActivity && <>
                   <td className="lft" title={u.lastSeen ? `Last active ${new Date(u.lastSeen).toLocaleString('en-AU')}${u.lastLogin ? ` · last signed in ${new Date(u.lastLogin).toLocaleString('en-AU')}` : ''}${ls && ls.ip ? ` · IP ${ls.ip}` : ''}` : (u.status === 'invited' ? 'Hasn\u2019t accepted their invite yet' : 'No activity recorded')}>
@@ -24290,7 +24410,7 @@ function Dashboard({ authUser, authEnabled, onLogout, realUser, onViewAs }) {
         <div className="side-foot">
           <button className={`settings-btn ${view === 'settings' ? 'active' : ''}`} onClick={() => go('settings')}><span className="ic"><NavIcon name="settings" /></span>Settings</button>
           {realUser && realUser.role === 'superadmin' && onViewAs ? <ViewAsControl current={authUser && authUser.viewAs ? authUser : null} onViewAs={onViewAs} /> : null}
-          {authUser && <div className="side-user"><span className="side-user-av">{(authUser.name || authUser.email || '?').trim().charAt(0).toUpperCase()}</span><div className="side-user-txt"><b>{authUser.name || authUser.email}</b><span>{ROLE_LABEL[authUser.role] || authUser.role}</span></div><button className="side-user-out" onClick={onLogout} title="Sign out">Sign out</button></div>}
+          {authUser && <div className="side-user"><span className="side-user-av">{(authUser.name || authUser.email || '?').trim().charAt(0).toUpperCase()}</span><div className="side-user-txt"><b>{authUser.name || authUser.email}</b><span>{roleLabelOf(authUser)}</span></div><button className="side-user-out" onClick={onLogout} title="Sign out">Sign out</button></div>}
           {/* Two deliberate lines rather than one that wraps mid-timestamp - the
               sidebar is too narrow to hold version, date and commit on one row. */}
           <div className="foot-build" title={`Caalano360 v${APP_VERSION} · Build ${__BUILD_TIME__}${__COMMIT_REF__ ? ` · commit ${__COMMIT_REF__}` : ''} · see CHANGELOG.md`}>

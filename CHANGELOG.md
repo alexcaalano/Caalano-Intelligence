@@ -18,6 +18,33 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.565.0 - 2026-09-12 · `PENDING`
+
+**My results: a sales scorecard per rep** - third screen on Deals &
+Actions. For a rep and a period (7 days to 90 days, this or last month):
+leads, appointments booked split into booked by the rep and booked by the
+customer, show rate against the team, win rate against the team with rank,
+won deals and revenue with average deal, lost with the top reason, open
+now with value in play, stale deals with average and oldest idle days,
+speed to lead (median, share under five minutes, the time buckets,
+after-hours leads), how far their leads got by stage, lost reasons, and
+ranks among the reps who had leads. Built from the same code as the Users
+tab and Speed to Lead. An Account User sees only their own; staff pick any
+rep. Tiles first, then detail, two columns on a phone.
+
+**Account Admin and Account User** - the client side is now named the way
+the CRM names it. Account Admin is a viewer with ticked dashboard tabs;
+Account User is a rep who holds only Deals & Actions with CRM updates.
+Team shows the right label per person, the role picker says "Account
+Admin / Account User - client side", and one button, "Make this an Account
+User", sets a rep up. Nothing changed underneath, so existing users keep
+working.
+
+**Fix** - the widened undefined-name check caught a wrong helper name in
+the new scorecard route before it shipped.
+
+---
+
 ## v3.564.0 - 2026-09-12 · `da8fc73`
 
 **Deals & Actions: the CRM to-do list, with fixes written back** - a new

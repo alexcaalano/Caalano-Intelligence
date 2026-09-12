@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.549.0 - 2026-09-12 · `PENDING`
+## v3.549.0 - 2026-09-12 · `2bff5d6`
 
 **Docs: SaaS tenancy and connection design** - `SAAS-DESIGN.md` is the
 agreed-shape design for turning Caalano360 into a multi-tenant product:

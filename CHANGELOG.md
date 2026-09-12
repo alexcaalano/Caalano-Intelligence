@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.562.0 - 2026-09-12 · `PENDING`
+## v3.562.0 - 2026-09-12 · `5a11d46`
 
 **Docs: data hygiene for CRM users** - `SAAS-DESIGN.md` section 15 sets out
 the three-stage plan for keeping CRM data complete: a read-only action list

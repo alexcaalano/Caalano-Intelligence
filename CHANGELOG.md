@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.564.0 - 2026-09-12 · `PENDING`
+## v3.564.0 - 2026-09-12 · `da8fc73`
 
 **Deals & Actions: the CRM to-do list, with fixes written back** - a new
 tab on every client with a Caalano Systems connection. **Action list**:

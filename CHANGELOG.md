@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.563.0 - 2026-09-12 · `PENDING`
+## v3.563.0 - 2026-09-12 · `15fdee2`
 
 **Docs: the rep workspace** - `SAAS-DESIGN.md` section 15 stage C is now a
 rep-facing "My deals" workspace: assigned opportunities by pipeline and

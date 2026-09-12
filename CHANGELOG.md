@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.552.0 - 2026-09-12 · `PENDING`
+## v3.552.0 - 2026-09-12 · `90dfeeb`
 
 **Fix: restore dry run needed credentials** - `scripts/restore-backup.mjs
 --dry-run` opened a real Blobs store for each listing and crashed with

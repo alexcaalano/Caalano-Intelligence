@@ -731,8 +731,29 @@ of it.
 | Whatagraph | credits | $812 minimum |
 | Hyros | per tracked revenue | $230 (annual) / $459 (monthly) to $5,249 |
 | GoHighLevel AI Employee add-on | per sub-account | $50 to $97 |
-| Streamlined Analytics (streamlined.so) | AI call review, conversation analysis and reporting for GoHighLevel agencies | 14-day trial; prices not reachable from the agent, Alex to supply |
+| Streamlined Analytics (streamlined.so) | per sub-account with a ceiling, AI metered on top | $295 first sub-account, $50 each for the next four (max 5, $495); agencies $495 flat for unlimited sub-accounts; AI analysis $0.02 to $0.0025 per result, call transcription $0.0004 per second; 14-day trial |
 
 Report builders sit at $20 to $45 per client; attribution and intelligence
 tools (Hyros) sit at $230 to $5,000+. A $97 per-workspace price is only
 defensible as the second kind, which is the positioning.
+
+Streamlined is the closest comparable: same audience (GoHighLevel
+agencies), same claim (intelligence, not reports), and it prices the way a
+single-workspace buyer and an agency buyer actually behave: a high first
+workspace, cheap additional ones, and a flat ceiling for agencies so a
+20-client agency is not scared off by a per-client multiplier. Its AI is
+metered separately, which keeps the base price honest against AI cost.
+
+Suggested shape for Caalano360, to be priced by Alex (USD/month):
+
+| | First workspace | Each additional | Ceiling |
+|---|---|---|---|
+| Business (1 to 5) | $147 to $197 | $47 to $67 | none needed |
+| Agency (unlimited) | flat $497 to $697 | included | that flat fee |
+| AI insights / briefings | metered per run on both, or included up to a cap | | |
+
+This keeps the single business well under Streamlined's $295, keeps the
+agency fee in the same band as theirs while including the agency overview
+they do not have, and makes the Stripe setup simple: one seat price with
+graduated tiers for business, one flat price for agency, one metered AI
+item. The `plans` rows in section 6 already carry this without change.

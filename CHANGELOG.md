@@ -18,6 +18,15 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.556.0 - 2026-09-12 · `PENDING`
+
+**Docs: Streamlined pricing added to the SaaS design** - the closest
+comparable ($295 first sub-account, $50 each to five, $495 flat for
+agencies, AI metered on top) is in the market table, with a suggested
+pricing shape for Caalano360 derived from it. No app changes.
+
+---
+
 ## v3.555.0 - 2026-09-12 · `f1f9c35`
 
 **Docs: SaaS design decisions** - `SAAS-DESIGN.md` records the decisions

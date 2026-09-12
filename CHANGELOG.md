@@ -18,6 +18,19 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.552.0 - 2026-09-12 · `PENDING`
+
+**Fix: restore dry run needed credentials** - `scripts/restore-backup.mjs
+--dry-run` opened a real Blobs store for each listing and crashed with
+"MissingBlobsEnvironmentError" when the site id or token was not parsed. A
+dry run now never touches Netlify, so it works with no credentials at all;
+`--site<id>` / `--token<token>` with a missed space and `--site=<id>` are
+accepted; the missing-credentials message says exactly what to type; and both
+modes end with a plain "Done" / "Nothing was written" line. `BACKUP.md`
+checklist: the daily GitHub backup is ticked (first run 2026-09-12).
+
+---
+
 ## v3.551.0 - 2026-09-12 · `a2ac1dd`
 
 **Fix: the site could not call its own background jobs** - the login gate at

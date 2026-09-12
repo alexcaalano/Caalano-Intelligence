@@ -51,13 +51,14 @@ export async function restoreStores(stores, names, { dry = false, wipe = false, 
 async function main() {
   const args = process.argv.slice(2)
   const file = args.find((a) => !a.startsWith('--'))
-  const opt = (k) => { const i = args.indexOf(k); return i >= 0 ? args[i + 1] : null }
+  // --site <id>, --site=<id> and --site<id> (a missed space) all work.
+  const opt = (k) => { const i = args.indexOf(k); if (i >= 0) return args[i + 1]; const glued = args.find((a) => a.startsWith(k) && a.length > k.length); return glued ? glued.slice(k.length).replace(/^=/, '') : null }
   const flags = new Set(args.filter((a) => a.startsWith('--')))
   const only = args.flatMap((a, i) => (a === '--store' ? [args[i + 1]] : []))
   if (!file) { console.error('usage: restore-backup.mjs <file.json> --site <id> --token <token> [--store name] [--dry-run] [--wipe] [--yes]'); process.exit(2) }
   const siteID = opt('--site') || process.env.NETLIFY_SITE_ID, token = opt('--token') || process.env.NETLIFY_AUTH_TOKEN
   const dry = flags.has('--dry-run')
-  if (!dry && (!siteID || !token)) { console.error('need --site and --token (or NETLIFY_SITE_ID / NETLIFY_AUTH_TOKEN) unless --dry-run'); process.exit(2) }
+  if (!dry && (!siteID || !token)) { console.error('Need both --site <project id> and --token <netlify personal token>, each followed by a space and the value.'); process.exit(2) }
 
   const raw = JSON.parse(fs.readFileSync(file, 'utf8'))
   // Whole export: { format, stores: { name: { data } } }. Single store file: { store, data }.
@@ -74,6 +75,10 @@ async function main() {
     const ans = await new Promise((res) => rl.question(`Write these into site ${siteID}? This overwrites matching keys. Type yes: `, res)); rl.close()
     if (ans.trim() !== 'yes') { console.log('aborted'); process.exit(1) }
   }
-    await restoreStores(stores, names, { dry, wipe: flags.has('--wipe'), mk: (name) => getStore({ name, siteID, token, consistency: 'strong' }) })
+  // A dry run never opens a real store, so it works with no site id or token.
+  const noop = { async set() {}, async setJSON() {}, async delete() {}, async list() { return { blobs: [] } } }
+  const mk = dry ? () => noop : (name) => getStore({ name, siteID, token, consistency: 'strong' })
+  await restoreStores(stores, names, { dry, wipe: flags.has('--wipe'), mk })
+  console.log(dry ? 'Dry run finished. Nothing was written.' : `Done. Restored ${names.length} store(s) into site ${siteID}.`)
 }
 if (!process.env.RESTORE_AS_MODULE) await main()

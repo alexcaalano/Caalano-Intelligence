@@ -67,10 +67,9 @@ clients and key events. Then delete the site.
 
 ## Status checklist (tick these off)
 
-- [ ] `BACKUP_GH_TOKEN` and `BACKUP_GH_REPO` set in Netlify, so the daily job
-      actually runs. As of 2026-09-11 `backups/` does not exist in the repo,
-      which means it has never run. Use a separate private repo
-      (e.g. `alexcaalano/caalano360-backups`) rather than the app repo.
+- [x] `BACKUP_GH_TOKEN` and `BACKUP_GH_REPO` set in Netlify (2026-09-12, repo
+      `alexcaalano/caalano360-backups`, first run wrote 11 stores, 23 files, one
+      commit, 15 s). The job runs daily by itself now.
 - [x] A `backup-export?secrets=1` file saved in the password manager (2026-09-12).
 - [x] The environment variables copied into the password manager entry (2026-09-12; the two Meta ones wait on a Meta admin approval, `WARM_SECRET` is not set and not needed).
 - [x] Netlify site settings (domain, production branch, function region)

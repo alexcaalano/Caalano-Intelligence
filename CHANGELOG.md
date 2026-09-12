@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.570.0 - 2026-09-12 · `PENDING`
+## v3.570.0 - 2026-09-12 · `4cf0185`
 
 **Fix: notes showed raw HTML** - a booking workflow writes its notes as
 HTML, which came through as tags. Notes and e-mail bodies in Deals &

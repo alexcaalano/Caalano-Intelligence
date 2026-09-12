@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.556.0 - 2026-09-12 · `PENDING`
+## v3.556.0 - 2026-09-12 · `4c75ab8`
 
 **Docs: Streamlined pricing added to the SaaS design** - the closest
 comparable ($295 first sub-account, $50 each to five, $495 flat for

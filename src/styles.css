@@ -5244,3 +5244,7 @@ button.act-tier.on { border-color: var(--text); }
 .u-role-tag.r-account_user { color: #7a5c00; background: rgba(212,160,23,.16); }
 .u-filters { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 12px; }
 .act-panel .act-note { flex: 0 0 auto; }
+.alloc-links { display: flex; flex-direction: column; gap: 6px; }
+.alloc-link { justify-content: space-between; }
+.alloc-link > span { min-width: 120px; }
+.alloc-link select { flex: 1; max-width: 320px; }

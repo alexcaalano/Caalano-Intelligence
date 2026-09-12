@@ -2609,6 +2609,8 @@ async function socialMonth(soc, from, to, key) {
 // updates. They see their own deals and results; an Account Admin (any other
 // viewer) may look across reps, as the Users tab already lets them.
 const isAccountUser = (me) => !!(me && me.role === 'account_user')
+// The CRM user a person is linked to for this client (Team -> Link to CRM user), if any.
+const linkedCrmUser = (me, client) => (me && client && me.crmUsers && me.crmUsers[client]) || null
 const VIEWER_TABS_ALL = ['overall', 'users', 'meta', 'google', 'cohorts', 'forms', 'location', 'appts', 'timing', 'calls', 'lostreasons', 'optlog', 'actions']
 const VIEWER_REQ_TABS = {
   'channel:blend': ['overall'],
@@ -3381,6 +3383,14 @@ export default async (req) => {
   // Client-side failure beacon: the browser POSTs a failure (502 / timeout /
   // parse error it saw) so the same log captures browser-visible breakages the
   // function itself never got to record.
+  // The CRM's user list for one client, for Team -> "Link to CRM user".
+  if (scope === 'crmusers') {
+    if (!me || !(isAdminish(me.role))) return json({ error: 'Admins only.' }, 403)
+    const cc = clientCfg(client)
+    if (!cc || !cc.ghl) return json({ scope: 'crmusers', client, users: [] })
+    try { return json({ scope: 'crmusers', client, users: (await ghlUserRows(cc.ghl)).map((u) => ({ id: u.user_id, name: u.user_name })).filter((u) => u.id) }) }
+    catch (e) { return json({ scope: 'crmusers', client, users: [], error: String((e && e.message) || e).slice(0, 200) }) }
+  }
   // One rep's scorecard (Deals & Actions -> My results). A client-side rep
   // always gets their own; staff may name any rep with ?user=. Cached like the
   // Users tab, keyed on the URL, so the rep filter is part of the key.
@@ -3391,7 +3401,7 @@ export default async (req) => {
     try {
       const selfOnly = isAccountUser(me)
       let userId = selfOnly ? null : (url.searchParams.get('user') || null)
-      if (!userId) userId = me ? await ghlUserIdForEmail(cc.ghl, me.email) : null
+      if (!userId) userId = me ? (linkedCrmUser(me, client) || await ghlUserIdForEmail(cc.ghl, me.email)) : null
       if (!userId) return json({ scope: 'repcard', client, ghl: true, error: selfOnly ? 'Your login e-mail does not match a user in this CRM, so there are no results to show. Ask your admin to match the e-mails.' : 'Pick a rep, or sign in with an e-mail that matches a CRM user.' })
       const staleDays = Math.max(3, Math.min(180, Number(url.searchParams.get('stale')) || 30))
       const hours = parseHours(url)
@@ -3414,7 +3424,7 @@ export default async (req) => {
       if (!body || !body.op) return json({ error: 'op required' }, 400)
       try {
         // A client-side rep writes only to their own records; staff to any.
-        const onlyUserId = isViewerHere ? await ghlUserIdForEmail(cc.ghl, me.email) : null
+        const onlyUserId = isViewerHere ? (linkedCrmUser(me, client) || await ghlUserIdForEmail(cc.ghl, me.email)) : null
         if (isViewerHere && !onlyUserId) return json({ error: 'Your login e-mail does not match a user in this CRM, so updates are not allowed. Ask your admin to match the e-mails.' }, 403)
         if (body.op === 'note' && !body.userId && onlyUserId) body.userId = onlyUserId
         const r = await applyAction(cc.ghl, body, { onlyUserId })
@@ -3431,10 +3441,11 @@ export default async (req) => {
         return json({ scope: 'actions', client, contactId: convFor || null, conversation: await contactConversation(cc.ghl, { contactId: convFor || null, conversationId: convId || null }) })
       } catch (e) { return json({ scope: 'actions', client, error: String((e && e.message) || e).slice(0, 240) }, 400) }
     }
-    const mine = isAccountUser(me) ? url.searchParams.get('mine') !== '0' : url.searchParams.get('mine') === '1'
+    // An Account User's lists are always their own; everyone else chooses.
+    const mine = isAccountUser(me) ? true : url.searchParams.get('mine') === '1'
     const staleDays = Math.max(3, Math.min(180, Number(url.searchParams.get('stale')) || 7))
     try {
-      const r = await buildActions(cc.ghl, { email: me && me.email, mine, staleDays })
+      const r = await buildActions(cc.ghl, { email: me && me.email, userId: linkedCrmUser(me, client), mine, staleDays })
       return json({ scope: 'actions', client, ghl: true, canWrite: !!(me && (!isViewerHere || me.crm === true)), accountUser: isAccountUser(me), ...r })
     } catch (e) { return json({ scope: 'actions', client, ghl: true, error: String((e && e.message) || e).slice(0, 240) }) }
   }

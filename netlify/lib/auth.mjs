@@ -156,7 +156,11 @@ const publicUser = (u) => u && ({
   tokenEpoch: u.tokenEpoch || 0,
   termsVersion: u.termsVersion || null, termsAcceptedAt: u.termsAcceptedAt || null,
   clients: Array.isArray(u.clients) ? u.clients : [], allClients: u.allClients !== false,
-  tabs: normRole(u.role) === 'account_user' ? ['actions'] : (Array.isArray(u.tabs) ? u.tabs : null), reports: u.reports === true, crm: normRole(u.role) === 'account_user' || u.crm === true, requestedAt: u.requestedAt || null, note: u.note || '',
+  tabs: normRole(u.role) === 'account_user' ? ['actions'] : (Array.isArray(u.tabs) ? u.tabs : null), reports: u.reports === true, crm: normRole(u.role) === 'account_user' || u.crm === true,
+  // Which CRM user this person is, per client: { clientId: crmUserId }. Optional;
+  // without it the app matches by e-mail.
+  crmUsers: u.crmUsers && typeof u.crmUsers === 'object' ? u.crmUsers : {},
+  requestedAt: u.requestedAt || null, note: u.note || '',
 })
 export { publicUser }
 
@@ -221,6 +225,7 @@ function normAlloc(patch = {}) {
   // to the CRM (result appointments, values, lost reasons, stages, notes) for
   // the records assigned to them. Staff always can.
   if (typeof patch.crm === 'boolean') out.crm = patch.crm
+  if (patch.crmUsers && typeof patch.crmUsers === 'object') { out.crmUsers = {}; for (const [k, v] of Object.entries(patch.crmUsers)) if (k && v) out.crmUsers[String(k).slice(0, 80)] = String(v).slice(0, 80) }
   return out
 }
 // Can this user access Monthly Reports at all? Admins + agency users always can;
@@ -280,7 +285,7 @@ export async function authenticate(email, password, geo) {
 }
 
 // Admin creates an invite. Returns the token + the pending user record.
-export async function createInvite({ email, name, role, clients, allClients, tabs, reports, crm, invitedBy, actor }) {
+export async function createInvite({ email, name, role, clients, allClients, tabs, reports, crm, crmUsers, invitedBy, actor }) {
   if (!isEmail(email)) return { error: 'A valid email is required.' }
   const actorRole = (actor && actor.role) || 'admin'
   if (role && !canManageRole(actorRole, role)) return { error: 'Only a Super Admin can invite an Admin.' }
@@ -290,7 +295,7 @@ export async function createInvite({ email, name, role, clients, allClients, tab
   const token = randomToken()
   const now = new Date().toISOString()
   const expires = Date.now() + 7 * 86400 * 1000
-  const alloc = normAlloc({ role, clients, allClients, tabs, reports, crm })
+  const alloc = normAlloc({ role, clients, allClients, tabs, reports, crm, crmUsers })
   const u = {
     email: em, name: String(name || '').trim(), role: normRole(role),
     status: 'invited', passwordHash: null, passwordSalt: null, createdAt: existing ? existing.createdAt : now,
@@ -340,7 +345,7 @@ export async function updateUser(email, patch, actor) {
     if (u.role === 'superadmin' && patch.role !== 'superadmin' && (await countActiveRole('superadmin')) <= 1) return { error: 'You can’t remove the last Super Admin.' }
     u.role = patch.role
   }
-  Object.assign(u, normAlloc({ clients: patch.clients, allClients: patch.allClients, tabs: patch.tabs, reports: patch.reports, crm: patch.crm }))
+  Object.assign(u, normAlloc({ clients: patch.clients, allClients: patch.allClients, tabs: patch.tabs, reports: patch.reports, crm: patch.crm, crmUsers: patch.crmUsers }))
   if (patch.status && (patch.status === 'active' || patch.status === 'disabled')) {
     if (self && patch.status === 'disabled') return { error: 'You can’t disable your own account.' }
     if (patch.status === 'disabled' && u.role === 'superadmin' && (await countActiveRole('superadmin')) <= 1) return { error: 'You can’t disable the last Super Admin.' }

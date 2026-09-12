@@ -1075,3 +1075,11 @@ an Agency User to their allowed accounts (or all), admins to all. Team has
 an "Attached to" filter and a role filter, so "who works on Poolhouse" is
 one click. One person can be attached to several accounts. In the SaaS
 schema this is `memberships.workspace_ids`.
+
+**Linked CRM user.** Each person can be linked, per account, to the CRM user
+they are (`crmUsers: { clientId: crmUserId }` on the user record; in the
+SaaS schema a `crm_user_id` on the membership's workspace grant). The link
+is optional: unlinked people match by e-mail. An Account User's Live deals
+and Action list are always their own; My results keeps the leaderboard
+because every deal is visible in the CRM anyway; Compare is Account Admin
+and above.

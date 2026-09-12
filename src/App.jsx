@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.566.0'
+const APP_VERSION = '3.567.0'
 // The business clock. Every server window is cut on the client's local day
 // (Caalano Systems location timezone), so any day the app derives on its own -
 // preset ranges, "today", CSV dates - must use the same clock rather than the
@@ -16460,7 +16460,7 @@ function DealsActionsView({ clientId, authUser, currency, nonce }) {
           {!data.accountUser && reps.length > 1 ? <button type="button" className={screen === 'compare' ? 'active' : ''} onClick={() => setScreen('compare')}>Compare</button> : null}
         </div>
         {screen === 'results' || screen === 'compare' ? null : <div className="act-filters">
-          {data.meMatched ? <label className="act-sel"><select value={mine ? 'mine' : 'all'} onChange={(e) => { setMine(e.target.value === 'mine'); setRep('all') }}><option value="mine">Mine</option><option value="all">Everyone</option></select></label> : null}
+          {data.meMatched && !data.accountUser ? <label className="act-sel"><select value={mine ? 'mine' : 'all'} onChange={(e) => { setMine(e.target.value === 'mine'); setRep('all') }}><option value="mine">Mine</option><option value="all">Everyone</option></select></label> : null}
           {!mine ? <label className="act-sel"><select value={rep} onChange={(e) => setRep(e.target.value)}><option value="all">All reps</option><option value="none">No rep</option>{reps.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}</select></label> : null}
           {screen === 'actions' && (data.calendars || []).length > 1 ? <label className="act-sel"><select value={cal} onChange={(e) => setCal(e.target.value)}><option value="all">All calendars</option>{(data.calendars || []).map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}</select></label> : null}
           {screen === 'actions' ? <label className="act-sel"><select value={tier} onChange={(e) => setTier(Number(e.target.value))}><option value={0}>Stale: all (7+ days)</option><option value={14}>Stale: 14+ days</option><option value={21}>Stale: 21+ days</option><option value={30}>Stale: 30+ days</option></select></label> : null}
@@ -19300,6 +19300,7 @@ function AllocationEditor({ value, clients, onChange, actorRole }) {
       {isClientRoleFE(v.role) && (<>
         <div className="alloc-lab">{v.role === 'account_user' ? 'Which account do they work in?' : 'Which clients can they see?'}</div>
         <ClientPicker clients={clients} selected={v.clients || []} onToggle={toggleClient} />
+        <CrmUserLinks v={v} clients={clients} onChange={onChange} />
         {v.role === 'account_user' ? <p className="alloc-note"><b>Account User</b> - an employee of the Account Admin. Holds <b>Deals &amp; Actions</b> only: their own deals, action list and results, and can update their own deals and appointments. Their login e-mail must match their user in the CRM.</p> : <>
         <div className="alloc-lab">Which tabs can they see?</div>
         <div className="alloc-chips">{TAB_OPTIONS.map((t) => {
@@ -19318,6 +19319,43 @@ function AllocationEditor({ value, clients, onChange, actorRole }) {
         <p className="alloc-note"><b>Account Admin</b> - the client. Only the ticked clients and tabs, and no agency-wide views. Monthly Reports shows only reports you've <b>published</b> (frozen snapshots), and can be granted on its own.</p>
         </>}
       </>)}
+    </div>
+  )
+}
+// Link a person to their user in the CRM, per ticked client, so Deals &
+// Actions knows whose deals are theirs even when the e-mails differ. Not
+// forced: unlinked people are matched by e-mail, and anyone else can still
+// sign in and see what their role allows.
+function CrmUserLinks({ v, clients, onChange }) {
+  const [lists, setLists] = useState({})
+  const ticked = (clients || []).filter((c) => (v.clients || []).includes(c.id) && c.ghl)
+  useEffect(() => {
+    for (const c of ticked) {
+      if (lists[c.id]) continue
+      setLists((l) => ({ ...l, [c.id]: { status: 'loading', users: [] } }))
+      fetch(`/.netlify/functions/windsor?scope=crmusers&client=${encodeURIComponent(c.id)}`, { credentials: 'same-origin' })
+        .then((r) => r.json().catch(() => ({ users: [] })))
+        .then((j) => setLists((l) => ({ ...l, [c.id]: { status: 'ok', users: (j && j.users) || [] } })))
+        .catch(() => setLists((l) => ({ ...l, [c.id]: { status: 'err', users: [] } })))
+    }
+  }, [ticked.map((c) => c.id).join(',')]) // eslint-disable-line
+  if (!ticked.length) return null
+  const links = v.crmUsers || {}
+  return (
+    <div className="alloc-links">
+      <div className="alloc-lab">Link to their CRM user</div>
+      {ticked.map((c) => {
+        const l = lists[c.id] || { status: 'loading', users: [] }
+        return (
+          <label className="act-sel alloc-link" key={c.id}><span>{c.name}</span>
+            <select value={links[c.id] || ''} onChange={(e) => { const n = { ...links }; if (e.target.value) n[c.id] = e.target.value; else delete n[c.id]; onChange({ ...v, crmUsers: n }) }}>
+              <option value="">{l.status === 'loading' ? 'Loading CRM users…' : 'Not linked - match by e-mail'}</option>
+              {l.users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+            </select>
+          </label>
+        )
+      })}
+      <p className="alloc-note">Tells Deals &amp; Actions which deals, appointments and results are theirs. Leave unlinked to match on e-mail.</p>
     </div>
   )
 }
@@ -19355,7 +19393,7 @@ function UserAccessModal({ user, clients, authUser, onClose, onChanged }) {
   const [email, setEmail] = useState(isInvite ? '' : user.email)
   const [draft, setDraft] = useState(isInvite
     ? { role: 'account_admin', clients: [], allClients: true, tabs: VIEWER_DEFAULT_TABS, reports: false }
-    : { role: user.role, clients: user.clients || [], allClients: user.allClients !== false, tabs: user.tabs, reports: user.reports === true })
+    : { role: user.role, clients: user.clients || [], allClients: user.allClients !== false, tabs: user.tabs, reports: user.reports === true, crm: user.crm === true, crmUsers: user.crmUsers || {} })
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
   const [link, setLink] = useState(null)
@@ -19366,7 +19404,7 @@ function UserAccessModal({ user, clients, authUser, onClose, onChanged }) {
     if (isInvite && !email) return setErr('Enter an email address.')
     if (isClientRoleFE(draft.role) && !(draft.clients || []).length) return setErr(`Pick at least one client for an ${ROLE_LABEL[draft.role] || 'Account Admin'}.`)
     setBusy(true)
-    const payload = { role: draft.role, clients: draft.clients, allClients: draft.allClients, tabs: draft.tabs, reports: draft.reports === true, crm: draft.crm === true }
+    const payload = { role: draft.role, clients: draft.clients, allClients: draft.allClients, tabs: draft.tabs, reports: draft.reports === true, crm: draft.crm === true, crmUsers: draft.crmUsers || {} }
     if (isInvite) {
       const r = await authApi('invite', { method: 'POST', body: JSON.stringify({ name, email, ...payload }) })
       setBusy(false)
@@ -19444,7 +19482,7 @@ function UsersAdmin({ authUser, authEnabled, clients }) {
   const load = () => authApi('users').then((r) => setState(r && r.ok ? { status: 'ok', users: r.users || [] } : { status: r && r.enabled === false ? 'off' : 'err', error: r && r.error, users: [] }))
   useEffect(() => { if (authEnabled) load(); else setState({ status: 'off', users: [] }) }, [authEnabled])
   const rejectPending = async (u) => { if (!window.confirm(`Reject ${u.name || u.email}’s request?`)) return; await authApi('delete-user', { method: 'POST', body: JSON.stringify({ email: u.email }) }); load() }
-  const approve = async (u, draft) => { const r = await authApi('approve', { method: 'POST', body: JSON.stringify({ email: u.email, role: draft.role, clients: draft.clients, allClients: draft.allClients, tabs: draft.tabs, reports: draft.reports === true, crm: draft.crm === true }) }); if (r.ok) load() }
+  const approve = async (u, draft) => { const r = await authApi('approve', { method: 'POST', body: JSON.stringify({ email: u.email, role: draft.role, clients: draft.clients, allClients: draft.allClients, tabs: draft.tabs, reports: draft.reports === true, crm: draft.crm === true, crmUsers: draft.crmUsers || {} }) }); if (r.ok) load() }
 
   if (state.status === 'off') return (
     <div className="card set-users-off">

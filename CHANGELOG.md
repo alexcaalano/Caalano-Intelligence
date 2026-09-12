@@ -18,6 +18,21 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.567.0 - 2026-09-12 · `PENDING`
+
+**Link a person to their CRM user** - in Team, under each ticked account
+for an Account Admin or Account User, a "Link to their CRM user" dropdown
+lists that account's CRM users. The link tells Deals & Actions whose deals,
+appointments and results are theirs; left unlinked, the app matches on
+e-mail as before, and nothing stops anyone else signing in.
+
+**Account Users are locked to their own** - Live deals and the Action list
+always show an Account User their own records (no Mine / Everyone switch,
+enforced on the server). My results keeps the leaderboard for them; Compare
+stays with Account Admins and agency staff.
+
+---
+
 ## v3.566.0 - 2026-09-12 · `7465848`
 
 **Five tiers** - Super Admin, Agency Admin, Agency User, Account Admin and

@@ -5802,7 +5802,7 @@ export async function ghlUserIdForEmail(locationId, email) {
   const u = (j.users || []).find((x) => String(x.email || '').trim().toLowerCase() === em)
   return u ? (u.id || u._id) : null
 }
-export async function buildActions(locationId, { email = null, mine = false, staleDays = 7 } = {}) {
+export async function buildActions(locationId, { email = null, userId = null, mine = false, staleDays = 7 } = {}) {
   const locTok = await locationTokenOrDemo(locationId)
   const now = Date.now()
   const [tz, snap, pipelines, reasons, usersJ, appts, done, inboundRaw] = await Promise.all([
@@ -5818,7 +5818,8 @@ export async function buildActions(locationId, { email = null, mine = false, sta
   const users = (usersJ.users || []).map((u) => ({ id: u.id || u._id, name: u.name || [u.firstName, u.lastName].filter(Boolean).join(' ') || u.email || 'User', email: String(u.email || '').trim().toLowerCase() }))
   const userName = {}; for (const u of users) userName[u.id] = u.name
   const em = email ? String(email).trim().toLowerCase() : null
-  const meId = em ? ((users.find((u) => u.email === em) || {}).id || null) : null
+  // The linked CRM user wins; otherwise match the login e-mail.
+  const meId = (userId && users.some((u) => u.id === userId) ? userId : null) || (em ? ((users.find((u) => u.email === em) || {}).id || null) : null)
   const stageOf = {}; const pipeOf = {}
   const pipes = (pipelines || []).map((p) => {
     const stages = (p.stages || []).map((s, i) => ({ id: s.id, name: s.name, pos: s.position ?? i })).sort((a, b) => a.pos - b.pos)

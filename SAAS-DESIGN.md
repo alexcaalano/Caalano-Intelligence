@@ -912,3 +912,49 @@ can be reordered later without rework.
 **phase 1b**, between moving Caalano Digital in (phase 1) and GoHighLevel
 self-serve (phase 2), because Finr Advisory needs Workspaces, Members,
 Connections and Billing to exist before they can be a tenant.
+
+## 15. Data hygiene for CRM users (raised 2026-09-12)
+
+The intelligence is only as good as what sales reps mark in the CRM: won
+deals need a value (and later a product), lost deals need a lost reason,
+appointments that have passed need a result (showed, no-show, cancelled),
+and stages need advancing. Everything below is possible with data the app
+already reads (`monetaryValue`, `lostReasonId`, appointment status and
+start time, `assignedTo`, pipeline stage), so stage A needs no new
+permissions.
+
+**Stage A - the action list, read-only, on the current version.** A
+"Data hygiene" tab per workspace, and a per-rep "My actions" view:
+
+| Check | Rule | Fix asked for |
+|---|---|---|
+| Appointment not resulted | status still booked/confirmed and start time is in the past | mark showed / no-show / cancelled |
+| Won without a value | status won and `monetaryValue` empty or 0 | enter the value (and the product once the register exists) |
+| Lost without a reason | status lost/abandoned and no `lostReasonId` | pick a lost reason |
+| Showed but not advanced | an appointment marked showed, opportunity still in a pre-appointment stage after N days | move the stage or mark lost |
+| Stale open deal | open, no activity for N days (per client setting) | follow up or mark lost |
+| Unassigned | opportunity with no `assignedTo` | assign a rep |
+
+Each row: contact, rep, age, and an "Open in Caalano Systems" deep link to
+the contact so the fix is one click away. Counts per rep and per check feed
+a health line on the Agency Overview and a weekly digest e-mail to each
+rep. Reps see it as a `hygiene` tab grant on a viewer or user membership,
+so a rep can be invited with only that tab. Built from the existing
+opportunity and appointment snapshots, so it costs no new API reads.
+
+**Stage B - inside the CRM, no separate login.** GoHighLevel marketplace
+apps can add a custom page to the location's sidebar with single sign-on:
+the CRM tells us who is looking, we show that rep's own action list. Reps
+never leave the CRM. Needs the app's custom-page setting and the SSO key,
+no new scopes.
+
+**Stage C - fix in place.** Buttons on each row that write the result back
+(mark showed / no-show, set value, set lost reason, move stage) need the
+write scopes `opportunities.write` and `calendars/events.write`. Adding
+scopes invalidates every install, so it is done once, at a planned point,
+with a re-authorise prompt on every Connections card, and every write lands
+in the audit log with the rep's name.
+
+**Prevention** stays in the CRM: the conditional required fields on Won
+(value, product) that clients are already testing, and a required lost
+reason on Lost. The action list is the catch-up for what slips past.

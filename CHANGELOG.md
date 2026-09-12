@@ -18,6 +18,18 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.562.0 - 2026-09-12 · `PENDING`
+
+**Docs: data hygiene for CRM users** - `SAAS-DESIGN.md` section 15 sets out
+the three-stage plan for keeping CRM data complete: a read-only action list
+per workspace and per rep built from existing snapshots (unresulted
+appointments, won without value, lost without reason, showed but not
+advanced, stale, unassigned) with deep links; the same list inside the CRM
+sidebar via the marketplace app's custom page and SSO; and, later, fix-in-
+place buttons that need two write scopes. No app changes.
+
+---
+
 ## v3.561.0 - 2026-09-12 · `be79abe`
 
 **Docs: Sign in with Google, and how a Caalano Systems install finds its

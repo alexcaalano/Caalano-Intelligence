@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.548.0 - 2026-09-12 · `PENDING`
+## v3.548.0 - 2026-09-12 · `0d28004`
 
 **Backup download that actually arrives, from a button**
 - Settings → Logs gains a Backup row with three buttons: Download backup, With CRM token, With logs. No function URL to type.

@@ -76,4 +76,7 @@ clients and key events. Then delete the site.
       written into the same entry (2026-09-12).
 - [ ] A second git remote (a private mirror) receiving pushes, or a monthly
       `git bundle` kept off-site.
-- [ ] One restore drill completed into a scratch site, with the date noted here.
+- [x] One restore drill completed into a scratch site: 2026-09-12, the full
+      `backup-export` file restored into a throwaway Netlify project with only
+      `AUTH_SECRET` set; sign-in, all 25 clients and every settings section came
+      back. Scratch site deleted afterwards.

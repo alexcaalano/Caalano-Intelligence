@@ -18,6 +18,16 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.553.0 - 2026-09-12 · `PENDING`
+
+**Docs: restore drill recorded** - `BACKUP.md` checklist ticks the restore
+drill: the full export restored into a throwaway Netlify project on
+2026-09-12, sign-in and all 25 clients came back. Steps 1 to 4 of the backup
+plan are now complete; only the optional legacy-tag push and an off-site git
+mirror remain. No app changes.
+
+---
+
 ## v3.552.0 - 2026-09-12 · `90dfeeb`
 
 **Fix: restore dry run needed credentials** - `scripts/restore-backup.mjs

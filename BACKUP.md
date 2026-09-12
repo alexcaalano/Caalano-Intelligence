@@ -7,7 +7,7 @@ someone who has never seen the app could do it from this page.
 
 | Asset | Where it lives | Backup |
 |---|---|---|
-| Source code, history, release tags | GitHub (`alexcaalano/Caalano-Intelligence`) | Every push. Keep a second remote and an occasional `git bundle` as well. |
+| Source code, history, release tags | GitHub (`alexcaalano/Caalano-Intelligence`) | Every push. Every release since v3.0.0 has a tag. Keep a second remote and an occasional `git bundle` as well. |
 | Configuration, users, terms, history, audit and reliability logs | Netlify Blobs (11 stores) | Daily to `backups/` in the repo when `BACKUP_GH_TOKEN` + `BACKUP_GH_REPO` are set; on demand via `backup-export`. |
 | Caalano Systems agency OAuth token | Blob store `ghl-auth` | Only in a `backup-export?secrets=1` download. Keep that file in the password manager, never in git. |
 | Caches, warm state, opportunity snapshots | Blob stores | Not backed up - they rebuild themselves. |
@@ -75,7 +75,12 @@ clients and key events. Then delete the site.
 - [x] Netlify site settings (domain, production branch, function region)
       written into the same entry (2026-09-12).
 - [ ] A second git remote (a private mirror) receiving pushes, or a monthly
-      `git bundle` kept off-site.
+      `git bundle` kept off-site. (A full clone of the repository lives on
+      Alex's MacBook via GitHub Desktop since 2026-09-12, which covers the
+      "one copy outside GitHub" part; a mirror that updates itself is still
+      open.)
+- [x] Every release tagged: the 42 legacy tags were pushed on 2026-09-12
+      (`scripts/create-missing-tags.sh`), 605 tags on GitHub.
 - [x] One restore drill completed into a scratch site: 2026-09-12, the full
       `backup-export` file restored into a throwaway Netlify project with only
       `AUTH_SECRET` set; sign-in, all 25 clients and every settings section came

@@ -18,6 +18,16 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.554.0 - 2026-09-12 · `PENDING`
+
+**Docs: backup plan complete** - the 42 legacy release tags are on GitHub
+(605 tags, every release since v3.0.0 checkable by name) and `BACKUP.md`
+records it, plus the local full clone that now exists outside GitHub. All
+five backup steps are done; the only open checklist item is a self-updating
+git mirror. No app changes.
+
+---
+
 ## v3.553.0 - 2026-09-12 · `832d5ea`
 
 **Docs: restore drill recorded** - `BACKUP.md` checklist ticks the restore

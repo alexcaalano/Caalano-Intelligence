@@ -5107,3 +5107,54 @@ td.lm-ker-n { font-weight: 600; color: var(--muted); font-variant-numeric: tabul
 .logs-backup-line a { color: var(--accent); }
 .logs-backup-ok { color: var(--pos); }
 .logs-backup-err { color: var(--neg, #e0566c); }
+
+/* ---- Deals & Actions (CRM to-do list and live deals) ---------------------- */
+.act-wrap { display: flex; flex-direction: column; gap: 12px; }
+.act-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; }
+.act-screens button { position: relative; }
+.act-pill { display: inline-block; margin-left: 6px; min-width: 18px; padding: 0 6px; border-radius: 9px; background: var(--neg); color: #fff; font-size: 11px; line-height: 18px; text-align: center; font-weight: 800; }
+.act-pill.dim { background: var(--border-2); color: var(--text); }
+.act-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.act-sel { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); font-weight: 600; }
+.act-sel select, .act-in { background: var(--panel-2); border: 1px solid var(--border-2); color: var(--text); border-radius: 8px; padding: 6px 9px; font-size: 13px; min-height: 34px; }
+.act-in { width: 150px; max-width: 100%; }
+.act-msg { margin: 0; padding: 8px 12px; border-radius: 8px; background: var(--panel-2); border: 1px solid var(--border-2); }
+.act-msg.ok { color: var(--pos); }
+.act-msg.bad { color: var(--neg); }
+.act-ro { margin: 0; padding: 8px 12px; border-radius: 8px; background: var(--panel-2); border: 1px dashed var(--border-2); }
+.act-sec { border: 1px solid var(--border); border-radius: var(--radius); background: var(--panel); box-shadow: var(--shadow); overflow: hidden; }
+.act-sec-head { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; background: transparent; border: none; color: var(--text); padding: 12px 14px; cursor: pointer; font-size: 14px; }
+.act-sec-head .cap { flex: 1; min-width: 0; }
+.act-count { min-width: 28px; padding: 2px 8px; border-radius: 9px; background: var(--border-2); color: var(--text); font-weight: 800; font-size: 12px; text-align: center; }
+.act-count.on { background: var(--neg); color: #fff; }
+.act-chev { color: var(--muted); }
+.act-rows { display: flex; flex-direction: column; border-top: 1px solid var(--border); }
+.act-row { display: grid; grid-template-columns: minmax(180px, 1.3fr) minmax(160px, 1fr) minmax(220px, 1.4fr); gap: 10px 16px; align-items: start; padding: 12px 14px; border-bottom: 1px solid var(--border); }
+.act-row:last-child { border-bottom: none; }
+.act-who { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.act-who b { font-size: 14px; overflow-wrap: anywhere; }
+.act-norep { color: var(--neg); }
+.act-meta { display: flex; flex-direction: column; gap: 2px; font-size: 13px; min-width: 0; overflow-wrap: anywhere; }
+.act-ctl { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.act-ctl-col { display: flex; flex-direction: column; gap: 8px; }
+.act-btn { padding: 6px 11px; font-size: 12.5px; border-radius: 8px; min-height: 34px; }
+.act-open { font-size: 12px; font-weight: 700; color: var(--brand); text-decoration: none; white-space: nowrap; }
+.act-open:hover { text-decoration: underline; }
+.act-note { display: flex; flex-direction: column; gap: 6px; flex: 1 1 260px; }
+.act-note textarea { width: 100%; box-sizing: border-box; background: var(--panel-2); border: 1px solid var(--border-2); color: var(--text); border-radius: 8px; padding: 8px 10px; font: inherit; font-size: 13px; resize: vertical; }
+.act-note-btns { display: flex; gap: 8px; }
+.act-clear { padding: 18px; }
+.act-deals { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: var(--radius); background: var(--panel); box-shadow: var(--shadow); overflow: hidden; }
+.act-foot { margin: 0; }
+@media (max-width: 900px) {
+  .act-row { grid-template-columns: 1fr; gap: 8px; }
+  .act-sec-head { flex-wrap: wrap; }
+  .act-sec-head .cap { flex-basis: 100%; }
+  .act-filters { width: 100%; }
+  .act-filters .act-sel { flex: 1 1 45%; }
+  .act-filters .act-sel select { width: 100%; }
+  .act-in { width: 100%; }
+  .act-ctl .btn-primary, .act-ctl .btn-ghost { flex: 1 1 auto; }
+  .act-btn { min-height: 44px; }
+  .act-sel select { min-height: 44px; }
+}

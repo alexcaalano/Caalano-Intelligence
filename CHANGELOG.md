@@ -18,6 +18,41 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.564.0 - 2026-09-12 · `PENDING`
+
+**Deals & Actions: the CRM to-do list, with fixes written back** - a new
+tab on every client with a Caalano Systems connection. **Action list**:
+appointments past their time with no result (filter by calendar; mark
+Showed / No-show / Cancelled), won deals with no value (enter it), lost
+deals with no reason (pick one), messages with no reply (open the
+conversation, or mark handled), stale deals (threshold 7 to 60 days; move
+stage, close as won with a value or lost with a reason, add a note), and
+open deals with no rep (assign). **Live deals**: every open deal by
+pipeline and stage with the same controls. Mine / Everyone and a rep
+filter; the list re-reads itself every minute while open and when the
+phone comes back to it; laid out as cards so it works one-handed on a
+phone. **Who can use it**: staff always; a viewer with the tab sees it
+read-only, and with the new **CRM updates** grant (Team -> a viewer ->
+"Use the CRM user preset" gives Deals & Actions only, with updates) can
+fix the records assigned to them. Every write goes through the server,
+is limited to the rep's own records for client-side users, and lands in
+the activity log with who changed what. Fixed rows stay hidden until the
+CRM snapshot catches up.
+
+**Needs a one-time re-authorisation.** The app now requests four more
+scopes (`opportunities.write`, `contacts.write`, `calendars/events.write`,
+`conversations.readonly`). Enable exactly those on the marketplace app
+first, then press Reconnect in Settings -> Connect; until then reads keep
+working on the old token and writes return a permission error.
+
+**Fix: business location pin** - the `bizloc` read had referenced an
+undefined helper since v3.4xx (26 Aug), so the Location tab's business pin
+and catchment distances never loaded. Defined; the undefined-name check
+now scans the two server files as well as the app, so it cannot recur
+silently.
+
+---
+
 ## v3.563.0 - 2026-09-12 · `15fdee2`
 
 **Docs: the rep workspace** - `SAAS-DESIGN.md` section 15 stage C is now a

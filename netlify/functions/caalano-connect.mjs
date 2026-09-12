@@ -23,6 +23,15 @@ const SCOPES = [
   'calendars.readonly', 'calendars/events.readonly',
   'forms.readonly', 'locations/customFields.readonly', 'users.readonly',
   'conversations/message.readonly',
+  // Write scopes for the Deals & Actions tab (result appointments, set values
+  // and lost reasons, move stages, add notes). Adding these invalidated the
+  // existing install once: the marketplace app must have them enabled BEFORE
+  // Settings -> Connect is pressed again, or the whole authorisation fails.
+  'opportunities.write', 'contacts.write', 'calendars/events.write',
+  // conversations.readonly is the conversation list (who wrote last, when),
+  // which the "messages with no reply" list reads. Message bodies stay under
+  // conversations/message.readonly above.
+  'conversations.readonly',
 ]
 const AUTH = 'https://marketplace.gohighlevel.com/oauth/chooselocation'
 

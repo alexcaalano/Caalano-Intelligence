@@ -109,7 +109,7 @@ const normRole = (r) => (ROLES.includes(r) ? r : 'viewer')
 // Analytics, Lost Reasons and the Change Log were silently dropped on write.
 // 'custom' is a client's custom dashboard, offered only when a Super Admin has
 // opened that dashboard to viewers.
-export const ALL_TABS = ['overall', 'custom', 'users', 'meta', 'google', 'analytics', 'cohorts', 'forms', 'location', 'appts', 'calperf', 'clinic', 'timing', 'calls', 'lostreasons', 'optlog']
+export const ALL_TABS = ['overall', 'custom', 'users', 'meta', 'google', 'analytics', 'cohorts', 'forms', 'location', 'appts', 'calperf', 'clinic', 'timing', 'calls', 'lostreasons', 'optlog', 'actions']
 const RANK = { superadmin: 3, admin: 2, user: 1, viewer: 0 }
 export const rankOf = (r) => (RANK[r] != null ? RANK[r] : 0)
 export const isAdminish = (r) => r === 'admin' || r === 'superadmin'
@@ -144,7 +144,7 @@ const publicUser = (u) => u && ({
   tokenEpoch: u.tokenEpoch || 0,
   termsVersion: u.termsVersion || null, termsAcceptedAt: u.termsAcceptedAt || null,
   clients: Array.isArray(u.clients) ? u.clients : [], allClients: u.allClients !== false,
-  tabs: Array.isArray(u.tabs) ? u.tabs : null, reports: u.reports === true, requestedAt: u.requestedAt || null, note: u.note || '',
+  tabs: Array.isArray(u.tabs) ? u.tabs : null, reports: u.reports === true, crm: u.crm === true, requestedAt: u.requestedAt || null, note: u.note || '',
 })
 export { publicUser }
 
@@ -205,6 +205,10 @@ function normAlloc(patch = {}) {
   // agency users always have it implicitly (canSeeReports), so it's stored only as
   // an explicit viewer grant.
   if (typeof patch.reports === 'boolean') out.reports = patch.reports
+  // CRM updates: a viewer with the Deals & Actions tab may also write fixes back
+  // to the CRM (result appointments, values, lost reasons, stages, notes) for
+  // the records assigned to them. Staff always can.
+  if (typeof patch.crm === 'boolean') out.crm = patch.crm
   return out
 }
 // Can this user access Monthly Reports at all? Admins + agency users always can;
@@ -264,7 +268,7 @@ export async function authenticate(email, password, geo) {
 }
 
 // Admin creates an invite. Returns the token + the pending user record.
-export async function createInvite({ email, name, role, clients, allClients, tabs, reports, invitedBy, actor }) {
+export async function createInvite({ email, name, role, clients, allClients, tabs, reports, crm, invitedBy, actor }) {
   if (!isEmail(email)) return { error: 'A valid email is required.' }
   const actorRole = (actor && actor.role) || 'admin'
   if (role && !canManageRole(actorRole, role)) return { error: 'Only a Super Admin can invite an Admin.' }
@@ -274,7 +278,7 @@ export async function createInvite({ email, name, role, clients, allClients, tab
   const token = randomToken()
   const now = new Date().toISOString()
   const expires = Date.now() + 7 * 86400 * 1000
-  const alloc = normAlloc({ role, clients, allClients, tabs, reports })
+  const alloc = normAlloc({ role, clients, allClients, tabs, reports, crm })
   const u = {
     email: em, name: String(name || '').trim(), role: normRole(role),
     status: 'invited', passwordHash: null, passwordSalt: null, createdAt: existing ? existing.createdAt : now,
@@ -324,7 +328,7 @@ export async function updateUser(email, patch, actor) {
     if (u.role === 'superadmin' && patch.role !== 'superadmin' && (await countActiveRole('superadmin')) <= 1) return { error: 'You can’t remove the last Super Admin.' }
     u.role = patch.role
   }
-  Object.assign(u, normAlloc({ clients: patch.clients, allClients: patch.allClients, tabs: patch.tabs, reports: patch.reports }))
+  Object.assign(u, normAlloc({ clients: patch.clients, allClients: patch.allClients, tabs: patch.tabs, reports: patch.reports, crm: patch.crm }))
   if (patch.status && (patch.status === 'active' || patch.status === 'disabled')) {
     if (self && patch.status === 'disabled') return { error: 'You can’t disable your own account.' }
     if (patch.status === 'disabled' && u.role === 'superadmin' && (await countActiveRole('superadmin')) <= 1) return { error: 'You can’t disable the last Super Admin.' }

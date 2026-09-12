@@ -10,7 +10,7 @@
 // debug call; they live in one place (FIELDS) so they are trivial to correct.
 
 import { createHash } from 'node:crypto'
-import { buildAttribution, sampleAttribution, sampleChannels, buildCrm, auditLocation, isConnected, bookedTrends, crmTrends, attributionCoverage, wonInPeriod, monthlyDeals, oppTimestampFields, socialDMs, tagAudit, locationTimezone, locationProfile, periodBounds, listCalendars, listPipelines, ghlOpportunityRows, ghlPipelineRows, ghlUserRows, listLocations, checkLocationAccess, customClients, deletedClients, sampleForms, buildForms, buildSpeedToLead, speedLeadList, speedScanChunk, finalizeSpeed, buildAppointmentInsights, buildUserPerformance, buildUserPerformanceCombos, buildCreativePerf, buildUpdateExtra, fetchOppNotes, deriveBusinessHours, isQualified, buildCohorts as ghlCohorts, buildCcDrill, buildKeyPeople, buildStageTiming, buildEnquiryTimes, buildUserCalls, buildCallCohort, buildClinic, warmOppSnapshot, resilientFetch, startRequestBudget, buildCalPerf, clinicConfig, dayListBetween } from '../lib/ghl.mjs'
+import { buildAttribution, sampleAttribution, sampleChannels, buildCrm, auditLocation, isConnected, bookedTrends, crmTrends, attributionCoverage, wonInPeriod, monthlyDeals, oppTimestampFields, socialDMs, tagAudit, locationTimezone, locationProfile, periodBounds, listCalendars, listPipelines, ghlOpportunityRows, ghlPipelineRows, ghlUserRows, listLocations, checkLocationAccess, customClients, deletedClients, sampleForms, buildForms, buildSpeedToLead, speedLeadList, speedScanChunk, finalizeSpeed, buildAppointmentInsights, buildUserPerformance, buildUserPerformanceCombos, buildCreativePerf, buildUpdateExtra, fetchOppNotes, deriveBusinessHours, isQualified, buildCohorts as ghlCohorts, buildCcDrill, buildKeyPeople, buildStageTiming, buildEnquiryTimes, buildUserCalls, buildCallCohort, buildClinic, warmOppSnapshot, resilientFetch, startRequestBudget, buildCalPerf, clinicConfig, dayListBetween, buildActions, applyAction, ghlUserIdForEmail } from '../lib/ghl.mjs'
 import { DEMO_CLIENT_ID, DEMO_LOCATION, DEMO_META_ACCT, DEMO_GOOGLE_ACCT, DEMO_GA4_PROP, demoWindsor } from '../lib/demo.mjs'
 // Stand-in for the Windsor API key, used only when the request is for the demo
 // client. windsorFetch reads it as "generate, don't fetch".
@@ -46,6 +46,9 @@ const CLIENTS = {
   'book-a-midwife':  { meta: '1234556101481974', google: null, ghl: null },
   'rlm-telehealth':  { meta: '1179972323913025', google: null, ghl: 'jZxjJ53Xz6JW2Cgn7Fv7' },
 }
+// The config for one client id, or null. CLIENTS is filled in at request time
+// (custom clients merged in), so this reads it when called, not when defined.
+const clientCfg = (id) => (id && CLIENTS[id]) || null
 
 // Organic social accounts per client (Instagram business id + Facebook Page id),
 // separate from the ad accounts in CLIENTS. Only clients with a connected organic
@@ -2602,7 +2605,7 @@ async function socialMonth(soc, from, to, key) {
 // endpoints) or `channel:<x>` (the bare channel fetches: blend/meta/google). The
 // value is the set of tabs that legitimately issue it - a viewer passes if they
 // hold at least one. Anything not listed here is admin/agency-only for viewers.
-const VIEWER_TABS_ALL = ['overall', 'users', 'meta', 'google', 'cohorts', 'forms', 'location', 'appts', 'timing', 'calls', 'lostreasons', 'optlog']
+const VIEWER_TABS_ALL = ['overall', 'users', 'meta', 'google', 'cohorts', 'forms', 'location', 'appts', 'timing', 'calls', 'lostreasons', 'optlog', 'actions']
 const VIEWER_REQ_TABS = {
   'channel:blend': ['overall'],
   'channel:meta': ['meta'],
@@ -2619,6 +2622,9 @@ const VIEWER_REQ_TABS = {
   'scope:cohorts': ['cohorts'],
   'scope:appts': ['appts'],
   'scope:speed': ['timing'],
+  // The CRM to-do list and live deals. Its own tab, so a client-side rep can be
+  // given exactly this and nothing else.
+  'scope:actions': ['actions'],
   'scope:speedscan': ['timing'],
   // The other two sections on the Timing tab. Both were added after this map and
   // never registered in it, and the map denies by default - so a viewer granted
@@ -3370,6 +3376,37 @@ export default async (req) => {
   // Client-side failure beacon: the browser POSTs a failure (502 / timeout /
   // parse error it saw) so the same log captures browser-visible breakages the
   // function itself never got to record.
+  // The CRM to-do list and live deals (Deals & Actions tab). GET builds it from
+  // the snapshots; POST writes one fix back to the CRM. Never served from the
+  // result cache: a list of things to fix must be as current as the snapshot.
+  if (scope === 'actions') {
+    const cc = clientCfg(client)
+    if (!cc || !cc.ghl) return json({ scope: 'actions', client, ghl: false, error: 'This account has no Caalano Systems connection.' })
+    const isViewerHere = !!(me && me.role === 'viewer')
+    if (req.method === 'POST') {
+      if (!me) return json({ error: 'Not signed in.' }, 401)
+      // Who may write: staff always; a viewer only with the CRM-updates grant.
+      if (isViewerHere && me.crm !== true) return json({ error: 'Your account can see this list but not update the CRM. Ask your admin for CRM updates access.' }, 403)
+      let body; try { body = await req.json() } catch { body = null }
+      if (!body || !body.op) return json({ error: 'op required' }, 400)
+      try {
+        // A client-side rep writes only to their own records; staff to any.
+        const onlyUserId = isViewerHere ? await ghlUserIdForEmail(cc.ghl, me.email) : null
+        if (isViewerHere && !onlyUserId) return json({ error: 'Your login e-mail does not match a user in this CRM, so updates are not allowed. Ask your admin to match the e-mails.' }, 403)
+        if (body.op === 'note' && !body.userId && onlyUserId) body.userId = onlyUserId
+        const r = await applyAction(cc.ghl, body, { onlyUserId })
+        await auditLog({ kind: 'crm-write', client, op: body.op, target: body.eventId || body.oppId || body.contactId || null, patch: body.patch || (body.status ? { status: body.status } : null) || (body.op === 'note' ? { note: true } : null), ..._actor })
+        return json({ scope: 'actions', client, ...r })
+      } catch (e) { return json({ scope: 'actions', client, error: String((e && e.message) || e).slice(0, 240) }, 400) }
+    }
+    const mine = isViewerHere ? url.searchParams.get('mine') !== '0' : url.searchParams.get('mine') === '1'
+    const staleDays = Math.max(3, Math.min(180, Number(url.searchParams.get('stale')) || 30))
+    try {
+      const r = await buildActions(cc.ghl, { email: me && me.email, mine, staleDays })
+      return json({ scope: 'actions', client, ghl: true, canWrite: !!(me && (!isViewerHere || me.crm === true)), ...r })
+    } catch (e) { return json({ scope: 'actions', client, ghl: true, error: String((e && e.message) || e).slice(0, 240) }) }
+  }
+
   if (scope === 'clientlog' && req.method === 'POST') {
     try { const b = await req.json().catch(() => ({})); await diagLog({ sev: 'client', scope: String(b.scope || 'unknown').slice(0, 60), client: b.client || client || null, ms: Number(b.ms) || null, error: String(b.error || '').slice(0, 240), ..._actor }) } catch { /* ignore */ }
     return json({ ok: true })

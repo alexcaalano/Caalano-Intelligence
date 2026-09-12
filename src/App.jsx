@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.563.0'
+const APP_VERSION = '3.564.0'
 // The business clock. Every server window is cut on the client's local day
 // (Caalano Systems location timezone), so any day the app derives on its own -
 // preset ranges, "today", CSV dates - must use the same clock rather than the
@@ -8378,7 +8378,7 @@ function ExecReach({ reach, multi, kef, cc, pcc, clientId, money, spend, chanLab
 const V2_TAB_GROUPS = [
   ['Overview', ['overall', 'custom', 'clinic']],
   ['Acquisition', ['meta', 'google', 'analytics', 'optlog']],
-  ['Pipeline', ['cohorts', 'users', 'calls', 'appts', 'calperf', 'timing', 'lostreasons']],
+  ['Pipeline', ['actions', 'cohorts', 'users', 'calls', 'appts', 'calperf', 'timing', 'lostreasons']],
   ['Audience', ['forms', 'location']],
 ]
 function v2TabGroups(tabs) {
@@ -15992,6 +15992,286 @@ function OptimisationLog({ clientId, sheet, embedded = false }) {
     </div>
   )
 }
+// ---- Deals & Actions ---------------------------------------------------------
+// The CRM to-do list and the live deals board, for the people who keep the CRM
+// true: reps and coordinators. Two screens. "Action list" is everything that is
+// wrong or unfinished (appointments past their time with no result, wins with
+// no value, losses with no reason, deals nobody has touched, enquiries nobody
+// has answered, deals nobody owns), each fixable in place. "Live deals" is
+// every open deal by pipeline and stage, movable from here. Writes go through
+// the server, which limits a client-side rep to their own records and logs
+// every change. A viewer can hold this tab and nothing else, so it works as a
+// rep's whole app - and it is laid out as cards so a phone shows it whole.
+const ACT_SECTIONS = [
+  ['appts', 'Appointments to result', 'The time has passed and nobody has marked showed, no-show or cancelled.'],
+  ['wonNoValue', 'Won without a value', 'Marked won with no deal value, so revenue is understated.'],
+  ['lostNoReason', 'Lost without a reason', 'Marked lost with no lost reason, so nothing can be learned from it.'],
+  ['inbound', 'Messages with no reply', 'The last message in the conversation came from the contact.'],
+  ['staleOpen', 'Stale deals', 'Open deals nobody has touched for a while: move them on, close them, or follow up.'],
+  ['unassigned', 'No rep assigned', 'Open deals with nobody responsible for them.'],
+]
+const crmLink = (loc, contactId) => (loc && contactId ? `https://app.gohighlevel.com/v2/location/${encodeURIComponent(loc)}/contacts/detail/${encodeURIComponent(contactId)}` : null)
+const crmConvLink = (loc, convId) => (loc && convId ? `https://app.gohighlevel.com/v2/location/${encodeURIComponent(loc)}/conversations/conversations/${encodeURIComponent(convId)}` : null)
+function actWhen(ms, tz) {
+  if (!ms) return '-'
+  try { return new Date(ms).toLocaleString('en-AU', { timeZone: tz || undefined, weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }) } catch { return new Date(ms).toLocaleString() }
+}
+const actAgo = (d) => (d == null ? '' : d === 0 ? 'today' : d === 1 ? 'yesterday' : `${d} days ago`)
+function ActOpen({ href, label = 'Open in CRM' }) { return href ? <a className="act-open" href={href} target="_blank" rel="noreferrer">{label} ↗</a> : null }
+// The note box, shared by every row that offers one.
+function ActNote({ onSave, busy }) {
+  const [open, setOpen] = useState(false)
+  const [text, setText] = useState('')
+  if (!open) return <button type="button" className="btn-ghost sm" onClick={() => setOpen(true)}>Note</button>
+  return (
+    <div className="act-note">
+      <textarea value={text} onChange={(e) => setText(e.target.value)} placeholder="Add a note to the contact…" rows={2} />
+      <div className="act-note-btns">
+        <button type="button" className="btn-primary act-btn" disabled={busy || !text.trim()} onClick={async () => { const ok = await onSave(text.trim()); if (ok) { setText(''); setOpen(false) } }}>Save note</button>
+        <button type="button" className="btn-ghost sm" onClick={() => { setOpen(false); setText('') }}>Cancel</button>
+      </div>
+    </div>
+  )
+}
+// Move a deal along, or close it, from one compact control set.
+function ActDealControls({ d, data, busy, write, currency }) {
+  const [close, setClose] = useState('')      // '' | 'won' | 'lost'
+  const [val, setVal] = useState(d.value > 0 ? String(d.value) : '')
+  const [reason, setReason] = useState('')
+  const pipe = (data.pipelines || []).find((p) => p.id === d.pipelineId) || (data.pipelines || [])[0]
+  const stages = pipe ? pipe.stages : []
+  return (
+    <div className="act-ctl">
+      {stages.length ? <label className="act-sel">Stage
+        <select value={d.stageId || ''} disabled={busy} onChange={(e) => write({ op: 'opp', oppId: d.id, patch: { pipelineStageId: e.target.value, ...(pipe ? { pipelineId: pipe.id } : {}) } }, d.id, { stageId: e.target.value, stage: (stages.find((s) => s.id === e.target.value) || {}).name })}>
+          {!d.stageId ? <option value="">-</option> : null}
+          {stages.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+        </select>
+      </label> : null}
+      <label className="act-sel">Close as
+        <select value={close} disabled={busy} onChange={(e) => setClose(e.target.value)}>
+          <option value="">-</option><option value="won">Won</option><option value="lost">Lost</option>
+        </select>
+      </label>
+      {close === 'won' ? <>
+        <input className="act-in" type="number" min="0" step="1" inputMode="decimal" placeholder={`Value (${currency || 'AUD'})`} value={val} onChange={(e) => setVal(e.target.value)} />
+        <button type="button" className="btn-primary act-btn" disabled={busy || !(Number(val) > 0)} onClick={() => write({ op: 'opp', oppId: d.id, patch: { status: 'won', monetaryValue: Number(val) } }, d.id, null, true)}>Mark won</button>
+      </> : null}
+      {close === 'lost' ? <>
+        <select className="act-in" value={reason} onChange={(e) => setReason(e.target.value)}>
+          <option value="">Lost reason…</option>
+          {(data.lostReasons || []).map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+        </select>
+        <button type="button" className="btn-primary act-btn" disabled={busy || !reason} onClick={() => write({ op: 'opp', oppId: d.id, patch: { status: 'lost', lostReasonId: reason } }, d.id, null, true)}>Mark lost</button>
+      </> : null}
+    </div>
+  )
+}
+function DealsActionsView({ clientId, authUser, currency, nonce }) {
+  const isViewer = !!(authUser && authUser.role === 'viewer')
+  const [screen, setScreen] = useState('actions')
+  const [mine, setMine] = useState(isViewer)
+  const [stale, setStale] = useState(30)
+  const [tick, setTick] = useState(0)
+  const [st, setSt] = useState({ status: 'loading', data: null })
+  const [rep, setRep] = useState('all')
+  const [cal, setCal] = useState('all')
+  const [pipeF, setPipeF] = useState('all')
+  const [stageF, setStageF] = useState('all')
+  const [busy, setBusy] = useState({})
+  const [gone, setGone] = useState({})
+  const [patched, setPatched] = useState({})
+  const [msg, setMsg] = useState(null)
+  const [openSec, setOpenSec] = useState({})
+  const loadedAt = useRef(0)
+  useEffect(() => {
+    let dead = false
+    setSt((s) => ({ status: s.data ? 'refreshing' : 'loading', data: s.data }))
+    const qs = `scope=actions&client=${encodeURIComponent(clientId)}&mine=${mine ? 1 : 0}&stale=${stale}${tick || nonce ? `&_r=${tick}.${nonce || 0}` : ''}`
+    fetch(`/.netlify/functions/windsor?${qs}`, { credentials: 'same-origin' })
+      .then((r) => r.json().catch(() => ({ error: `server ${r.status}` })))
+      .then((j) => { if (dead) return; loadedAt.current = Date.now(); setSt({ status: j && j.error && !j.counts ? 'err' : 'ok', data: j }); setGone({}); setPatched({}) })
+      .catch((e) => { if (!dead) setSt({ status: 'err', data: { error: String(e && e.message || e) } }) })
+    return () => { dead = true }
+  }, [clientId, mine, stale, tick, nonce])
+  // Live enough: the list re-reads itself every minute while the tab is open,
+  // and the moment the tab comes back into view after being hidden.
+  useEffect(() => {
+    const iv = setInterval(() => { if (document.visibilityState === 'visible') setTick((t) => t + 1) }, 60000)
+    const vis = () => { if (document.visibilityState === 'visible' && Date.now() - loadedAt.current > 20000) setTick((t) => t + 1) }
+    document.addEventListener('visibilitychange', vis)
+    return () => { clearInterval(iv); document.removeEventListener('visibilitychange', vis) }
+  }, [])
+  const data = st.data || {}
+  const canWrite = data.canWrite === true
+  const loc = data.locationId
+  const tz = data.tz
+  // One write. `id` is the row it belongs to; `patch` updates a live-deal row in
+  // place; `remove` drops the row from the action lists (it is fixed).
+  const write = async (payload, id, patch = null, remove = false) => {
+    setBusy((b) => ({ ...b, [id]: true })); setMsg(null)
+    try {
+      const r = await fetch(`/.netlify/functions/windsor?scope=actions&client=${encodeURIComponent(clientId)}`, { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) })
+      const j = await r.json().catch(() => ({ error: `server ${r.status}` }))
+      if (!r.ok || (j && j.error)) throw new Error((j && j.error) || `server ${r.status}`)
+      if (remove) setGone((g) => ({ ...g, [id]: true }))
+      if (patch) setPatched((p) => ({ ...p, [id]: { ...(p[id] || {}), ...patch } }))
+      setMsg({ ok: true, text: payload.op === 'note' ? 'Note added.' : payload.op === 'appt' ? `Appointment marked ${payload.status === 'noshow' ? 'no-show' : payload.status}.` : payload.op === 'dismiss' ? 'Marked as handled.' : 'Saved to the CRM.' })
+      return true
+    } catch (e) { setMsg({ ok: false, text: String((e && e.message) || e) }); return false }
+    finally { setBusy((b) => { const n = { ...b }; delete n[id]; return n }) }
+  }
+  const users = data.users || []
+  const repOk = (uid) => rep === 'all' || (rep === 'none' ? !uid : uid === rep)
+  const live = (rows) => (rows || []).filter((r) => !gone[r.id] && repOk(r.userId)).map((r) => (patched[r.id] ? { ...r, ...patched[r.id] } : r))
+  const lists = {
+    appts: live(data.appts).filter((a) => cal === 'all' || a.calendar === cal),
+    wonNoValue: live(data.wonNoValue), lostNoReason: live(data.lostNoReason), inbound: live(data.inbound),
+    staleOpen: live(data.staleOpen), unassigned: rep === 'all' || rep === 'none' ? live(data.unassigned) : [],
+  }
+  const todo = Object.values(lists).reduce((n, l) => n + l.length, 0)
+  const deals = live(data.open).filter((d) => (pipeF === 'all' || d.pipelineId === pipeF) && (stageF === 'all' || d.stageId === stageF))
+  const pipeSel = (data.pipelines || []).find((p) => p.id === pipeF)
+  const money = (v) => fmtCurrency(v, currency)
+  const isOpen = (k) => (openSec[k] == null ? true : openSec[k])
+  const sec = (key, title, help, rows, render) => {
+    if (!rows.length && st.status === 'ok') return null
+    return (
+      <section className="act-sec" key={key}>
+        <button type="button" className="act-sec-head" onClick={() => setOpenSec((o) => ({ ...o, [key]: !isOpen(key) }))}>
+          <span className={`act-count ${rows.length ? 'on' : ''}`}>{rows.length}</span><b>{title}</b><span className="cap">{help}</span><span className="act-chev">{isOpen(key) ? '▾' : '▸'}</span>
+        </button>
+        {isOpen(key) ? <div className="act-rows">{rows.map(render)}</div> : null}
+      </section>
+    )
+  }
+  const who = (r) => <div className="act-who"><b>{r.name}</b>{r.pipeline || r.stage ? <span className="cap">{[r.pipeline, r.stage].filter(Boolean).join(' · ')}</span> : null}{r.user ? <span className="cap">Rep: {r.user}</span> : <span className="cap act-norep">No rep</span>}</div>
+  if (st.status === 'loading') return <div className="card"><Spinner label="Reading the CRM…" /></div>
+  if (st.status === 'err') return <div className="card"><p className="cap" style={{ color: 'var(--neg)' }}>Could not load: {data.error || 'unknown error'}</p><button type="button" className="btn-ghost sm" onClick={() => setTick((t) => t + 1)}>Try again</button></div>
+  if (data.ghl === false) return <div className="card"><p className="cap">{data.error || 'This account has no Caalano Systems connection.'}</p></div>
+  return (
+    <div className="act-wrap">
+      <div className="act-bar">
+        <div className="subtabs act-screens">
+          <button type="button" className={screen === 'actions' ? 'active' : ''} onClick={() => setScreen('actions')}>Action list{todo ? <span className="act-pill">{todo}</span> : null}</button>
+          <button type="button" className={screen === 'deals' ? 'active' : ''} onClick={() => setScreen('deals')}>Live deals{deals.length ? <span className="act-pill dim">{deals.length}</span> : null}</button>
+        </div>
+        <div className="act-filters">
+          {data.meMatched ? <label className="act-sel"><select value={mine ? 'mine' : 'all'} onChange={(e) => { setMine(e.target.value === 'mine'); setRep('all') }}><option value="mine">Mine</option><option value="all">Everyone</option></select></label> : null}
+          {!mine ? <label className="act-sel"><select value={rep} onChange={(e) => setRep(e.target.value)}><option value="all">All reps</option><option value="none">No rep</option>{users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}</select></label> : null}
+          {screen === 'actions' && (data.calendars || []).length > 1 ? <label className="act-sel"><select value={cal} onChange={(e) => setCal(e.target.value)}><option value="all">All calendars</option>{(data.calendars || []).map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}</select></label> : null}
+          {screen === 'actions' ? <label className="act-sel"><select value={stale} onChange={(e) => setStale(Number(e.target.value))}><option value={7}>Stale after 7 days</option><option value={14}>Stale after 14 days</option><option value={30}>Stale after 30 days</option><option value={60}>Stale after 60 days</option></select></label> : null}
+          {screen === 'deals' && (data.pipelines || []).length > 1 ? <label className="act-sel"><select value={pipeF} onChange={(e) => { setPipeF(e.target.value); setStageF('all') }}><option value="all">All pipelines</option>{(data.pipelines || []).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label> : null}
+          {screen === 'deals' && pipeSel ? <label className="act-sel"><select value={stageF} onChange={(e) => setStageF(e.target.value)}><option value="all">All stages</option>{pipeSel.stages.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></label> : null}
+          <button type="button" className="btn-ghost sm" disabled={st.status === 'refreshing'} onClick={() => setTick((t) => t + 1)} title="Re-read the CRM now">{st.status === 'refreshing' ? 'Refreshing…' : 'Refresh'}</button>
+        </div>
+      </div>
+      {msg ? <p className={`cap act-msg ${msg.ok ? 'ok' : 'bad'}`}>{msg.text}</p> : null}
+      {!canWrite ? <p className="cap act-ro">Read-only: you can see the list and open each record in the CRM, but not update it from here.{isViewer ? ' Ask your admin for CRM updates access.' : ''}</p> : null}
+      {mine && !data.meMatched ? <p className="cap act-ro">Your login e-mail does not match a user in this CRM, so the list shows everyone.</p> : null}
+      {screen === 'actions' ? (
+        todo === 0 && st.status === 'ok' ? <div className="card act-clear"><b>All clear.</b> <span className="cap">Nothing needs fixing{mine ? ' on your deals' : ''} right now.</span></div> : <>
+          {sec('appts', ACT_SECTIONS[0][1], ACT_SECTIONS[0][2], lists.appts, (a) => (
+            <div className="act-row" key={a.id}>
+              {who({ ...a, name: a.name })}
+              <div className="act-meta"><span>{actWhen(a.startMs, tz)}</span><span className="cap">{a.calendar}{a.title ? ` · ${a.title}` : ''} · {actAgo(a.daysAgo)}</span></div>
+              <div className="act-ctl">
+                {canWrite ? <>
+                  <button type="button" className="btn-primary act-btn" disabled={busy[a.id]} onClick={() => write({ op: 'appt', eventId: a.id, status: 'showed' }, a.id, null, true)}>Showed</button>
+                  <button type="button" className="btn-ghost act-btn" disabled={busy[a.id]} onClick={() => write({ op: 'appt', eventId: a.id, status: 'noshow' }, a.id, null, true)}>No-show</button>
+                  <button type="button" className="btn-ghost act-btn" disabled={busy[a.id]} onClick={() => write({ op: 'appt', eventId: a.id, status: 'cancelled' }, a.id, null, true)}>Cancelled</button>
+                </> : null}
+                <ActOpen href={crmLink(loc, a.contactId)} />
+              </div>
+            </div>
+          ))}
+          {sec('wonNoValue', ACT_SECTIONS[1][1], ACT_SECTIONS[1][2], lists.wonNoValue, (d) => <ActValueRow key={d.id} d={d} busy={!!busy[d.id]} canWrite={canWrite} write={write} currency={currency} loc={loc} who={who} />)}
+          {sec('lostNoReason', ACT_SECTIONS[2][1], ACT_SECTIONS[2][2], lists.lostNoReason, (d) => <ActReasonRow key={d.id} d={d} data={data} busy={!!busy[d.id]} canWrite={canWrite} write={write} loc={loc} who={who} />)}
+          {sec('inbound', ACT_SECTIONS[3][1], ACT_SECTIONS[3][2], lists.inbound, (c) => (
+            <div className="act-row" key={c.id}>
+              {who(c)}
+              <div className="act-meta"><span>{c.snippet || <i className="cap">(no text)</i>}</span><span className="cap">{c.type ? `${String(c.type).replace(/^TYPE_/, '').toLowerCase()} · ` : ''}{c.hoursAgo != null ? (c.hoursAgo < 1 ? 'just now' : c.hoursAgo < 48 ? `${c.hoursAgo} h ago` : `${Math.round(c.hoursAgo / 24)} days ago`) : ''}{c.unread ? ` · ${c.unread} unread` : ''}</span></div>
+              <div className="act-ctl">
+                <ActOpen href={crmConvLink(loc, c.id)} label="Reply in CRM" />
+                {canWrite ? <button type="button" className="btn-ghost sm" disabled={busy[c.id]} onClick={() => write({ op: 'dismiss', id: c.id }, c.id, null, true)} title="Hide this from the list for a while (it does not touch the CRM)">Handled</button> : null}
+              </div>
+            </div>
+          ))}
+          {sec('staleOpen', `${ACT_SECTIONS[4][1]} (${stale}+ days)`, ACT_SECTIONS[4][2], lists.staleOpen, (d) => (
+            <div className="act-row" key={d.id}>
+              {who(d)}
+              <div className="act-meta"><span>{d.value > 0 ? money(d.value) : <span className="cap">No value</span>}</span><span className="cap">Last activity {actAgo(d.idleDays)} · created {actAgo(d.ageDays)}</span></div>
+              <div className="act-ctl-col">
+                {canWrite ? <ActDealControls d={d} data={data} busy={!!busy[d.id]} write={write} currency={currency} /> : null}
+                <div className="act-ctl">{canWrite ? <ActNote busy={!!busy[d.id]} onSave={(t) => write({ op: 'note', contactId: d.contactId, body: t }, d.id)} /> : null}<ActOpen href={crmLink(loc, d.contactId)} /></div>
+              </div>
+            </div>
+          ))}
+          {sec('unassigned', ACT_SECTIONS[5][1], ACT_SECTIONS[5][2], lists.unassigned, (d) => <ActAssignRow key={d.id} d={d} users={users} busy={!!busy[d.id]} canWrite={canWrite} write={write} loc={loc} who={who} />)}
+        </>
+      ) : (
+        <div className="act-deals">
+          {!deals.length ? <div className="card act-clear"><span className="cap">No open deals{mine ? ' assigned to you' : ''}{pipeF !== 'all' ? ' in this pipeline' : ''}.</span></div> : null}
+          {deals.map((d) => (
+            <div className="act-row" key={d.id}>
+              {who(d)}
+              <div className="act-meta"><span>{d.value > 0 ? money(d.value) : <span className="cap">No value</span>}</span><span className="cap">Last activity {actAgo(d.idleDays)} · created {actAgo(d.ageDays)}</span></div>
+              <div className="act-ctl-col">
+                {canWrite ? <ActDealControls d={d} data={data} busy={!!busy[d.id]} write={write} currency={currency} /> : null}
+                <div className="act-ctl">{canWrite ? <ActNote busy={!!busy[d.id]} onSave={(t) => write({ op: 'note', contactId: d.contactId, body: t }, d.id)} /> : null}<ActOpen href={crmLink(loc, d.contactId)} /></div>
+              </div>
+            </div>
+          ))}
+          {data.open && data.open.length >= 400 ? <p className="cap">Showing the 400 most recently touched open deals.</p> : null}
+        </div>
+      )}
+      <p className="cap act-foot">CRM snapshot from {data.snapshotAt ? actWhen(data.snapshotAt, tz) : '-'} · re-reads every minute while open{data.truncated ? ' · the snapshot is capped, so very old deals may be missing' : ''}.</p>
+    </div>
+  )
+}
+function ActValueRow({ d, busy, canWrite, write, currency, loc, who }) {
+  const [val, setVal] = useState('')
+  return (
+    <div className="act-row">
+      {who(d)}
+      <div className="act-meta"><span>Won {actAgo(d.idleDays)}</span><span className="cap">No value recorded</span></div>
+      <div className="act-ctl">
+        {canWrite ? <><input className="act-in" type="number" min="0" step="1" inputMode="decimal" placeholder={`Value (${currency || 'AUD'})`} value={val} onChange={(e) => setVal(e.target.value)} />
+          <button type="button" className="btn-primary act-btn" disabled={busy || !(Number(val) > 0)} onClick={() => write({ op: 'opp', oppId: d.id, patch: { monetaryValue: Number(val) } }, d.id, null, true)}>Save</button></> : null}
+        <ActOpen href={crmLink(loc, d.contactId)} />
+      </div>
+    </div>
+  )
+}
+function ActReasonRow({ d, data, busy, canWrite, write, loc, who }) {
+  const [reason, setReason] = useState('')
+  return (
+    <div className="act-row">
+      {who(d)}
+      <div className="act-meta"><span>Lost {actAgo(d.idleDays)}</span><span className="cap">No lost reason</span></div>
+      <div className="act-ctl">
+        {canWrite ? <><select className="act-in" value={reason} onChange={(e) => setReason(e.target.value)}><option value="">Lost reason…</option>{(data.lostReasons || []).map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}</select>
+          <button type="button" className="btn-primary act-btn" disabled={busy || !reason} onClick={() => write({ op: 'opp', oppId: d.id, patch: { lostReasonId: reason } }, d.id, null, true)}>Save</button></> : null}
+        <ActOpen href={crmLink(loc, d.contactId)} />
+      </div>
+    </div>
+  )
+}
+function ActAssignRow({ d, users, busy, canWrite, write, loc, who }) {
+  const [uid, setUid] = useState('')
+  return (
+    <div className="act-row">
+      {who(d)}
+      <div className="act-meta"><span>{d.value > 0 ? fmtCurrency(d.value) : <span className="cap">No value</span>}</span><span className="cap">Created {actAgo(d.ageDays)}</span></div>
+      <div className="act-ctl">
+        {canWrite ? <><select className="act-in" value={uid} onChange={(e) => setUid(e.target.value)}><option value="">Assign to…</option>{users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}</select>
+          <button type="button" className="btn-primary act-btn" disabled={busy || !uid} onClick={() => write({ op: 'opp', oppId: d.id, patch: { assignedTo: uid } }, d.id, null, true)}>Assign</button></> : null}
+        <ActOpen href={crmLink(loc, d.contactId)} />
+      </div>
+    </div>
+  )
+}
+
 function ClientWorkspace({ client, index, data, config, range, nonce, wonBasis = 'closed', onBack, authUser, initialTab, onTabChange }) {
   useSettingsSync()
   const [tab, setTab] = useState(initialTab || 'overall')
@@ -16051,7 +16331,7 @@ function ClientWorkspace({ client, index, data, config, range, nonce, wonBasis =
   if (cfg.meta || client.meta) allTabs.push({ id: 'meta', label: 'Meta Ads' })
   if (cfg.google || client.google) allTabs.push({ id: 'google', label: 'Google Ads' })
   if (cfg.ga4 || client.ga4) allTabs.push({ id: 'analytics', label: 'Analytics' })
-  if (cfg.ghl) allTabs.push({ id: 'cohorts', label: 'Cohorts' }, { id: 'users', label: 'Users' }, { id: 'calls', label: 'Call Reporting' }, { id: 'forms', label: 'Forms' }, { id: 'location', label: 'Location' }, { id: 'appts', label: 'Appointments' }, { id: 'calperf', label: 'Calendars' }, { id: 'timing', label: 'Timing' }, { id: 'lostreasons', label: 'Lost Reasons' })
+  if (cfg.ghl) allTabs.push({ id: 'actions', label: 'Deals & Actions' }, { id: 'cohorts', label: 'Cohorts' }, { id: 'users', label: 'Users' }, { id: 'calls', label: 'Call Reporting' }, { id: 'forms', label: 'Forms' }, { id: 'location', label: 'Location' }, { id: 'appts', label: 'Appointments' }, { id: 'calperf', label: 'Calendars' }, { id: 'timing', label: 'Timing' }, { id: 'lostreasons', label: 'Lost Reasons' })
   // Change log: the platform change histories plus the Optimisation Log sheet.
   // Shows for any client with an ad account OR a linked sheet - either source is
   // enough to have something to say. The tab id stays `optlog` so existing viewer
@@ -16134,6 +16414,7 @@ function ClientWorkspace({ client, index, data, config, range, nonce, wonBasis =
         {curTab === 'calls' && <CallReportView clientId={client.id} range={range} nonce={nonce} currency={data.currency} pipe={pipe} onPipe={setPipe} />}
         {curTab === 'timing' && <><EnquiryTimesSection clientId={client.id} range={range} nonce={nonce} pipe={pipe} onPipe={setPipe} /><TimingView clientId={client.id} range={range} nonce={nonce} currency={data.currency} /><StageTimingSection clientId={client.id} nonce={nonce} /></>}
         {curTab === 'lostreasons' && <LostReasonsView clientId={client.id} range={range} nonce={nonce} currency={data.currency} pipeName={pipeName} />}
+        {curTab === 'actions' && <DealsActionsView clientId={client.id} authUser={authUser} currency={data.currency} nonce={nonce} />}
         {curTab === 'calperf' && <CalPerfView clientId={client.id} range={range} nonce={nonce} />}
         {curTab === 'clinic' && <ClinicView clientId={client.id} currency={data.currency} nonce={nonce} />}
         {curTab === 'optlog' && <ChangeLogTab clientId={client.id} range={range} nonce={nonce} hasMeta={!!(cfg.meta || client.meta)} hasGoogle={!!(cfg.google || client.google)} />}
@@ -18570,6 +18851,7 @@ const TAB_OPTIONS = [
   { id: 'calls', label: 'Call Reporting' }, { id: 'forms', label: 'Forms' }, { id: 'location', label: 'Location' },
   { id: 'appts', label: 'Appointments' }, { id: 'calperf', label: 'Calendars' }, { id: 'clinic', label: 'Clinic' },
   { id: 'timing', label: 'Timing' }, { id: 'lostreasons', label: 'Lost Reasons' }, { id: 'optlog', label: 'Optimisation Log' },
+  { id: 'actions', label: 'Deals & Actions' },
 ]
 function ClientPicker({ clients, selected, onToggle }) {
   if (!clients || !clients.length) return <div className="cap">No clients available.</div>
@@ -18598,7 +18880,7 @@ function offeredTabsFor(c) {
   if (c.meta) out.push({ id: 'meta', label: 'Meta Ads' })
   if (c.google) out.push({ id: 'google', label: 'Google Ads' })
   if (c.ga4) out.push({ id: 'analytics', label: 'Analytics' })
-  if (c.ghl) out.push({ id: 'cohorts', label: 'Cohorts' }, { id: 'users', label: 'Users' }, { id: 'calls', label: 'Call Reporting' }, { id: 'forms', label: 'Forms' }, { id: 'location', label: 'Location' }, { id: 'appts', label: 'Appointments' }, { id: 'calperf', label: 'Calendars' }, { id: 'timing', label: 'Timing' }, { id: 'lostreasons', label: 'Lost Reasons' })
+  if (c.ghl) out.push({ id: 'actions', label: 'Deals & Actions' }, { id: 'cohorts', label: 'Cohorts' }, { id: 'users', label: 'Users' }, { id: 'calls', label: 'Call Reporting' }, { id: 'forms', label: 'Forms' }, { id: 'location', label: 'Location' }, { id: 'appts', label: 'Appointments' }, { id: 'calperf', label: 'Calendars' }, { id: 'timing', label: 'Timing' }, { id: 'lostreasons', label: 'Lost Reasons' })
   // The Change Log was offered by the workspace but never by this list, so it
   // could not be ticked for a viewer at all - a tab that existed for admins and
   // was ungrantable to anyone else. Same condition as the workspace uses.
@@ -18719,6 +19001,8 @@ function AllocationEditor({ value, clients, onChange, actorRole }) {
         })}</div>
         {(v.tabs == null || v.tabs.includes('custom')) && !dashOpen.length ? <p className="alloc-note alloc-warn">Custom dashboard is ticked, but {dashBuilt.length ? `${dashBuilt.map((x) => x.c.name).join(', ')} ${dashBuilt.length === 1 ? 'has a dashboard that is' : 'have dashboards that are'} not open to viewers (audience is ${dashBuilt.map((x) => DASH_AUD_LABEL[dashAudience(x.d)]).filter((x, i, a) => a.indexOf(x) === i).join(' / ')})` : 'none of the ticked clients has a custom dashboard yet'}. Nothing will show for this person until a dashboard’s “Who can see it” is set to Viewer under the client’s settings → Custom dashboard.</p> : null}
         <div className="alloc-lab" style={{ marginTop: 10 }}>Extra access</div>
+        <label className="alloc-check"><input type="checkbox" checked={v.crm === true} onChange={(e) => onChange({ ...v, crm: e.target.checked })} /> <b>CRM updates</b> - can fix things from the <b>Deals &amp; Actions</b> tab (result appointments, set deal values and lost reasons, move stages, add notes) for the deals assigned to them</label>
+        <button type="button" className="btn-ghost sm" style={{ alignSelf: 'flex-start' }} onClick={() => onChange({ ...v, tabs: ['actions'], crm: true })} title="Deals & Actions only, with CRM updates: the setup for a sales rep">Use the CRM user preset</button>
         <label className="alloc-check"><input type="checkbox" checked={v.reports === true} onChange={(e) => onChange({ ...v, reports: e.target.checked })} /> <b>Monthly Reports</b> - can view the <b>published</b> monthly reports for the clients above</label>
         <p className="alloc-note">Client access - only the ticked clients and tabs, and no agency-wide views. Monthly Reports shows only reports you've <b>published</b> (frozen snapshots), and can be granted on its own.</p>
       </>)}
@@ -18770,7 +19054,7 @@ function UserAccessModal({ user, clients, authUser, onClose, onChanged }) {
     if (isInvite && !email) return setErr('Enter an email address.')
     if (draft.role === 'viewer' && !(draft.clients || []).length) return setErr('Pick at least one client for a Viewer.')
     setBusy(true)
-    const payload = { role: draft.role, clients: draft.clients, allClients: draft.allClients, tabs: draft.tabs, reports: draft.reports === true }
+    const payload = { role: draft.role, clients: draft.clients, allClients: draft.allClients, tabs: draft.tabs, reports: draft.reports === true, crm: draft.crm === true }
     if (isInvite) {
       const r = await authApi('invite', { method: 'POST', body: JSON.stringify({ name, email, ...payload }) })
       setBusy(false)
@@ -18848,7 +19132,7 @@ function UsersAdmin({ authUser, authEnabled, clients }) {
   const load = () => authApi('users').then((r) => setState(r && r.ok ? { status: 'ok', users: r.users || [] } : { status: r && r.enabled === false ? 'off' : 'err', error: r && r.error, users: [] }))
   useEffect(() => { if (authEnabled) load(); else setState({ status: 'off', users: [] }) }, [authEnabled])
   const rejectPending = async (u) => { if (!window.confirm(`Reject ${u.name || u.email}’s request?`)) return; await authApi('delete-user', { method: 'POST', body: JSON.stringify({ email: u.email }) }); load() }
-  const approve = async (u, draft) => { const r = await authApi('approve', { method: 'POST', body: JSON.stringify({ email: u.email, role: draft.role, clients: draft.clients, allClients: draft.allClients, tabs: draft.tabs, reports: draft.reports === true }) }); if (r.ok) load() }
+  const approve = async (u, draft) => { const r = await authApi('approve', { method: 'POST', body: JSON.stringify({ email: u.email, role: draft.role, clients: draft.clients, allClients: draft.allClients, tabs: draft.tabs, reports: draft.reports === true, crm: draft.crm === true }) }); if (r.ok) load() }
 
   if (state.status === 'off') return (
     <div className="card set-users-off">

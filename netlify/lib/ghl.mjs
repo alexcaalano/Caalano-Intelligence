@@ -5643,3 +5643,252 @@ export async function sampleAttribution(locationId, from, to) {
     firstPaidExample: withUtm ? { name: withUtm.name, attributions: withUtm.attributions } : null,
   }
 }
+
+// --- Actions: the CRM to-do list, and writing the fixes back ------------------
+// The intelligence is only as good as what reps mark in the CRM. This builds,
+// from the snapshots the app already holds, the list of things that are wrong
+// or unfinished - appointments that have passed with no result, wins with no
+// value, losses with no reason, deals nobody owns, deals nobody has touched -
+// and lets the fix be written straight back. Nothing here reads more than the
+// dashboards already read; the writes are the only new traffic.
+const ACT_DAY = 86400000
+const ACT_APPT_LOOKBACK_DAYS = 90     // how far back an unresulted appointment is still worth chasing
+const ACT_CLOSED_LOOKBACK_DAYS = 180  // a win with no value from last year is history, not a to-do
+const ACT_APPT_GRACE_MS = 30 * 60000  // an appointment is "passed" half an hour after its start
+const ACT_DONE_MS = 40 * 60000        // a fixed row stays hidden until the snapshot catches up
+const ACT_OPEN_CAP = 400
+const _actStore = () => getStore({ name: 'caalano-pipecache', consistency: 'strong' })
+const _actDoneKey = (loc) => `actions:done:${loc}`
+// Rows fixed in the last while, so a fix does not reappear on the next load
+// while the opportunity snapshot (refreshed by the warmer) still shows the old
+// state. Keyed by opportunity / appointment id.
+async function _readActDone(loc) {
+  try {
+    const m = (await _actStore().get(_actDoneKey(loc), { type: 'json' })) || {}
+    const now = Date.now(); const out = {}
+    for (const [k, t] of Object.entries(m)) if (now - t < ACT_DONE_MS) out[k] = t
+    return out
+  } catch { return {} }
+}
+async function _markActDone(loc, id) {
+  if (!id) return
+  try { const m = await _readActDone(loc); m[id] = Date.now(); await _actStore().setJSON(_actDoneKey(loc), m) } catch { /* best effort */ }
+}
+async function ghlPut(locTok, path, bodyObj, loc = null) {
+  if (isDemoToken(locTok)) return { demo: true, path, body: bodyObj }
+  const r = await ghlFetch(API + path, { method: 'PUT', headers: { Authorization: `Bearer ${locTok}`, Version: VER, Accept: 'application/json', 'content-type': 'application/json' }, body: JSON.stringify(bodyObj) }, { label: `ghl PUT ${path}`, loc })
+  const txt = await r.text()
+  if (!r.ok) throw new Error(`ghl PUT ${path} ${r.status}: ${txt.slice(0, 200)}`)
+  try { return JSON.parse(txt) } catch { return { ok: true } }
+}
+// Raw calendar events (with ids and statuses) for a window - the aggregate
+// fetchAppointments above folds these into per-contact flags and drops the
+// ids, which a fix needs. One call per calendar, cached briefly.
+const _rawApptMem = new Map()
+async function _rawAppointments(locTok, locationId, startMs, endMs) {
+  const key = `${locationId}|${startMs}|${endMs}`
+  const hit = _rawApptMem.get(key)
+  if (hit && Date.now() - hit.at < 60000) return hit.value
+  const cfg = await fetchCalendarConfig(locTok, locationId)
+  const out = []
+  if (!cfg.calendars) return out
+  await Promise.all(cfg.calendars.map(async (cal) => {
+    const calId = cal.id || cal._id || cal.calendarId
+    if (!calId) return
+    let j; try { j = await ghlGet(locTok, '/calendars/events', { locationId, calendarId: calId, startTime: startMs, endTime: endMs }) } catch { return }
+    for (const ev of (j.events || [])) {
+      const cid = ev.contactId || (ev.contact && (ev.contact.id || ev.contact._id)) || null
+      out.push({
+        id: ev.id || ev._id || null, contactId: cid,
+        contactName: (ev.contact && (ev.contact.name || [ev.contact.firstName, ev.contact.lastName].filter(Boolean).join(' '))) || ev.contactName || null,
+        calendarId: calId, calendar: cal.name || cal.calendarName || 'Calendar',
+        startMs: Date.parse(ev.startTime), endMs: Date.parse(ev.endTime),
+        status: String(ev.appointmentStatus || ev.appoinmentStatus || ev.status || '').toLowerCase(),
+        userId: apptUserId(ev), title: ev.title || ev.appointmentTitle || null,
+      })
+    }
+  }))
+  _rawApptMem.set(key, { at: Date.now(), value: out })
+  if (_rawApptMem.size > 8) { const oldest = [..._rawApptMem.entries()].sort((a, b) => a[1].at - b[1].at).slice(0, 4); for (const [k] of oldest) _rawApptMem.delete(k) }
+  return out
+}
+const _actIsResulted = (s) => APPT_INVALID_RE.test(s) || APPT_CANCEL_RE.test(s) || apptShown(s) || APPT_NOSHOW_RE.test(s)
+// Conversations whose last message came from the contact: an enquiry or a
+// reply nobody has answered yet. The conversations search carries the
+// direction of the last message, so this is one call, no message bodies read.
+async function _inboundUnreplied(locTok, locationId) {
+  if (isDemoToken(locTok)) return []
+  const out = []
+  let page = 0, startAfter = null
+  while (page++ < 3) {
+    let j
+    try { j = await ghlGet(locTok, '/conversations/search', { locationId, lastMessageDirection: 'inbound', sortBy: 'last_message_date', sort: 'desc', limit: 100, ...(startAfter ? { startAfterDate: startAfter } : {}) }) } catch { break }
+    const rows = j.conversations || []
+    for (const c of rows) {
+      if (String(c.lastMessageDirection || '').toLowerCase() !== 'inbound') continue
+      out.push({
+        id: c.id || c._id, contactId: c.contactId || null, name: c.fullName || c.contactName || c.email || c.phone || 'Unknown',
+        lastMs: Number(c.lastMessageDate) || Date.parse(c.lastMessageDate) || null, type: c.lastMessageType || c.type || null,
+        snippet: String(c.lastMessageBody || '').slice(0, 160), unread: Number(c.unreadCount) || 0, userId: c.assignedTo || null,
+      })
+    }
+    if (rows.length < 100) break
+    startAfter = rows[rows.length - 1].lastMessageDate || null
+    if (!startAfter) break
+  }
+  return out
+}
+// Which CRM user is this signed-in person? Matched by e-mail against the
+// location's user list, so "mine" means the deals the CRM says are theirs.
+export async function ghlUserIdForEmail(locationId, email) {
+  if (!email) return null
+  const locTok = await locationTokenOrDemo(locationId)
+  const j = await ghlGet(locTok, '/users/', { locationId }).catch(() => ({ users: [] }))
+  const em = String(email).trim().toLowerCase()
+  const u = (j.users || []).find((x) => String(x.email || '').trim().toLowerCase() === em)
+  return u ? (u.id || u._id) : null
+}
+export async function buildActions(locationId, { email = null, mine = false, staleDays = 30 } = {}) {
+  const locTok = await locationTokenOrDemo(locationId)
+  const now = Date.now()
+  const [tz, snap, pipelines, reasons, usersJ, appts, done, inboundRaw] = await Promise.all([
+    locationTimezone(locationId),
+    oppSnapshot(locTok, locationId),
+    fetchPipelines(locTok, locationId),
+    ghlGet(locTok, '/opportunities/lost-reason', { locationId, limit: 200 }).then((j) => j.lostReasons || []).catch(() => []),
+    ghlGet(locTok, '/users/', { locationId }).catch(() => ({ users: [] })),
+    _rawAppointments(locTok, locationId, now - ACT_APPT_LOOKBACK_DAYS * ACT_DAY, now + ACT_DAY),
+    _readActDone(locationId),
+    _inboundUnreplied(locTok, locationId),
+  ])
+  const users = (usersJ.users || []).map((u) => ({ id: u.id || u._id, name: u.name || [u.firstName, u.lastName].filter(Boolean).join(' ') || u.email || 'User', email: String(u.email || '').trim().toLowerCase() }))
+  const userName = {}; for (const u of users) userName[u.id] = u.name
+  const em = email ? String(email).trim().toLowerCase() : null
+  const meId = em ? ((users.find((u) => u.email === em) || {}).id || null) : null
+  const stageOf = {}; const pipeOf = {}
+  const pipes = (pipelines || []).map((p) => {
+    const stages = (p.stages || []).map((s, i) => ({ id: s.id, name: s.name, pos: s.position ?? i })).sort((a, b) => a.pos - b.pos)
+    for (const s of stages) { stageOf[s.id] = s.name; pipeOf[s.id] = p.id }
+    return { id: p.id, name: p.name, stages: stages.map((s) => ({ id: s.id, name: s.name })) }
+  })
+  const pipeName = {}; for (const p of pipes) pipeName[p.id] = p.name
+  const reasonName = {}; const lostReasons = []
+  for (const r of reasons) { const id = r._id || r.id; if (!id) continue; reasonName[id] = r.name; lostReasons.push({ id, name: r.name }) }
+  const ms = (v) => { const t = Date.parse(v); return Number.isFinite(t) ? t : null }
+  const days = (t) => (t == null ? null : Math.max(0, Math.round((now - t) / ACT_DAY)))
+  const row = (o) => {
+    const c = o.contact || {}
+    const upd = Math.max(ms(o.updatedAt) || 0, ms(o.lastStatusChangeAt) || 0, ms(o.lastStageChangeAt) || 0) || ms(o.createdAt)
+    return {
+      id: o.id, contactId: o.contactId || c.id || c._id || null,
+      name: c.name || [c.firstName, c.lastName].filter(Boolean).join(' ') || o.name || 'Unnamed',
+      email: c.email || null, phone: c.phone || null,
+      pipelineId: o.pipelineId || pipeOf[o.pipelineStageId] || null, pipeline: pipeName[o.pipelineId] || pipeName[pipeOf[o.pipelineStageId]] || null,
+      stageId: o.pipelineStageId || null, stage: stageOf[o.pipelineStageId] || null,
+      status: String(o.status || '').toLowerCase(), value: num(o.monetaryValue),
+      userId: o.assignedTo || null, user: userName[o.assignedTo] || null,
+      lostReasonId: o.lostReasonId || null, lostReason: reasonName[o.lostReasonId] || null,
+      createdMs: ms(o.createdAt), updatedMs: upd, ageDays: days(ms(o.createdAt)), idleDays: days(upd),
+    }
+  }
+  const opps = (snap.opps || []).filter((o) => !done[o.id]).map(row)
+  const wantMine = !!(mine && meId)
+  const isMine = (uid) => !wantMine || uid === meId
+  const closedRecent = (r) => r.updatedMs != null && now - r.updatedMs <= ACT_CLOSED_LOOKBACK_DAYS * ACT_DAY
+  const byUpd = (a, b) => (b.updatedMs || 0) - (a.updatedMs || 0)
+  const wonNoValue = opps.filter((r) => r.status === 'won' && !(r.value > 0) && closedRecent(r) && isMine(r.userId)).sort(byUpd)
+  const lostNoReason = opps.filter((r) => (r.status === 'lost' || r.status === 'abandoned') && !r.lostReasonId && closedRecent(r) && isMine(r.userId)).sort(byUpd)
+  const open = opps.filter((r) => r.status === 'open' && isMine(r.userId)).sort(byUpd)
+  const unassigned = opps.filter((r) => r.status === 'open' && !r.userId).sort(byUpd)
+  const staleOpen = open.filter((r) => r.idleDays != null && r.idleDays >= staleDays).sort((a, b) => (b.idleDays || 0) - (a.idleDays || 0))
+  // The open opportunity for a contact, so an appointment can be shown with its
+  // deal (and inherit its rep when the event has none).
+  const openByContact = new Map()
+  for (const r of opps) if (r.status === 'open' && r.contactId && !openByContact.has(r.contactId)) openByContact.set(r.contactId, r)
+  const anyByContact = new Map()
+  for (const r of opps) if (r.contactId && !anyByContact.has(r.contactId)) anyByContact.set(r.contactId, r)
+  const apptRows = appts
+    .filter((a) => a.id && !done[a.id] && Number.isFinite(a.startMs) && a.startMs <= now - ACT_APPT_GRACE_MS && !_actIsResulted(a.status))
+    .map((a) => {
+      const o = (a.contactId && (openByContact.get(a.contactId) || anyByContact.get(a.contactId))) || null
+      const uid = a.userId || (o && o.userId) || null
+      return { id: a.id, contactId: a.contactId, name: a.contactName || (o && o.name) || 'Unnamed', calendar: a.calendar, title: a.title, startMs: a.startMs, status: a.status || 'booked', userId: uid, user: userName[uid] || null, oppId: o ? o.id : null, stage: o ? o.stage : null, pipeline: o ? o.pipeline : null, daysAgo: days(a.startMs) }
+    })
+    .filter((a) => isMine(a.userId))
+    .sort((a, b) => b.startMs - a.startMs)
+  const inbound = (inboundRaw || []).filter((c) => !done[c.id]).map((c) => {
+    const o = (c.contactId && (openByContact.get(c.contactId) || anyByContact.get(c.contactId))) || null
+    const uid = c.userId || (o && o.userId) || null
+    return { ...c, userId: uid, user: userName[uid] || null, oppId: o ? o.id : null, stage: o ? o.stage : null, pipeline: o ? o.pipeline : null, hoursAgo: c.lastMs ? Math.max(0, Math.round((now - c.lastMs) / 3600000)) : null }
+  }).filter((c) => isMine(c.userId))
+  const counts = { appts: apptRows.length, wonNoValue: wonNoValue.length, lostNoReason: lostNoReason.length, staleOpen: staleOpen.length, unassigned: wantMine ? 0 : unassigned.length, inbound: inbound.length, open: open.length }
+  counts.todo = counts.appts + counts.wonNoValue + counts.lostNoReason + counts.staleOpen + counts.unassigned + counts.inbound
+  return {
+    at: now, tz, locationId, snapshotAt: snap.at, truncated: !!snap.truncated, staleDays,
+    meId, mine: wantMine, meMatched: !!meId,
+    users, pipelines: pipes, lostReasons, calendars: [...new Map(appts.map((a) => [a.calendarId, a.calendar])).entries()].map(([id, name]) => ({ id, name })),
+    counts, appts: apptRows, wonNoValue, lostNoReason, staleOpen, unassigned: wantMine ? [] : unassigned, inbound, open: open.slice(0, ACT_OPEN_CAP),
+  }
+}
+// One write to the CRM. `onlyUserId` (a CRM user id) restricts the write to
+// records assigned to that person or to nobody - what a client-side rep may
+// touch. Every op is validated here so the handler stays a thin gate.
+const ACT_APPT_STATUSES = new Set(['showed', 'noshow', 'cancelled', 'confirmed'])
+export async function applyAction(locationId, act, { onlyUserId = null } = {}) {
+  const locTok = await locationTokenOrDemo(locationId)
+  const op = act && String(act.op || '')
+  if (op === 'appt') {
+    const id = String(act.eventId || ''); const status = String(act.status || '').toLowerCase()
+    if (!id || !ACT_APPT_STATUSES.has(status)) throw new Error('appt: eventId and a status of showed, noshow, cancelled or confirmed are required')
+    if (onlyUserId && !isDemoToken(locTok)) {
+      const cur = await ghlGet(locTok, `/calendars/events/appointments/${encodeURIComponent(id)}`, {}).catch(() => null)
+      const ev = cur && (cur.event || cur.appointment || cur)
+      const uid = ev ? apptUserId(ev) : null
+      if (uid && uid !== onlyUserId) throw new Error('This appointment belongs to another rep.')
+    }
+    const r = await ghlPut(locTok, `/calendars/events/appointments/${encodeURIComponent(id)}`, { appointmentStatus: status }, locationId)
+    await _markActDone(locationId, id)
+    return { ok: true, op, eventId: id, status, result: r }
+  }
+  if (op === 'opp') {
+    const id = String(act.oppId || '')
+    if (!id) throw new Error('opp: oppId is required')
+    const p = act.patch || {}
+    const body = {}
+    if (p.monetaryValue != null) { const v = Number(p.monetaryValue); if (!Number.isFinite(v) || v < 0) throw new Error('value must be a number'); body.monetaryValue = v }
+    if (p.status != null) { const s = String(p.status).toLowerCase(); if (!['open', 'won', 'lost', 'abandoned'].includes(s)) throw new Error('status must be open, won, lost or abandoned'); body.status = s }
+    if (p.lostReasonId != null) body.lostReasonId = String(p.lostReasonId)
+    if (p.pipelineStageId != null) body.pipelineStageId = String(p.pipelineStageId)
+    if (p.pipelineId != null) body.pipelineId = String(p.pipelineId)
+    if (p.assignedTo !== undefined) body.assignedTo = p.assignedTo ? String(p.assignedTo) : null
+    if (!Object.keys(body).length) throw new Error('nothing to change')
+    if (onlyUserId && !isDemoToken(locTok)) {
+      const cur = await ghlGet(locTok, `/opportunities/${encodeURIComponent(id)}`, {}).catch(() => null)
+      const o = cur && (cur.opportunity || cur)
+      if (o && o.assignedTo && o.assignedTo !== onlyUserId) throw new Error('This deal belongs to another rep.')
+      if (body.assignedTo !== undefined && body.assignedTo !== onlyUserId) throw new Error('You can only assign a deal to yourself.')
+    }
+    const r = await ghlPut(locTok, `/opportunities/${encodeURIComponent(id)}`, body, locationId)
+    await _markActDone(locationId, id)
+    // The snapshot the list is built from is refreshed by the warmer; hand back
+    // what the CRM now says so the row can be updated in place meanwhile.
+    const o = r && (r.opportunity || r)
+    return { ok: true, op, oppId: id, patch: body, opportunity: o && o.id ? { id: o.id, status: o.status, monetaryValue: o.monetaryValue, pipelineStageId: o.pipelineStageId, assignedTo: o.assignedTo, lostReasonId: o.lostReasonId } : null }
+  }
+  if (op === 'note') {
+    const contactId = String(act.contactId || ''); const text = String(act.body || '').trim()
+    if (!contactId || !text) throw new Error('note: contactId and body are required')
+    if (text.length > 4000) throw new Error('note is too long')
+    const body = { body: text }
+    if (act.userId) body.userId = String(act.userId)
+    const r = await ghlPost(locTok, `/contacts/${encodeURIComponent(contactId)}/notes`, body)
+    return { ok: true, op, contactId, note: r && (r.note || r) }
+  }
+  if (op === 'dismiss') {
+    // Not a CRM write: hides a row (an answered enquiry, say) for a while.
+    const id = String(act.id || ''); if (!id) throw new Error('dismiss: id is required')
+    await _markActDone(locationId, id)
+    return { ok: true, op, id }
+  }
+  throw new Error(`unknown op ${op || '(none)'}`)
+}

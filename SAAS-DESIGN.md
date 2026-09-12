@@ -925,17 +925,20 @@ already reads (`monetaryValue`, `lostReasonId`, appointment status and
 start time, `assignedTo`, pipeline stage), so stage A needs no new
 permissions.
 
-**Stage A - the action list, read-only, on the current version.** A
-"Data hygiene" tab per workspace, and a per-rep "My actions" view:
+**Stage A - built as the Deals & Actions tab (v3.564.0).** It went further
+than read-only: it writes fixes back, and it has a Live deals screen. A
+"Deals & Actions" tab per workspace, with an Action list and Live deals; a
+viewer can hold this tab alone (the "CRM user preset" in Team) and, with
+the CRM updates grant, fix their own records from a phone. The checks:
 
 | Check | Rule | Fix asked for |
 |---|---|---|
 | Appointment not resulted | status still booked/confirmed and start time is in the past | mark showed / no-show / cancelled |
 | Won without a value | status won and `monetaryValue` empty or 0 | enter the value (and the product once the register exists) |
 | Lost without a reason | status lost/abandoned and no `lostReasonId` | pick a lost reason |
-| Showed but not advanced | an appointment marked showed, opportunity still in a pre-appointment stage after N days | move the stage or mark lost |
 | Stale open deal | open, no activity for N days (per client setting) | follow up or mark lost |
 | Unassigned | opportunity with no `assignedTo` | assign a rep |
+| Messages with no reply | conversation whose last message came from the contact | reply in the CRM (deep link), or mark handled |
 
 Each row: contact, rep, age, and an "Open in Caalano Systems" deep link to
 the contact so the fix is one click away. Counts per rep and per check feed
@@ -974,9 +977,10 @@ and new value. Writes are sent straight to the CRM and the local snapshot
 is patched at the same time, so the board updates immediately and the next
 sync confirms it.
 
-**The scope change.** Today's app has nine read scopes. Stage C adds
-`opportunities.write`, `contacts.write` and `calendars/events.write` (and
-no messaging scope). Changing the scope list invalidates every existing
+**The scope change.** The app had nine read scopes. v3.564.0 requests
+`opportunities.write`, `contacts.write`, `calendars/events.write` and
+`conversations.readonly` (the conversation list, for the no-reply check;
+no message-sending scope). Changing the scope list invalidates every existing
 install, so it is done once, at a planned point: update the marketplace
 app, re-authorise Caalano's own agency install through Settings -> Connect,
 and show a "Re-authorise to enable deal updates" prompt on every tenant's

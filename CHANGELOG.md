@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.557.0 - 2026-09-12 · `PENDING`
+## v3.557.0 - 2026-09-12 · `9097767`
 
 **Docs: launch scope, domain and account area** - `SAAS-DESIGN.md` section
 14 records the launch decisions: new domain with a landing page and the app

@@ -513,8 +513,10 @@ over per workspace with a feature flag.
   `locations.readonly`. For an outside tenant the same app is installed as
   a **private install on their own location** (or agency) and lands on the
   same callback with `state` carrying `{orgId, workspaceId}`.
-- Scopes stay exactly the current nine read scopes in `SCOPES`. Adding a
-  scope invalidates every install, so treat the list as versioned.
+- Scopes are the current nine read scopes in `SCOPES` until the rep
+  workspace (section 15, stage C) adds three write scopes. Adding a scope
+  invalidates every install, so the list is versioned and changed once, on
+  purpose.
 - Access token lives ~24 hours, refresh token rotates on every refresh:
   `refresh()` must store the new refresh token atomically or the connection
   is lost. This is the one adapter where a lost write is fatal, so the
@@ -948,12 +950,39 @@ the CRM tells us who is looking, we show that rep's own action list. Reps
 never leave the CRM. Needs the app's custom-page setting and the SSO key,
 no new scopes.
 
-**Stage C - fix in place.** Buttons on each row that write the result back
-(mark showed / no-show, set value, set lost reason, move stage) need the
-write scopes `opportunities.write` and `calendars/events.write`. Adding
-scopes invalidates every install, so it is done once, at a planned point,
-with a re-authorise prompt on every Connections card, and every write lands
-in the audit log with the rep's name.
+**Stage C - the rep workspace ("My deals").** Agreed 2026-09-12: more
+than fixing rows, reps should be able to work their deals here, in a
+friendlier way than the LeadConnector app, for everything except messaging
+and conversations, which stay in the CRM.
+
+| Screen | What a rep can do | CRM write needed |
+|---|---|---|
+| My deals | every opportunity assigned to them, grouped by pipeline and stage, with value, age, next appointment and the hygiene flags from stage A | none to view |
+| Deal card | move stage; mark won with value (and product once the register exists); mark lost with a reason; change value; reassign | `opportunities.write` |
+| Notes | read the contact's notes, add a note | `contacts.readonly` (have), `contacts.write` |
+| Appointments | today's and overdue appointments, result each one (showed / no-show / cancelled), reschedule | `calendars/events.write` |
+| Action list | stage A's rows, each fixable in place | the above |
+
+Not in scope: sending messages, reading conversations, creating contacts,
+editing custom fields other than value and product. If a rep needs those
+they open the CRM (deep link on every card).
+
+Every write goes through our API, is checked by `can(ctx, 'crm.write',
+{workspaceId})`, is limited to opportunities assigned to the rep unless
+they are `user` or above, and lands in the audit log with rep, field, old
+and new value. Writes are sent straight to the CRM and the local snapshot
+is patched at the same time, so the board updates immediately and the next
+sync confirms it.
+
+**The scope change.** Today's app has nine read scopes. Stage C adds
+`opportunities.write`, `contacts.write` and `calendars/events.write` (and
+no messaging scope). Changing the scope list invalidates every existing
+install, so it is done once, at a planned point: update the marketplace
+app, re-authorise Caalano's own agency install through Settings -> Connect,
+and show a "Re-authorise to enable deal updates" prompt on every tenant's
+Connections card. Read-only use keeps working on the old token until they
+do. Stage C is therefore built behind a flag and switched on per workspace
+when its connection carries the new scopes.
 
 **Prevention** stays in the CRM: the conditional required fields on Won
 (value, product) that clients are already testing, and a required lost

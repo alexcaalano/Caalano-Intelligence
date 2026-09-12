@@ -18,6 +18,17 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.563.0 - 2026-09-12 · `PENDING`
+
+**Docs: the rep workspace** - `SAAS-DESIGN.md` section 15 stage C is now a
+rep-facing "My deals" workspace: assigned opportunities by pipeline and
+stage, move stage, mark won with value or lost with reason, add notes,
+result and reschedule appointments, all audited and scoped to the rep's
+own deals; no messaging. Lists the three write scopes it needs and the
+one-time re-authorisation that a scope change forces. No app changes.
+
+---
+
 ## v3.562.0 - 2026-09-12 · `5a11d46`
 
 **Docs: data hygiene for CRM users** - `SAAS-DESIGN.md` section 15 sets out

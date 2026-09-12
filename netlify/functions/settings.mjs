@@ -4,7 +4,7 @@
 // localStorage-only storage. One JSON blob, four sections; POST merges a partial
 // update per section (last-write-wins per client), GET returns the whole blob.
 import { getStore } from '@netlify/blobs'
-import { currentUser } from '../lib/auth.mjs'
+import { currentUser , isClientRole } from '../lib/auth.mjs'
 import { CLIENT_PROFILE_SEEDS } from '../lib/profiles.mjs'
 
 const store = () => getStore({ name: 'caalano-settings', consistency: 'strong' })
@@ -29,7 +29,7 @@ export default async (req) => {
         // shared-password edge gate, which has no identity attached. It used to
         // fall through and return the whole unscoped blob.
         if (!me) return json({ ok: false, error: 'Not signed in.' }, 401)
-        if (me.role === 'viewer') {
+        if (isClientRole(me.role)) {
           const allow = new Set(me.clients || [])
           const pick = (obj) => { const o = {}; for (const k in (obj || {})) { if (allow.has(String(k).split(':')[0])) o[k] = obj[k] } return o }
           const scoped = {}

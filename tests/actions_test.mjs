@@ -18,7 +18,7 @@ for (const k of ['appts', 'wonNoValue', 'lostNoReason', 'staleOpen', 'unassigned
 assert.equal(a.counts.todo, a.counts.appts + a.counts.wonNoValue + a.counts.lostNoReason + a.counts.staleOpen + a.counts.unassigned + a.counts.inbound)
 assert.ok(a.open.length > 0, 'the demo has open deals')
 for (const r of a.open) { assert.ok(r.id && r.name && r.stage && r.pipelineId, 'open deal rows carry id, name, stage, pipeline'); assert.equal(r.status, 'open') }
-for (const r of a.staleOpen) assert.ok(r.idleDays >= 30, 'stale means idle for the threshold')
+for (const r of a.staleOpen) assert.ok(r.idleDays >= a.staleDays, 'stale means idle for the threshold')
 for (const r of a.wonNoValue) assert.ok(r.status === 'won' && !(r.value > 0))
 for (const r of a.lostNoReason) assert.ok(['lost', 'abandoned'].includes(r.status) && !r.lostReasonId)
 for (const r of a.unassigned) assert.ok(r.status === 'open' && !r.userId)

@@ -5720,24 +5720,77 @@ const _actIsResulted = (s) => APPT_INVALID_RE.test(s) || APPT_CANCEL_RE.test(s) 
 async function _inboundUnreplied(locTok, locationId) {
   if (isDemoToken(locTok)) return []
   const out = []
+  const auto = [] // last message outbound but not by a person: check whether an inbound sits unanswered behind it
   let page = 0, startAfter = null
-  while (page++ < 3) {
+  const conv = (c) => ({
+    id: c.id || c._id, contactId: c.contactId || null, name: c.fullName || c.contactName || c.email || c.phone || 'Unknown',
+    lastMs: Number(c.lastMessageDate) || Date.parse(c.lastMessageDate) || null, type: c.lastMessageType || c.type || null,
+    snippet: String(c.lastMessageBody || '').slice(0, 160), unread: Number(c.unreadCount) || 0, userId: c.assignedTo || null,
+  })
+  while (page++ < 2) {
     let j
-    try { j = await ghlGet(locTok, '/conversations/search', { locationId, lastMessageDirection: 'inbound', sortBy: 'last_message_date', sort: 'desc', limit: 100, ...(startAfter ? { startAfterDate: startAfter } : {}) }) } catch { break }
+    try { j = await ghlGet(locTok, '/conversations/search', { locationId, sortBy: 'last_message_date', sort: 'desc', limit: 100, ...(startAfter ? { startAfterDate: startAfter } : {}) }) } catch { break }
     const rows = j.conversations || []
     for (const c of rows) {
-      if (String(c.lastMessageDirection || '').toLowerCase() !== 'inbound') continue
-      out.push({
-        id: c.id || c._id, contactId: c.contactId || null, name: c.fullName || c.contactName || c.email || c.phone || 'Unknown',
-        lastMs: Number(c.lastMessageDate) || Date.parse(c.lastMessageDate) || null, type: c.lastMessageType || c.type || null,
-        snippet: String(c.lastMessageBody || '').slice(0, 160), unread: Number(c.unreadCount) || 0, userId: c.assignedTo || null,
-      })
+      const dir = String(c.lastMessageDirection || '').toLowerCase()
+      const lastMs = Number(c.lastMessageDate) || Date.parse(c.lastMessageDate) || 0
+      const manualMs = Number(c.lastManualMessageDate) || Date.parse(c.lastManualMessageDate) || 0
+      if (dir === 'inbound') { out.push(conv(c)); continue }
+      // Outbound last, but nobody typed it (an automation answered): if the
+      // last thing a person sent is older than that, an inbound may be waiting.
+      if (dir === 'outbound' && lastMs && manualMs < lastMs && auto.length < 25) auto.push(conv(c))
     }
     if (rows.length < 100) break
     startAfter = rows[rows.length - 1].lastMessageDate || null
     if (!startAfter) break
   }
+  // Read the tail of those conversations: unanswered = the newest inbound is
+  // newer than the newest message a person sent.
+  await Promise.all(auto.map(async (c) => {
+    let mj; try { mj = await ghlGet(locTok, `/conversations/${encodeURIComponent(c.id)}/messages`, { limit: 20 }) } catch { return }
+    const msgs = (mj && mj.messages && (mj.messages.messages || mj.messages)) || (Array.isArray(mj) ? mj : [])
+    let lastIn = 0, lastManual = 0
+    for (const m of msgs) {
+      const ms = Date.parse(m.dateAdded || m.dateUpdated || m.createdAt); if (!isFinite(ms)) continue
+      const d = String(m.direction || '').toLowerCase()
+      if (d === 'inbound') { if (ms > lastIn) { lastIn = ms; c.snippet = String(m.body || c.snippet || '').slice(0, 160); c.type = m.messageType || m.type || c.type } }
+      else if (msgUserId(m) && ms > lastManual) lastManual = ms
+    }
+    if (lastIn && lastIn > lastManual) { c.lastMs = lastIn; c.autoReplied = true; out.push(c) }
+  }))
+  out.sort((a, b) => (b.lastMs || 0) - (a.lastMs || 0))
   return out
+}
+// The past notes on a contact, newest first.
+export async function contactNotes(locationId, contactId) {
+  const locTok = await locationTokenOrDemo(locationId)
+  if (isDemoToken(locTok)) { const d = demoGhl(`/contacts/${contactId}/notes`, {}); return (d && d.notes) || [] }
+  const j = await ghlGet(locTok, `/contacts/${encodeURIComponent(contactId)}/notes`, {}).catch(() => ({ notes: [] }))
+  return (j.notes || []).map((n) => ({ id: n.id || n._id, body: String(n.body || ''), userId: n.userId || null, at: Date.parse(n.dateAdded || n.createdAt) || null })).sort((a, b) => (b.at || 0) - (a.at || 0)).slice(0, 50)
+}
+// A contact's most recent conversation: the last messages, who sent them, and
+// the channel to reply on. Read-only; the reply is a separate op.
+const CONV_TYPE_TO_SEND = { TYPE_SMS: 'SMS', TYPE_EMAIL: 'Email', TYPE_WHATSAPP: 'WhatsApp', TYPE_FACEBOOK: 'FB', TYPE_INSTAGRAM: 'IG', TYPE_LIVE_CHAT: 'Live_Chat', TYPE_GMB: 'Custom', SMS: 'SMS', Email: 'Email', WhatsApp: 'WhatsApp', FB: 'FB', IG: 'IG', Live_Chat: 'Live_Chat' }
+export async function contactConversation(locationId, { contactId = null, conversationId = null } = {}) {
+  const locTok = await locationTokenOrDemo(locationId)
+  if (isDemoToken(locTok)) return { id: null, messages: [], replyType: 'SMS', demo: true }
+  let convId = conversationId
+  if (!convId && contactId) {
+    const cs = await ghlGet(locTok, '/conversations/search', { locationId, contactId, limit: 5, sortBy: 'last_message_date', sort: 'desc' }).catch(() => null)
+    const convs = (cs && (cs.conversations || cs.conversation)) || []
+    convId = convs.length ? (convs[0].id || convs[0]._id) : null
+  }
+  if (!convId) return { id: null, messages: [], replyType: 'SMS' }
+  const mj = await ghlGet(locTok, `/conversations/${encodeURIComponent(convId)}/messages`, { limit: 30 }).catch(() => null)
+  const raw = (mj && mj.messages && (mj.messages.messages || mj.messages)) || (Array.isArray(mj) ? mj : [])
+  const messages = raw.map((m) => ({
+    id: m.id || m._id, direction: String(m.direction || '').toLowerCase(), type: m.messageType || m.type || null,
+    body: String(m.body || (m.meta && m.meta.email && m.meta.email.subject) || '').slice(0, 2000),
+    at: Date.parse(m.dateAdded || m.dateUpdated || m.createdAt) || null, userId: msgUserId(m) || null, source: m.source || null, status: m.status || null,
+  })).filter((m) => m.at).sort((a, b) => a.at - b.at).slice(-30)
+  const lastIn = [...messages].reverse().find((m) => m.direction === 'inbound')
+  const replyType = CONV_TYPE_TO_SEND[(lastIn && lastIn.type) || ''] || CONV_TYPE_TO_SEND[(messages[messages.length - 1] || {}).type || ''] || 'SMS'
+  return { id: convId, messages, replyType }
 }
 // Which CRM user is this signed-in person? Matched by e-mail against the
 // location's user list, so "mine" means the deals the CRM says are theirs.
@@ -5749,7 +5802,7 @@ export async function ghlUserIdForEmail(locationId, email) {
   const u = (j.users || []).find((x) => String(x.email || '').trim().toLowerCase() === em)
   return u ? (u.id || u._id) : null
 }
-export async function buildActions(locationId, { email = null, mine = false, staleDays = 30 } = {}) {
+export async function buildActions(locationId, { email = null, mine = false, staleDays = 7 } = {}) {
   const locTok = await locationTokenOrDemo(locationId)
   const now = Date.now()
   const [tz, snap, pipelines, reasons, usersJ, appts, done, inboundRaw] = await Promise.all([
@@ -5793,6 +5846,11 @@ export async function buildActions(locationId, { email = null, mine = false, sta
     }
   }
   const opps = (snap.opps || []).filter((o) => !done[o.id]).map(row)
+  // Reps = the CRM users who actually own deals. Rep pickers and the results
+  // list show only these; the full user list stays for assigning.
+  const dealsBy = new Map()
+  for (const o of (snap.opps || [])) if (o.assignedTo) dealsBy.set(o.assignedTo, (dealsBy.get(o.assignedTo) || 0) + 1)
+  const reps = users.filter((u) => dealsBy.has(u.id)).map((u) => ({ ...u, deals: dealsBy.get(u.id) })).sort((a, b) => b.deals - a.deals)
   const wantMine = !!(mine && meId)
   const isMine = (uid) => !wantMine || uid === meId
   const closedRecent = (r) => r.updatedMs != null && now - r.updatedMs <= ACT_CLOSED_LOOKBACK_DAYS * ACT_DAY
@@ -5801,7 +5859,12 @@ export async function buildActions(locationId, { email = null, mine = false, sta
   const lostNoReason = opps.filter((r) => (r.status === 'lost' || r.status === 'abandoned') && !r.lostReasonId && closedRecent(r) && isMine(r.userId)).sort(byUpd)
   const open = opps.filter((r) => r.status === 'open' && isMine(r.userId)).sort(byUpd)
   const unassigned = opps.filter((r) => r.status === 'open' && !r.userId).sort(byUpd)
+  // Urgency tiers: how many weeks a deal has sat untouched. 30+ is its own tier.
+  const tierOf = (d) => (d >= 30 ? 30 : d >= 21 ? 21 : d >= 14 ? 14 : d >= 7 ? 7 : 0)
+  for (const r of open) r.tier = r.idleDays != null ? tierOf(r.idleDays) : 0
   const staleOpen = open.filter((r) => r.idleDays != null && r.idleDays >= staleDays).sort((a, b) => (b.idleDays || 0) - (a.idleDays || 0))
+  const staleTiers = { t7: 0, t14: 0, t21: 0, t30: 0 }
+  for (const r of staleOpen) { if (r.tier >= 30) staleTiers.t30++; else if (r.tier >= 21) staleTiers.t21++; else if (r.tier >= 14) staleTiers.t14++; else staleTiers.t7++ }
   // The open opportunity for a contact, so an appointment can be shown with its
   // deal (and inherit its rep when the event has none).
   const openByContact = new Map()
@@ -5827,8 +5890,8 @@ export async function buildActions(locationId, { email = null, mine = false, sta
   return {
     at: now, tz, locationId, snapshotAt: snap.at, truncated: !!snap.truncated, staleDays,
     meId, mine: wantMine, meMatched: !!meId,
-    users, pipelines: pipes, lostReasons, calendars: [...new Map(appts.map((a) => [a.calendarId, a.calendar])).entries()].map(([id, name]) => ({ id, name })),
-    counts, appts: apptRows, wonNoValue, lostNoReason, staleOpen, unassigned: wantMine ? [] : unassigned, inbound, open: open.slice(0, ACT_OPEN_CAP),
+    users, reps, pipelines: pipes, lostReasons, calendars: [...new Map(appts.map((a) => [a.calendarId, a.calendar])).entries()].map(([id, name]) => ({ id, name })),
+    counts, staleTiers, appts: apptRows, wonNoValue, lostNoReason, staleOpen, unassigned: wantMine ? [] : unassigned, inbound, open: open.slice(0, ACT_OPEN_CAP),
   }
 }
 // One write to the CRM. `onlyUserId` (a CRM user id) restricts the write to
@@ -5885,6 +5948,20 @@ export async function applyAction(locationId, act, { onlyUserId = null } = {}) {
     const r = await ghlPost(locTok, `/contacts/${encodeURIComponent(contactId)}/notes`, body)
     return { ok: true, op, contactId, note: r && (r.note || r) }
   }
+  if (op === 'reply') {
+    // Send a reply on the channel the contact used, then mark the row handled.
+    const contactId = String(act.contactId || ''); const text = String(act.body || '').trim()
+    const type = CONV_TYPE_TO_SEND[String(act.type || '')] || null
+    if (!contactId || !text) throw new Error('reply: contactId and body are required')
+    if (!type) throw new Error('reply: unsupported channel; reply in the CRM')
+    if (text.length > 1500) throw new Error('reply is too long')
+    const body = { type, contactId, message: text }
+    if (type === 'Email') { body.subject = String(act.subject || 'Re: your enquiry').slice(0, 200); body.html = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/\n/g, '<br>'); delete body.message }
+    if (act.conversationId) body.conversationId = String(act.conversationId)
+    const r = await ghlPost(locTok, '/conversations/messages', body)
+    if (act.conversationId) await _markActDone(locationId, String(act.conversationId))
+    return { ok: true, op, contactId, type, result: r && (r.messageId || r.conversationId) ? { messageId: r.messageId, conversationId: r.conversationId } : r }
+  }
   if (op === 'dismiss') {
     // Not a CRM write: hides a row (an answered enquiry, say) for a while.
     const id = String(act.id || ''); if (!id) throw new Error('dismiss: id is required')
@@ -5913,7 +5990,10 @@ export async function buildRepCard(locationId, { userId, from, to, hours = null,
     _userPerfInputs(locationId, from, to),
     oppSnapshot(locTok, locationId),
     _rawAppointments(locTok, locationId, (fromMs != null ? fromMs : now - 30 * ACT_DAY) - 7 * ACT_DAY, (toMs != null ? toMs : now) + 90 * ACT_DAY),
-    buildSpeedToLead(locationId, from, to, { sample: 40, budgetMs: 7000, hours, userId }).catch(() => null),
+    // Every one of the rep's leads, not a sample: the full message export when
+    // it finishes in time, else per-lead reads up to the budget (the card says
+    // how many it measured).
+    buildSpeedToLead(locationId, from, to, { sample: 200, budgetMs: 12000, hours, userId }).catch(() => null),
   ])
   const perf = _aggregateUserPerf(inp, {})
   const me = (perf.users || []).find((u) => u.id === userId) || null
@@ -5955,8 +6035,22 @@ export async function buildRepCard(locationId, { userId, from, to, hours = null,
     medianIdleAll: idles.length ? idles.slice().sort((a, b) => a - b)[Math.floor(idles.length / 2)] : null,
   }
   const sp = speed && speed.connected !== false ? speed : null
+  // The leaderboard: every rep who had leads in the period, with the same
+  // appointment split, so the board and the tiles agree.
+  const apByUser = new Map()
+  for (const a of rawAppts) {
+    if (!inPeriod(a.addedMs) || APPT_INVALID_RE.test(a.status)) continue
+    const uid = a.userId; if (!uid) continue
+    const b = apByUser.get(uid) || { booked: 0, showed: 0, noShow: 0 }
+    b.booked++; if (apptShown(a.status)) b.showed++; else if (APPT_NOSHOW_RE.test(a.status)) b.noShow++
+    apByUser.set(uid, b)
+  }
+  const leaderboard = team.map((u) => {
+    const b = apByUser.get(u.id) || { booked: 0, showed: 0, noShow: 0 }
+    return { id: u.id, name: u.name, me: u.id === userId, leads: u.leads, booked: b.booked, showed: b.showed, noShow: b.noShow, showRate: (b.showed + b.noShow) ? Math.round((b.showed / (b.showed + b.noShow)) * 100) : null, won: u.won, lost: u.lost, revenue: u.revenue, winRate: u.winRate, open: u.open }
+  }).sort((a, b) => (b.won - a.won) || (b.revenue - a.revenue) || (b.booked - a.booked))
   return {
-    connected: true, tz, userId, name: me ? me.name : ((inp.userRows || []).find((u) => (u.id || u._id) === userId) || {}).name || null,
+    connected: true, tz, userId, leaderboard, name: me ? me.name : ((inp.userRows || []).find((u) => (u.id || u._id) === userId) || {}).name || null,
     period: { from, to },
     leads: me ? me.leads : 0, qualified: me ? me.qualified : 0, qualRate: me ? me.qualRate : null,
     open: me ? me.open : 0, won: me ? me.won : 0, lost: me ? me.lost : 0, revenue: me ? me.revenue : 0,
@@ -5964,7 +6058,7 @@ export async function buildRepCard(locationId, { userId, from, to, hours = null,
     bookRate: me ? me.bookRate : null, pipelineValue: me ? me.pipelineValue : 0, wonValue: me ? me.wonValue : 0, lostValue: me ? me.lostValue : 0,
     stages: me ? me.stages : {}, stageOpen: me ? me.stageOpen : {}, lostReasons: me ? me.lostReasons : [], byPipeline: me ? me.byPipeline : [],
     appointments: ap,
-    speed: sp ? { medianMin: sp.medianMin ?? null, avgMin: sp.avgMin ?? null, within5Pct: sp.within5Pct ?? null, measured: sp.measured ?? null, sampled: sp.sampled ?? null, totalLeads: sp.totalLeads ?? null, buckets: sp.buckets || null, after: sp.after || null, hours: sp.hours || null } : null,
+    speed: sp ? { full: !!sp.full, medianMin: sp.medianMin ?? null, avgMin: sp.avgMin ?? null, within5Pct: sp.within5Pct ?? null, measured: sp.measured ?? null, measuredAll: sp.measuredAll ?? null, sampled: sp.sampled ?? null, totalLeads: sp.totalLeads ?? null, inHours: sp.totalLeads != null ? sp.totalLeads - ((sp.after && sp.after.count) || 0) : null, buckets: sp.buckets || null, after: sp.after || null, hours: sp.hours || null, viaAppt: sp.viaAppt ?? null, viaMessage: sp.viaMessage ?? null } : null,
     now: { open: openNow.length, openValue: Math.round(openValue), stale },
     rank: { leads: rankOf('leads'), booked: rankOf('booked'), winRate: rankOf('winRate'), revenue: rankOf('revenue'), showRate: rankOf('showRate') },
     team: { reps: team.length, leads: perf.leads, avgWinRate: team.length ? Math.round(team.reduce((sum, u) => sum + (u.winRate || 0), 0) / team.length) : null, avgShowRate: (() => { const v = team.map((u) => u.showRate).filter((x) => x != null); return v.length ? Math.round(v.reduce((a, b) => a + b, 0) / v.length) : null })() },

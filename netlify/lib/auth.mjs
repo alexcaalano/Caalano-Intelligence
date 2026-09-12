@@ -102,15 +102,25 @@ export function randomToken(bytes = 24) {
 //              users/viewers, diagnostics) but NOT the superadmin-only areas.
 // user       - agency staff; dashboards for allowed accounts, no settings/invites
 // viewer     - client; only assigned clients + only allowed sub-tabs
-export const ROLES = ['superadmin', 'admin', 'user', 'viewer']
-const normRole = (r) => (ROLES.includes(r) ? r : 'viewer')
+// Five tiers (2026-09-12), named the way the CRM names them:
+//   superadmin    - Super Admin: owner control
+//   admin         - Agency Admin: full day-to-day control
+//   user          - Agency User: agency staff, dashboards for allowed accounts
+//   account_admin - Account Admin: the client; only ticked accounts + tabs
+//   account_user  - Account User: the client's employee (a rep); Deals &
+//                   Actions only, updates their own deals, sees their own results
+// 'viewer' is the old name for account_admin and is still accepted on read.
+export const ROLES = ['superadmin', 'admin', 'user', 'account_admin', 'account_user']
+const normRole = (r) => (r === 'viewer' ? 'account_admin' : ROLES.includes(r) ? r : 'account_admin')
+// The two client-side tiers, where the old code said "viewer".
+export const isClientRole = (r) => r === 'account_admin' || r === 'account_user' || r === 'viewer'
 // Every tab the workspace can offer, so a tick in Permissions survives the
 // save. It used to list eight; Call Reporting, Location, Calendars, Clinic,
 // Analytics, Lost Reasons and the Change Log were silently dropped on write.
 // 'custom' is a client's custom dashboard, offered only when a Super Admin has
 // opened that dashboard to viewers.
 export const ALL_TABS = ['overall', 'custom', 'users', 'meta', 'google', 'analytics', 'cohorts', 'forms', 'location', 'appts', 'calperf', 'clinic', 'timing', 'calls', 'lostreasons', 'optlog', 'actions']
-const RANK = { superadmin: 3, admin: 2, user: 1, viewer: 0 }
+const RANK = { superadmin: 4, admin: 3, user: 2, account_admin: 1, viewer: 1, account_user: 0 }
 export const rankOf = (r) => (RANK[r] != null ? RANK[r] : 0)
 export const isAdminish = (r) => r === 'admin' || r === 'superadmin'
 // Can an actor with actorRole administer a target with targetRole? Admins can
@@ -131,7 +141,9 @@ export function canSeeClient(user, clientId) {
 }
 // Which of the offered sub-tabs may this user see? (admins/users: all.)
 export function allowedTabs(user, offered) {
-  if (!user || user.role !== 'viewer' || !Array.isArray(user.tabs)) return offered
+  if (!user) return offered
+  if (user.role === 'account_user') return offered.filter((t) => t === 'actions')   // a rep holds Deals & Actions and nothing else
+  if (!isClientRole(user.role) || !Array.isArray(user.tabs)) return offered
   return offered.filter((t) => user.tabs.includes(t))
 }
 
@@ -144,7 +156,7 @@ const publicUser = (u) => u && ({
   tokenEpoch: u.tokenEpoch || 0,
   termsVersion: u.termsVersion || null, termsAcceptedAt: u.termsAcceptedAt || null,
   clients: Array.isArray(u.clients) ? u.clients : [], allClients: u.allClients !== false,
-  tabs: Array.isArray(u.tabs) ? u.tabs : null, reports: u.reports === true, crm: u.crm === true, requestedAt: u.requestedAt || null, note: u.note || '',
+  tabs: normRole(u.role) === 'account_user' ? ['actions'] : (Array.isArray(u.tabs) ? u.tabs : null), reports: u.reports === true, crm: normRole(u.role) === 'account_user' || u.crm === true, requestedAt: u.requestedAt || null, note: u.note || '',
 })
 export { publicUser }
 
@@ -217,7 +229,7 @@ function normAlloc(patch = {}) {
 export function canSeeReports(user) {
   if (!user) return false
   if (isAdminish(user.role) || user.role === 'user') return true
-  return user.role === 'viewer' && user.reports === true
+  return isClientRole(user.role) && user.reports === true
 }
 
 // A client requests access. Creates a PENDING account (with their chosen
@@ -230,7 +242,7 @@ export async function signupRequest({ email, name, password, note }) {
   if (existing && (existing.status === 'active' || existing.status === 'invited')) return { error: 'An account for that email already exists. Try signing in.' }
   const { hash, salt } = await hashPassword(password)
   await saveUser({
-    email: em, name: String(name || '').trim(), role: 'viewer', status: 'pending',
+    email: em, name: String(name || '').trim(), role: 'account_admin', status: 'pending',
     passwordHash: hash, passwordSalt: salt, createdAt: existing ? existing.createdAt : new Date().toISOString(),
     invitedBy: null, lastLogin: null, clients: [], allClients: false, tabs: null,
     requestedAt: new Date().toISOString(), note: String(note || '').trim().slice(0, 300),
@@ -245,7 +257,7 @@ export async function approveUser(email, patch, actor) {
   const actorRole = (actor && actor.role) || 'admin'
   if (patch.role && !canManageRole(actorRole, patch.role)) return { error: 'Only a Super Admin can grant Admin access.' }
   Object.assign(u, normAlloc(patch))
-  if (!u.role) u.role = 'viewer'
+  if (!u.role) u.role = 'account_admin'
   u.status = 'active'
   u.approvedBy = (actor && actor.email) || null
   u.requestedAt = u.requestedAt || null
@@ -476,7 +488,7 @@ export async function requireStaff(req) {
   const secret = process.env.AUTH_SECRET
   if (!secret) return null
   const me = await currentUser(req, secret).catch(() => null)
-  if (me && me.role !== 'viewer') return null
+  if (me && !isClientRole(me.role)) return null
   return new Response(JSON.stringify({ error: me ? 'Staff only.' : 'Not signed in.' }), { status: me ? 403 : 401, headers: { 'content-type': 'application/json' } })
 }
 export async function requireOpsAdmin(req) {

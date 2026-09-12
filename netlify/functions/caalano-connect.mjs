@@ -32,6 +32,9 @@ const SCOPES = [
   // which the "messages with no reply" list reads. Message bodies stay under
   // conversations/message.readonly above.
   'conversations.readonly',
+  // conversations/message.write sends the one-tap reply from the "messages with
+  // no reply" list, on the channel the contact used.
+  'conversations/message.write',
 ]
 const AUTH = 'https://marketplace.gohighlevel.com/oauth/chooselocation'
 

@@ -18,6 +18,42 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.566.0 - 2026-09-12 · `PENDING`
+
+**Five tiers** - Super Admin, Agency Admin, Agency User, Account Admin and
+Account User are now five real roles, named as the CRM names them. Account
+User is the client's employee: Deals & Actions only, their own deals and
+results, updates their own records; their login e-mail must match their CRM
+user. Existing "Viewer" logins carry on as Account Admins with nothing to
+change. Team gets an "Attached to" account filter and a role filter, so
+"who works on this account" is one click, and one person can be attached
+to several accounts.
+
+**Deals & Actions, round two** - My results is the home screen for anyone
+the CRM knows, defaulting to the signed-in rep. Rep pickers list only
+people who own deals. **Live deals** are grouped per pipeline stage, with
+the stage's deal count and value, and sortable (newest first by default,
+oldest, last touched, longest idle, highest value). **Notes** on every row:
+read the contact's past notes and add one. **Messages with no reply** now
+means the contact wrote last and no person has replied since, an
+automation's reply does not count; each row opens the conversation, replies
+on the same channel (SMS, WhatsApp, Facebook, Instagram, live chat, email)
+and marks it handled, and can close the deal as lost from the same panel.
+**Stale** starts at 7 days with 7, 14, 21 and 30-day urgency tiers, each a
+filter chip with its count, and a coloured idle badge on every stale deal.
+**Leaderboard** in My results: podium, "you are #n of m", and the full table
+on closed deals, revenue, booked, shown, win rate, show rate or leads.
+**Compare**: two reps side by side on every number, stage reach, lost
+reasons and speed to lead, better side marked, for agency staff and Account
+Admins. **Speed to lead** on the scorecard measures every one of the rep's
+leads where the export allows, splits in-hours from after-hours, and keeps
+the minute buckets to in-hours leads only.
+
+**One more app scope** - `conversations/message.write`, for the reply.
+Enable the five new scopes on the marketplace app, then Reconnect.
+
+---
+
 ## v3.565.0 - 2026-09-12 · `14a7f02`
 
 **My results: a sales scorecard per rep** - third screen on Deals &

@@ -1039,3 +1039,39 @@ the code must handle, planned for phase 2:
 To be confirmed with a real test install on a friendly sub-account under a
 white-label agency before Finr Advisory: that the standard marketplace
 login works for a user who normally signs in through the white-label domain.
+
+## 17. Five tiers, the compare view, and users attached to accounts (2026-09-12)
+
+**Five real roles**, built in v3.566.0 and named as the CRM names them:
+
+| Role key | Name | Who | Sees |
+|---|---|---|---|
+| `superadmin` | Super Admin | Alex | everything, owner control |
+| `admin` | Agency Admin | agency leads | every client, every tab, all settings |
+| `user` | Agency User | agency staff | dashboards for allowed accounts |
+| `account_admin` | Account Admin | the client | ticked accounts and tabs, read-only dashboards; can compare reps |
+| `account_user` | Account User | the client's employee, a rep | Deals & Actions only: own deals, action list, results; updates own records |
+
+`viewer` is the old name for `account_admin` and is still read from older
+records. An Account User's tabs are always exactly Deals & Actions and CRM
+updates are implied. In the SaaS schema these are the five `org_role`
+values; the entitlement function ranks them 4 to 0.
+
+**Compare.** Agency staff and Account Admins get a fourth screen on Deals &
+Actions: two reps side by side on every scorecard number, stage reach,
+lost reasons and speed to lead (in-hours buckets, after-hours separately),
+with the better side marked. Two reads of the same scorecard route.
+
+**Speed to lead on the scorecard** follows the same rules as the Timing
+tab: the client's business hours, first reply a person sent (or a staff-
+booked appointment), in-hours leads drive the median and buckets, after-
+hours leads are measured from the next opening and reported separately.
+It measures every one of the rep's leads when the message export finishes
+in time, otherwise as many as the budget allows, and says which.
+
+**Attached to an account.** A person's allocation is the attachment: an
+Account Admin or Account User is attached to the accounts ticked for them,
+an Agency User to their allowed accounts (or all), admins to all. Team has
+an "Attached to" filter and a role filter, so "who works on Poolhouse" is
+one click. One person can be attached to several accounts. In the SaaS
+schema this is `memberships.workspace_ids`.

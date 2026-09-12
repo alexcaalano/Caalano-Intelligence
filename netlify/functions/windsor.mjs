@@ -10,13 +10,13 @@
 // debug call; they live in one place (FIELDS) so they are trivial to correct.
 
 import { createHash } from 'node:crypto'
-import { buildAttribution, sampleAttribution, sampleChannels, buildCrm, auditLocation, isConnected, bookedTrends, crmTrends, attributionCoverage, wonInPeriod, monthlyDeals, oppTimestampFields, socialDMs, tagAudit, locationTimezone, locationProfile, periodBounds, listCalendars, listPipelines, ghlOpportunityRows, ghlPipelineRows, ghlUserRows, listLocations, checkLocationAccess, customClients, deletedClients, sampleForms, buildForms, buildSpeedToLead, speedLeadList, speedScanChunk, finalizeSpeed, buildAppointmentInsights, buildUserPerformance, buildUserPerformanceCombos, buildCreativePerf, buildUpdateExtra, fetchOppNotes, deriveBusinessHours, isQualified, buildCohorts as ghlCohorts, buildCcDrill, buildKeyPeople, buildStageTiming, buildEnquiryTimes, buildUserCalls, buildCallCohort, buildClinic, warmOppSnapshot, resilientFetch, startRequestBudget, buildCalPerf, clinicConfig, dayListBetween, buildActions, applyAction, ghlUserIdForEmail, buildRepCard } from '../lib/ghl.mjs'
+import { buildAttribution, sampleAttribution, sampleChannels, buildCrm, auditLocation, isConnected, bookedTrends, crmTrends, attributionCoverage, wonInPeriod, monthlyDeals, oppTimestampFields, socialDMs, tagAudit, locationTimezone, locationProfile, periodBounds, listCalendars, listPipelines, ghlOpportunityRows, ghlPipelineRows, ghlUserRows, listLocations, checkLocationAccess, customClients, deletedClients, sampleForms, buildForms, buildSpeedToLead, speedLeadList, speedScanChunk, finalizeSpeed, buildAppointmentInsights, buildUserPerformance, buildUserPerformanceCombos, buildCreativePerf, buildUpdateExtra, fetchOppNotes, deriveBusinessHours, isQualified, buildCohorts as ghlCohorts, buildCcDrill, buildKeyPeople, buildStageTiming, buildEnquiryTimes, buildUserCalls, buildCallCohort, buildClinic, warmOppSnapshot, resilientFetch, startRequestBudget, buildCalPerf, clinicConfig, dayListBetween, buildActions, applyAction, ghlUserIdForEmail, buildRepCard, contactNotes, contactConversation } from '../lib/ghl.mjs'
 import { DEMO_CLIENT_ID, DEMO_LOCATION, DEMO_META_ACCT, DEMO_GOOGLE_ACCT, DEMO_GA4_PROP, demoWindsor } from '../lib/demo.mjs'
 // Stand-in for the Windsor API key, used only when the request is for the demo
 // client. windsorFetch reads it as "generate, don't fetch".
 const DEMO_KEY = 'demo::windsor'
 import { getStore } from '@netlify/blobs'
-import { currentUser, canSeeClient, isAdminish, canSeeReports } from '../lib/auth.mjs'
+import { currentUser, canSeeClient, isAdminish, canSeeReports , isClientRole } from '../lib/auth.mjs'
 import { isWarmRequest, triggerWarm, claimRevalidate } from '../lib/warm.mjs'
 import { upstream } from '../lib/ghl.mjs'
 // Parse working-hours query params (bhDays / bhStart / bhEnd) into an hours object.
@@ -2605,6 +2605,10 @@ async function socialMonth(soc, from, to, key) {
 // endpoints) or `channel:<x>` (the bare channel fetches: blend/meta/google). The
 // value is the set of tabs that legitimately issue it - a viewer passes if they
 // hold at least one. Anything not listed here is admin/agency-only for viewers.
+// An Account User is a viewer set up as a rep: Deals & Actions only, with CRM
+// updates. They see their own deals and results; an Account Admin (any other
+// viewer) may look across reps, as the Users tab already lets them.
+const isAccountUser = (me) => !!(me && me.role === 'account_user')
 const VIEWER_TABS_ALL = ['overall', 'users', 'meta', 'google', 'cohorts', 'forms', 'location', 'appts', 'timing', 'calls', 'lostreasons', 'optlog', 'actions']
 const VIEWER_REQ_TABS = {
   'channel:blend': ['overall'],
@@ -3246,12 +3250,12 @@ export default async (req) => {
     if (client && restrictedSet.has(client)) return json({ error: 'You don’t have access to this account.' }, 403)
     // The navigation audit trail records viewers too - it is the one client-less
     // call a viewer legitimately makes, so it is not an agency-wide read.
-    if (!client && me.role === 'viewer' && scope !== 'navlog') return json({ error: 'No access to agency-wide data.' }, 403)
+    if (!client && isClientRole(me.role) && scope !== 'navlog') return json({ error: 'No access to agency-wide data.' }, 403)
     // Viewers are further limited to the exact scopes their allocated tabs fetch -
     // so a client can never reach an unassigned view, an agency tool (creative
     // cockpit, report generation, diagnostics) or another view's data by crafting
     // a direct request, even for a client they're allowed to see.
-    if (client && me.role === 'viewer' && !viewerAllowed(me, scope, channel, Array.isArray(me.tabs) && me.tabs.includes('custom') ? await dashboardTabsFor(client) : [])) return json({ error: 'This view isn’t available on your account.' }, 403)
+    if (client && isClientRole(me.role) && !viewerAllowed(me, scope, channel, Array.isArray(me.tabs) && me.tabs.includes('custom') ? await dashboardTabsFor(client) : [])) return json({ error: 'This view isn’t available on your account.' }, 403)
   }
   // Restricted staff (a User limited to specific accounts) only ever see their
   // own accounts inside agency-wide aggregates - enforced server-side so the
@@ -3383,11 +3387,12 @@ export default async (req) => {
   if (scope === 'repcard') {
     const cc = clientCfg(client)
     if (!cc || !cc.ghl) return json({ scope: 'repcard', client, ghl: false, error: 'This account has no Caalano Systems connection.' })
-    const isViewerHere = !!(me && me.role === 'viewer')
+    const isViewerHere = !!(me && isClientRole(me.role))
     try {
-      let userId = isViewerHere ? null : (url.searchParams.get('user') || null)
+      const selfOnly = isAccountUser(me)
+      let userId = selfOnly ? null : (url.searchParams.get('user') || null)
       if (!userId) userId = me ? await ghlUserIdForEmail(cc.ghl, me.email) : null
-      if (!userId) return json({ scope: 'repcard', client, ghl: true, error: isViewerHere ? 'Your login e-mail does not match a user in this CRM, so there are no results to show. Ask your admin to match the e-mails.' : 'Pick a rep, or sign in with an e-mail that matches a CRM user.' })
+      if (!userId) return json({ scope: 'repcard', client, ghl: true, error: selfOnly ? 'Your login e-mail does not match a user in this CRM, so there are no results to show. Ask your admin to match the e-mails.' : 'Pick a rep, or sign in with an e-mail that matches a CRM user.' })
       const staleDays = Math.max(3, Math.min(180, Number(url.searchParams.get('stale')) || 30))
       const hours = parseHours(url)
       return json({ scope: 'repcard', client, ghl: true, period: { from, to, preset }, ...(await buildRepCard(cc.ghl, { userId, from, to, hours, staleDays })) })
@@ -3400,7 +3405,7 @@ export default async (req) => {
   if (scope === 'actions') {
     const cc = clientCfg(client)
     if (!cc || !cc.ghl) return json({ scope: 'actions', client, ghl: false, error: 'This account has no Caalano Systems connection.' })
-    const isViewerHere = !!(me && me.role === 'viewer')
+    const isViewerHere = !!(me && isClientRole(me.role))
     if (req.method === 'POST') {
       if (!me) return json({ error: 'Not signed in.' }, 401)
       // Who may write: staff always; a viewer only with the CRM-updates grant.
@@ -3413,15 +3418,24 @@ export default async (req) => {
         if (isViewerHere && !onlyUserId) return json({ error: 'Your login e-mail does not match a user in this CRM, so updates are not allowed. Ask your admin to match the e-mails.' }, 403)
         if (body.op === 'note' && !body.userId && onlyUserId) body.userId = onlyUserId
         const r = await applyAction(cc.ghl, body, { onlyUserId })
-        await auditLog({ kind: 'crm-write', client, op: body.op, target: body.eventId || body.oppId || body.contactId || null, patch: body.patch || (body.status ? { status: body.status } : null) || (body.op === 'note' ? { note: true } : null), ..._actor })
+        await auditLog({ kind: 'crm-write', client, op: body.op, target: body.eventId || body.oppId || body.conversationId || body.contactId || null, patch: body.patch || (body.status ? { status: body.status } : null) || (body.op === 'note' ? { note: true } : null), ..._actor })
         return json({ scope: 'actions', client, ...r })
       } catch (e) { return json({ scope: 'actions', client, error: String((e && e.message) || e).slice(0, 240) }, 400) }
     }
-    const mine = isViewerHere ? url.searchParams.get('mine') !== '0' : url.searchParams.get('mine') === '1'
-    const staleDays = Math.max(3, Math.min(180, Number(url.searchParams.get('stale')) || 30))
+    // Side reads for one row: the contact's past notes, or its conversation.
+    const notesFor = url.searchParams.get('notes'), convFor = url.searchParams.get('conv'), convId = url.searchParams.get('convId')
+    if (notesFor || convFor || convId) {
+      if (!me) return json({ error: 'Not signed in.' }, 401)
+      try {
+        if (notesFor) return json({ scope: 'actions', client, contactId: notesFor, notes: await contactNotes(cc.ghl, notesFor) })
+        return json({ scope: 'actions', client, contactId: convFor || null, conversation: await contactConversation(cc.ghl, { contactId: convFor || null, conversationId: convId || null }) })
+      } catch (e) { return json({ scope: 'actions', client, error: String((e && e.message) || e).slice(0, 240) }, 400) }
+    }
+    const mine = isAccountUser(me) ? url.searchParams.get('mine') !== '0' : url.searchParams.get('mine') === '1'
+    const staleDays = Math.max(3, Math.min(180, Number(url.searchParams.get('stale')) || 7))
     try {
       const r = await buildActions(cc.ghl, { email: me && me.email, mine, staleDays })
-      return json({ scope: 'actions', client, ghl: true, canWrite: !!(me && (!isViewerHere || me.crm === true)), ...r })
+      return json({ scope: 'actions', client, ghl: true, canWrite: !!(me && (!isViewerHere || me.crm === true)), accountUser: isAccountUser(me), ...r })
     } catch (e) { return json({ scope: 'actions', client, ghl: true, error: String((e && e.message) || e).slice(0, 240) }) }
   }
 
@@ -3468,7 +3482,7 @@ export default async (req) => {
     const metaKey = `meta:${client}`      // per-month headers: savedAt/publishedAt/etc
     const pubIdxKey = `pubindex:${client}` // months a client may see (published)
     const pubKey = (m) => `pub:${client}:${m}` // frozen PUBLISHED copy (client-facing)
-    const isViewer = !!(me && me.role === 'viewer')
+    const isViewer = !!(me && isClientRole(me.role))
     const loadMeta = async () => { const m = await store.get(metaKey, { type: 'json' }).catch(() => null); return (m && typeof m === 'object') ? m : {} }
 
     // ---- Client (viewer): PUBLISHED reports only, for a client they can see ----
@@ -3657,7 +3671,7 @@ export default async (req) => {
   // added), so each competitor can be mapped to a Windsor account in the UI.
   // Tries the public connector slug(s); override with ?ig= / ?fb=.
   if (url.searchParams.get('scope') === 'socialaccounts') {
-    if (me && me.role === 'viewer') return json({ error: 'not allowed' }, 403)
+    if (me && isClientRole(me.role)) return json({ error: 'not allowed' }, 403)
     const igSlugs = (url.searchParams.get('ig') || 'instagram_public').split(',').map((s) => s.trim()).filter(Boolean)
     const fbSlugs = (url.searchParams.get('fb') || 'facebook_public').split(',').map((s) => s.trim()).filter(Boolean)
     // Prefer the profile display name (e.g. "JJ Pools Brisbane") for the label,
@@ -3680,7 +3694,7 @@ export default async (req) => {
   // One competitor's public Instagram summary (followers + public posts). Reach /
   // impressions are private, so engagement rate is estimated from likes+comments.
   if (url.searchParams.get('scope') === 'competitor') {
-    if (me && me.role === 'viewer') return json({ error: 'not allowed' }, 403)
+    if (me && isClientRole(me.role)) return json({ error: 'not allowed' }, 403)
     const connector = url.searchParams.get('connector') || 'instagram_public'
     const account = url.searchParams.get('account')
     if (!account) return json({ error: 'account required' }, 400)
@@ -3736,7 +3750,7 @@ export default async (req) => {
   // once its exact slug/fields are known. e.g.
   //   ?scope=windsorprobe&connector=instagram_public&wfields=account_id,account_name,username,followers_count&from=2026-06-01&to=2026-06-30
   if (url.searchParams.get('scope') === 'windsorprobe') {
-    if (me && me.role === 'viewer') return json({ error: 'not allowed' }, 403)
+    if (me && isClientRole(me.role)) return json({ error: 'not allowed' }, 403)
     const connector = url.searchParams.get('connector')
     if (!connector) return json({ error: 'connector slug required (e.g. instagram_public)' }, 400)
     const wfields = (url.searchParams.get('wfields') || 'account_id,account_name').split(',').map((s) => s.trim()).filter(Boolean)
@@ -4166,7 +4180,7 @@ export default async (req) => {
   // back in time. Bounded per call (staff only) with a `before` cursor so the UI
   // can seed ~12 months of history across several quick calls without a timeout.
   if (url.searchParams.get('scope') === 'healthbackfill') {
-    if (me && me.role === 'viewer') return json({ error: 'Staff only.' }, 403)
+    if (me && isClientRole(me.role)) return json({ error: 'Staff only.' }, 403)
     const cc = CLIENTS[client]
     if (!cc) return json({ scope: 'healthbackfill', client, error: `unknown client ${client}` }, 404)
     const key2 = process.env.WINDSOR_API_KEY
@@ -4294,7 +4308,7 @@ export default async (req) => {
   if (url.searchParams.get('scope') === 'keypeople') {
     const cc = CLIENTS[client]
     if (!cc || !cc.ghl) return json({ scope: 'keypeople', client, people: [] })
-    if (me && me.role === 'viewer' && !viewerAllowed(me, 'keypeople', channel, Array.isArray(me.tabs) && me.tabs.includes('custom') && client ? await dashboardTabsFor(client) : [])) return json({ scope: 'keypeople', client, error: 'Not allowed.' }, 403)
+    if (me && isClientRole(me.role) && !viewerAllowed(me, 'keypeople', channel, Array.isArray(me.tabs) && me.tabs.includes('custom') && client ? await dashboardTabsFor(client) : [])) return json({ scope: 'keypeople', client, error: 'Not allowed.' }, 403)
     if (!(await isConnected().catch(() => false))) return json({ scope: 'keypeople', client, connected: false, people: [] })
     const kind = url.searchParams.get('kind') || 'stage'
     const stage = url.searchParams.get('stage') || null
@@ -4531,7 +4545,7 @@ export default async (req) => {
   // Auto-onboard only offers locations you can really pull, and flags the rest as
   // "install the app first". Bounded + pooled to stay inside the function limit.
   if (url.searchParams.get('scope') === 'onboardscan') {
-    if (me && me.role === 'viewer') return json({ error: 'Not authorised.' }, 403)
+    if (me && isClientRole(me.role)) return json({ error: 'Not authorised.' }, 403)
     if (!(await isConnected().catch(() => false))) return json({ scope: 'onboardscan', connected: false, locations: [] })
     try {
       const locs = await listLocations()
@@ -4811,7 +4825,7 @@ export default async (req) => {
   // fans out across active Meta clients). Light fetch - ads + daily only - scored
   // by frequency, CTR decline and quality ranking against the shared thresholds.
   if (url.searchParams.get('scope') === 'fatigue') {
-    if (me && me.role === 'viewer') return json({ error: 'Staff only.' }, 403)
+    if (me && isClientRole(me.role)) return json({ error: 'Staff only.' }, 403)
     const cc = CLIENTS[client]
     if (!cc || !cc.meta) return json({ scope: 'fatigue', client, meta: false, creatives: [], summary: { high: 0, medium: 0, low: 0, total: 0 } })
     try {
@@ -4826,7 +4840,7 @@ export default async (req) => {
   // Windsor so the "Creative fatigue · Meta" tab reads like the proxy tab. Shows
   // connected:false until the webhook is set up and Meta sends its first event.
   if (url.searchParams.get('scope') === 'fatiguewebhook') {
-    if (me && me.role === 'viewer') return json({ error: 'Staff only.' }, 403)
+    if (me && isClientRole(me.role)) return json({ error: 'Staff only.' }, 403)
     const cc = CLIENTS[client]
     if (!cc || !cc.meta) return json({ scope: 'fatiguewebhook', client, meta: false, connected: false, creatives: [] })
     try {
@@ -4853,7 +4867,7 @@ export default async (req) => {
   // stored across all accounts, so the UI can confirm the pipe works the moment
   // a test (or real) event lands, even for accounts not mapped to a client.
   if (url.searchParams.get('scope') === 'webhookstatus') {
-    if (me && me.role === 'viewer') return json({ error: 'Staff only.' }, 403)
+    if (me && isClientRole(me.role)) return json({ error: 'Staff only.' }, 403)
     try {
       const store = getStore({ name: 'meta-webhooks', consistency: 'strong' })
       const { blobs } = await store.list()
@@ -4876,7 +4890,7 @@ export default async (req) => {
   // client. The webhook flags that a recommendation exists for an ad/account; we
   // surface the events and whatever detail the payload carried, newest first.
   if (url.searchParams.get('scope') === 'recommendations') {
-    if (me && me.role === 'viewer') return json({ error: 'Staff only.' }, 403)
+    if (me && isClientRole(me.role)) return json({ error: 'Staff only.' }, 403)
     try {
       const store = getStore({ name: 'meta-webhooks', consistency: 'strong' })
       const { blobs } = await store.list()
@@ -4920,7 +4934,7 @@ export default async (req) => {
   // Meta opportunity score + recommendations - pulled live from the Graph API
   // using the stored System User token (META_SYSTEM_TOKEN). One client per call.
   if (url.searchParams.get('scope') === 'opportunity') {
-    if (me && me.role === 'viewer') return json({ error: 'Staff only.' }, 403)
+    if (me && isClientRole(me.role)) return json({ error: 'Staff only.' }, 403)
     const cc = CLIENTS[client]
     if (!cc || !cc.meta) return json({ scope: 'opportunity', client, meta: false })
     const token = process.env.META_SYSTEM_TOKEN
@@ -4944,7 +4958,7 @@ export default async (req) => {
   // Meta anomaly / delivery-health signal for the Meta Insights tab - one client
   // per request, current vs prior-window movement in the key delivery metrics.
   if (url.searchParams.get('scope') === 'anomalies') {
-    if (me && me.role === 'viewer') return json({ error: 'Staff only.' }, 403)
+    if (me && isClientRole(me.role)) return json({ error: 'Staff only.' }, 403)
     const cc = CLIENTS[client]
     if (!cc || !cc.meta) return json({ scope: 'anomalies', client, meta: false, alerts: [], summary: { high: 0, med: 0, good: 0 } })
     try {
@@ -4959,7 +4973,7 @@ export default async (req) => {
   // for transcription. Reports recognised + populated counts, like the Google
   // probe. Staff only; never cached.
   if (url.searchParams.get('scope') === 'creativefields') {
-    if (me && me.role === 'viewer') return json({ error: 'Staff only.' }, 403)
+    if (me && isClientRole(me.role)) return json({ error: 'Staff only.' }, 403)
     const cc = CLIENTS[client]
     if (!cc || !cc.meta) return json({ scope: 'creativefields', client, meta: false })
     const cand = ['ad_name', 'title', 'body', 'call_to_action_type', 'link', 'link_url', 'object_type', 'object_story_id', 'creative_id', 'video_id', 'video_url', 'creative_video_url', 'source_url', 'image_url', 'thumbnail_url', 'instagram_permalink_url', 'permalink_url', 'effective_object_story_id']

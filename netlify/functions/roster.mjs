@@ -11,7 +11,7 @@
 // a viewer sees only their allocated clients, restricted staff see only theirs,
 // and Super-Admin-only clients are dropped for everyone below superadmin.
 import { getStore } from '@netlify/blobs'
-import { currentUser, canSeeClient } from '../lib/auth.mjs'
+import { currentUser, canSeeClient , isClientRole } from '../lib/auth.mjs'
 import CONFIG from '../../data/config.json'
 import SNAPSHOT from '../../data/snapshot.json'
 // Baked per-client fallbacks, used when a live pull fails. Imported explicitly
@@ -60,7 +60,7 @@ export default async (req) => {
       return doc ? json(doc) : json({ error: 'No baked snapshot for this account.' }, 404)
     }
 
-    const isViewer = !!(me && me.role === 'viewer')
+    const isViewer = !!(me && isClientRole(me.role))
     const config = {
       ...CONFIG,
       clients: (CONFIG.clients || []).filter((c) => allowed(c.id)),

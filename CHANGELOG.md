@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.553.0 - 2026-09-12 · `PENDING`
+## v3.553.0 - 2026-09-12 · `832d5ea`
 
 **Docs: restore drill recorded** - `BACKUP.md` checklist ticks the restore
 drill: the full export restored into a throwaway Netlify project on

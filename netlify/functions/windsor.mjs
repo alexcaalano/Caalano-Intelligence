@@ -3452,40 +3452,32 @@ export default async (req) => {
     }
     return json({ scope: 'goals', client, today, goals: out })
   }
-  // Goal history: every posted goal measured month by month (and quarter by
-  // quarter for quarterly goals) over the recent past and the current period,
-  // so the Month by month board can show hits and misses. One hub build per
-  // month, memoised like the goals scope.
+  // Goal history: the posted goals measured in ONE past period per call (a
+  // month 'YYYY-MM', a quarter 'YYYY-Qn', or 'range:<goalId>'), so each call
+  // is a single hub build and fits the function's time limit; the Month by
+  // month board asks for each period and fills cells in as they arrive.
   if (scope === 'goalhistory') {
     const cc = clientCfg(client)
-    if (!cc || !cc.ghl) return json({ scope: 'goalhistory', client, months: [], rows: [] })
+    if (!cc || !cc.ghl) return json({ scope: 'goalhistory', client, key: null, cells: {} })
     if (isAccountUser(me)) return json({ error: 'Managers only.' }, 403)
     let body = {}; try { body = req.method === 'POST' ? JSON.parse(await req.text()) : {} } catch { body = {} }
     const goals = normGoals(body.goals || [])
-    const back = Math.max(1, Math.min(11, Number(body.months) || 5))
+    const key = String(body.key || '')
     const tz = await locationTimezone(cc.ghl).catch(() => 'Australia/Sydney')
     const today = new Date().toLocaleDateString('en-CA', { timeZone: tz })
     const hours = parseHours(url)
     const build = (from, to) => goalsBuildMemo(client, `${from}|${to}`, () => buildSalesHub(cc.ghl, { from, to, hours, staleDays: 7 }))
-    const y = +today.slice(0, 4), m = +today.slice(5, 7)
-    const monthKeys = []; for (let i = back; i >= 0; i--) { const mm = m - 1 - i; const yy = y + Math.floor(mm / 12); monthKeys.push(`${yy}-${String(((mm % 12) + 12) % 12 + 1).padStart(2, '0')}`) }
-    const hasQ = goals.some((g) => g.period === 'quarter')
-    const q0 = Math.floor((m - 1) / 3); const quarterKeys = []; if (hasQ) for (let i = 2; i >= 0; i--) { const qq = q0 - i; quarterKeys.push(`${y + Math.floor(qq / 4)}-Q${((qq % 4) + 4) % 4 + 1}`) }
-    const winOf = (key) => {
-      if (/Q/.test(key)) { const yy = +key.slice(0, 4), q = +key.slice(6) - 1; const m1 = q * 3 + 1, m3 = q * 3 + 3; const dim = new Date(Date.UTC(yy, m3, 0)).getUTCDate(); return { from: `${yy}-${String(m1).padStart(2, '0')}-01`, to: `${yy}-${String(m3).padStart(2, '0')}-${dim}` } }
-      const yy = +key.slice(0, 4), mm = +key.slice(5, 7); const dim = new Date(Date.UTC(yy, mm, 0)).getUTCDate(); return { from: `${key}-01`, to: `${key}-${dim}` }
-    }
-    const data = {}
-    for (const key of [...monthKeys, ...quarterKeys]) { const w = winOf(key); try { data[key] = await build(w.from, w.to) } catch { data[key] = null } }
-    const rows = []
-    for (const g of goals) {
-      const keys = g.period === 'quarter' ? quarterKeys : g.period === 'range' ? [] : monthKeys
-      const cells = {}
-      for (const key of keys) { const d = data[key]; const target = goalTargetFor(g, key); cells[key] = { target, actual: d ? goalActual({ ...g, target }, d.reps || []) : null } }
-      if (g.period === 'range' && g.from && g.to) { const gw = goalWindow(g, today); if (!gw.notYet) { try { const d = await build(g.from, g.to); cells[gw.key] = { target: g.target, actual: goalActual(g, d.reps || []), label: gw.label } } catch { cells[gw.key] = { target: g.target, actual: null, label: gw.label } } } }
-      rows.push({ id: g.id, cells })
-    }
-    return json({ scope: 'goalhistory', client, today, months: monthKeys, quarters: quarterKeys, rows })
+    let win = null, which = []
+    if (/^\d{4}-Q[1-4]$/.test(key)) { const yy = +key.slice(0, 4), q = +key.slice(6) - 1; const m1 = q * 3 + 1, m3 = q * 3 + 3; const dim = new Date(Date.UTC(yy, m3, 0)).getUTCDate(); win = { from: `${yy}-${String(m1).padStart(2, '0')}-01`, to: `${yy}-${String(m3).padStart(2, '0')}-${dim}` }; which = goals.filter((g) => g.period === 'quarter') }
+    else if (/^\d{4}-\d{2}$/.test(key)) { const yy = +key.slice(0, 4), mm = +key.slice(5, 7); const dim = new Date(Date.UTC(yy, mm, 0)).getUTCDate(); win = { from: `${key}-01`, to: `${key}-${dim}` }; which = goals.filter((g) => g.period === 'month') }
+    else if (key.startsWith('range:')) { const g = goals.find((x) => x.id === key.slice(6) && x.period === 'range' && x.from && x.to); if (g && !goalWindow(g, today).notYet) { win = { from: g.from, to: g.to }; which = [g] } }
+    if (!win) return json({ scope: 'goalhistory', client, key, today, cells: {} })
+    if (win.from > today) return json({ scope: 'goalhistory', client, key, today, cells: {}, notYet: true })
+    let d = null; try { d = await build(win.from, win.to) } catch (e) { return json({ scope: 'goalhistory', client, key, today, cells: {}, error: String((e && e.message) || e).slice(0, 160) }) }
+    const reps = (d && d.reps) || []
+    const cells = {}
+    for (const g of which) { const target = goalTargetFor(g, key); cells[g.id] = { target, actual: goalActual({ ...g, target }, reps) } }
+    return json({ scope: 'goalhistory', client, key, today, cells })
   }
   // Live CRM events for the Sales Hub's gong and wins feed: the last day of
   // webhook events for this client's location. Cheap (one small Blobs read),

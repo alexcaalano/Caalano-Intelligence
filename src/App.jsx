@@ -14,7 +14,7 @@ import { GOAL_METRICS, goalMetric, SPLITS, normGoals, newGoalId, goalShares, val
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.595.0'
+const APP_VERSION = '3.596.0'
 // The business clock. Every server window is cut on the client's local day
 // (Caalano Systems location timezone), so any day the app derives on its own -
 // preset ranges, "today", CSV dates - must use the same clock rather than the
@@ -16167,19 +16167,38 @@ function hubFunnelStages(clientId, p) {
 // current one, with the coming months' targets typed in place (the budget).
 // Quarterly goals get a quarter grid; custom-dates goals a row each.
 function HubPlanBoard({ clientId, goals, currency, canEdit, today }) {
-  const [hist, setHist] = useState({ status: 'loading', data: null })
   const [draft, setDraft] = useState(goals)
   const [dirty, setDirty] = useState(false)
   useEffect(() => { setDraft(goals); setDirty(false) }, [goals])
+  // The periods to show: the last five months and this one, the last two
+  // quarters and this one (only when a quarterly goal exists), and each
+  // custom-dates goal's own window. Each is fetched on its own so no single
+  // request has to build more than one period.
+  const pastMonths = useMemo(() => { const y = +today.slice(0, 4), m = +today.slice(5, 7); return Array.from({ length: 6 }, (_, i) => { const mm = m - 1 - (5 - i); const yy = y + Math.floor(mm / 12); return `${yy}-${String(((mm % 12) + 12) % 12 + 1).padStart(2, '0')}` }) }, [today])
+  const pastQuarters = useMemo(() => { if (!goals.some((g) => g.period === 'quarter')) return []; const y = +today.slice(0, 4), q = Math.floor((+today.slice(5, 7) - 1) / 3); return Array.from({ length: 3 }, (_, i) => { const qq = q - (2 - i); return `${y + Math.floor(qq / 4)}-Q${((qq % 4) + 4) % 4 + 1}` }) }, [goals, today])
+  const [hist, setHist] = useState({ cells: {}, pending: 0, error: null })
   useEffect(() => {
-    if (!goals.length) { setHist({ status: 'ok', data: { months: [], quarters: [], rows: [] } }); return }
-    let dead = false; setHist((h) => ({ status: h.data ? 'refreshing' : 'loading', data: h.data }))
-    fetch(`/.netlify/functions/windsor?scope=goalhistory&client=${encodeURIComponent(clientId)}${hoursQuery(loadHours(clientId))}`, { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ goals, months: 5 }) })
-      .then((r) => r.json().catch(() => ({ error: `server ${r.status}` }))).then((j) => { if (!dead) setHist({ status: j && j.error ? 'err' : 'ok', data: j }) }).catch((e) => { if (!dead) setHist({ status: 'err', data: { error: String((e && e.message) || e) } }) })
+    if (!goals.length) { setHist({ cells: {}, pending: 0, error: null }); return }
+    let dead = false
+    const keys = [...pastMonths.slice().reverse(), ...pastQuarters.slice().reverse(), ...goals.filter((g) => g.period === 'range').map((g) => `range:${g.id}`)]
+    setHist({ cells: {}, pending: keys.length, error: null })
+    const queue = keys.slice()
+    const worker = async () => {
+      while (queue.length && !dead) {
+        const key = queue.shift()
+        try {
+          const r = await fetch(`/.netlify/functions/windsor?scope=goalhistory&client=${encodeURIComponent(clientId)}${hoursQuery(loadHours(clientId))}`, { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ goals, key }) })
+          const j = await r.json().catch(() => ({ error: `server ${r.status}` }))
+          if (dead) return
+          setHist((h) => ({ cells: { ...h.cells, [key]: (j && j.cells) || {} }, pending: h.pending - 1, error: j && j.error ? j.error : h.error }))
+        } catch (e) { if (!dead) setHist((h) => ({ ...h, pending: h.pending - 1, error: String((e && e.message) || e) })) }
+      }
+    }
+    worker(); worker()
     return () => { dead = true }
-  }, [clientId, goals]) // eslint-disable-line
-  const d = hist.data || {}
-  const cellOf = (id, key) => { const r = (d.rows || []).find((x) => x.id === id); return r && r.cells ? r.cells[key] : null }
+  }, [clientId, goals, pastMonths, pastQuarters]) // eslint-disable-line
+  const d = { months: pastMonths, quarters: pastQuarters, error: hist.error }
+  const cellOf = (id, key) => { const per = hist.cells[key] || hist.cells[`range:${id}`]; return per ? per[id] || null : null }
   const fmtFor = (g) => { const m = goalMetric(g.metric) || []; return (v) => (v == null ? '-' : m[2] === 'money' ? fmtCurrency(v, currency) : m[2] === 'pct' ? `${Math.round(v)}%` : m[2] === 'lower' ? repMin(v) : fmtNumber(v)) }
   const kindOf = (g) => (goalMetric(g.metric) || [])[2]
   const curM = today.slice(0, 7); const curQ = goalWindow({ period: 'quarter' }, today).key
@@ -16211,7 +16230,7 @@ function HubPlanBoard({ clientId, goals, currency, canEdit, today }) {
               {cols.map((k) => { const cell = cellOf(g.id, k); const target = goalTargetFor(g, k); const t = k < isCur && cell && cell.actual != null ? tone(g, cell, k, false) : k === isCur ? tone(g, cell, k, true) : ''; if (k < isCur && cell && cell.actual != null) { n++; if (t === 'good') hit++ } const planned = (g[map] || {})[k] != null; return (
                 <td key={k} className={`plan-cell ${t} ${k === isCur ? 'cur' : k > isCur ? 'fut' : ''}`}>
                   {canEdit ? <input type="number" min="0" className={`plan-in ${planned ? 'planned' : ''}`} value={planned ? g[map][k] : ''} placeholder={String(g.target)} onChange={(e) => setTarget(g, map, k, e.target.value)} title={planned ? 'Planned for this period' : 'Default target; type to plan this period'} /> : <div className="plan-t">{f(target)}</div>}
-                  {k <= isCur ? <div className="plan-a">{cell ? f(cell.actual) : hist.status === 'loading' ? '…' : '-'}{cell && cell.actual != null && target && kindOf(g) !== 'lower' ? <small> {Math.round((cell.actual / target) * 100)}%</small> : null}</div> : <div className="plan-a cap">planned</div>}
+                  {k <= isCur ? <div className="plan-a">{cell ? f(cell.actual) : hist.pending > 0 ? '…' : '-'}{cell && cell.actual != null && target && kindOf(g) !== 'lower' ? <small> {Math.round((cell.actual / target) * 100)}%</small> : null}</div> : <div className="plan-a cap">planned</div>}
                 </td>) })}
               <td className="plan-hit">{n ? `${hit} / ${n}` : '-'}</td>
             </tr>) })] : null })}</tbody>
@@ -16222,7 +16241,8 @@ function HubPlanBoard({ clientId, goals, currency, canEdit, today }) {
   const ranges = draft.filter((g) => g.period === 'range')
   return (
     <div className="plan-board">
-      {hist.status === 'err' ? <p className="cap act-bad">{d.error || 'Could not load the history.'}</p> : null}
+      {hist.error ? <p className="cap act-bad">Some periods could not be read: {hist.error}</p> : null}
+      {hist.pending > 0 ? <p className="cap">Reading {hist.pending} more period{hist.pending === 1 ? '' : 's'}…</p> : null}
       {canEdit ? <div className="act-note-btns plan-save"><button type="button" className="btn-primary act-btn" disabled={!dirty} onClick={() => { saveGoals(clientId, draft); setDirty(false) }}>Save targets</button>{dirty ? <span className="cap">Unsaved changes to the plan.</span> : <span className="cap">Type in a cell to plan that period; blank means the default target.</span>}</div> : null}
       {grid('month', monthCols, 'byMonth', curM, mLabel)}
       {grid('quarter', quarterCols, 'byQuarter', curQ, (k) => k.replace('-', ' '))}
@@ -18794,16 +18814,27 @@ function DailyPerfSettings({ clients }) {
 // Parse CHANGELOG.md (bundled at build time) into version entries for the Logs
 // panel. Each release is a `## vX.Y.Z - date · `status` - title` block followed
 // by `- ` bullet lines.
+// Two shapes are in the file: older releases put a title on the heading and
+// `- ` bullets underneath; newer ones have `## vX.Y.Z - date · \`hash\`` and
+// paragraphs that open with a bold lead ("**What changed** - detail"). Both
+// come out as a title plus one line per change.
 function parseChangelog(raw) {
+  const strip = (t) => t.replace(/\*\*/g, '').replace(/`/g, '').replace(/\s+/g, ' ').trim()
   return String(raw || '').split(/\n## /).slice(1).map((block) => {
     const nl = block.indexOf('\n')
     const head = (nl === -1 ? block : block.slice(0, nl)).trim()
     const body = nl === -1 ? '' : block.slice(nl + 1)
-    const m = head.match(/^(v[\d.]+)\s*-\s*([\d-]+)?\s*·?\s*`?([^`-]*?)`?\s*-\s*(.+)$/)
-    const bullets = body.split('\n').map((l) => l.trim()).filter((l) => l.startsWith('- ')).map((l) => l.replace(/^-\s*/, ''))
+    const m = head.match(/^(v[\d.]+)\s*-\s*(\d{4}-\d{2}-\d{2})?\s*(?:·\s*`?([^`\s]*)`?)?\s*(?:-\s*(.+))?$/)
+    const lines = body.split('\n')
+    const bullets = lines.map((l) => l.trim()).filter((l) => l.startsWith('- ')).map((l) => strip(l.replace(/^-\s*/, '')))
+    // Paragraphs: blank-line separated, ignoring bullet lines and the --- rule.
+    const paras = body.split(/\n\s*\n/).map((pp) => pp.split('\n').filter((l) => !/^\s*-\s/.test(l) && !/^---\s*$/.test(l.trim())).join(' ').trim()).filter(Boolean)
+    const leads = paras.map((pp) => { const mm = pp.match(/^\*\*(.+?)\*\*\s*[-–:]?\s*(.*)$/); return mm ? { lead: strip(mm[1]), text: strip(mm[2]) } : { lead: '', text: strip(pp) } })
+    const items = bullets.length ? bullets : leads.map((x) => (x.lead ? `${x.lead}: ${x.text}` : x.text))
+    const title = (m && m[4] && m[4].trim()) || (leads[0] && leads[0].lead) || (items[0] || '').slice(0, 80) || head
     return m
-      ? { version: m[1], date: (m[2] || '').trim(), status: (m[3] || '').trim(), title: m[4].trim(), bullets }
-      : { version: head.split(/\s/)[0], date: '', status: '', title: head, bullets }
+      ? { version: m[1], date: (m[2] || '').trim(), status: (m[3] || '').trim(), title, bullets: items }
+      : { version: head.split(/\s/)[0], date: '', status: '', title, bullets: items }
   })
 }
 // Human labels for the top-level views, for the activity trail.

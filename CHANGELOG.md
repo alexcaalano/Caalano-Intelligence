@@ -18,6 +18,21 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.596.0 - 2026-09-13 · `PENDING`
+
+**Month by month loads on real accounts** - the board now reads one
+period per request, so each call is a single read that fits the server's
+time limit, and cells fill in as each month arrives with a "reading N
+more periods" note. Before, a busy account's six months in one call ran
+past the limit and the past columns never appeared.
+
+**Version history readable again** - the Logs page's build history now
+understands the newer changelog shape (a heading with the date and
+commit, then paragraphs that open with a bold lead), so each release
+shows its title and one line per change instead of the commit hash.
+
+---
+
 ## v3.595.0 - 2026-09-13 · `1e22238`
 
 **Month by month** - a second screen on the Sales Hub, next to the live

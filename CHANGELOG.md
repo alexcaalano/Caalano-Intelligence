@@ -20,7 +20,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ## v3.616.0 - 2026-09-13
 
-**SaaS phase 1: dual-write to Postgres.** (commit PENDING)
+**SaaS phase 1: dual-write to Postgres.** (commit bf6ddaa)
 
 - `netlify/lib/mirror.mjs` holds the one mapping from today's records to the
   SaaS schema, shared by the import script and the running app. Every save of

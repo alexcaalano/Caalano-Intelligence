@@ -18,6 +18,22 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.582.0 - 2026-09-13 · `PENDING`
+
+**Everything in the period it happened** - the Sales Hub now counts each
+thing on the date it occurred. Leads by the date they came in (the one
+created-date measure). Bookings by the date they were booked. Held,
+no-shows, still-to-come and show rate by the appointment's own date, so
+this month's show rate is this month's appointments whoever booked them
+and whenever. Won and lost by the date the status changed, with lost
+reasons following, so a deal marked lost today shows today. Win rate is
+won over won plus lost decided in the period, so both sides share a
+basis. Open and stale are what is on the desk now; the funnel is this
+period's leads and how far they have got. The note under the hub says
+all of this.
+
+---
+
 ## v3.581.0 - 2026-09-13 · `42a0b57`
 
 **Sales by close date** - the Sales Hub now counts won deals, revenue and

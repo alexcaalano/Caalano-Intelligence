@@ -6196,16 +6196,23 @@ export async function buildSalesHub(locationId, { from, to, hours = null, staleD
   const spByUser = (speed && speed.byUser) || {}
   // Appointments in the period, per rep and per calendar.
   const apByUser = new Map(), calendars = new Map()
+  // Each thing in the period it happened: a booking counts on the day it was
+  // made (the rep's activity); held, no-show, still-to-come and unresulted count
+  // on the appointment's own date, so this month's show rate is this month's
+  // appointments whoever booked them and whenever.
   for (const a of rawAppts) {
-    if (!inPeriod(a.addedMs) || APPT_INVALID_RE.test(a.status) || APPT_CANCEL_RE.test(a.status)) continue
+    if (APPT_INVALID_RE.test(a.status) || APPT_CANCEL_RE.test(a.status)) continue
     const uid = a.userId; if (!uid) continue
+    const bookedIn = inPeriod(a.addedMs), occursIn = inPeriod(a.startMs)
+    if (!bookedIn && !occursIn) continue
     const b = apByUser.get(uid) || { booked: 0, byStaff: 0, byCustomer: 0, showed: 0, noShow: 0, upcoming: 0, unresulted: 0 }
-    b.booked++; if (a.by === 'self') b.byCustomer++; else b.byStaff++
-    if (apptShown(a.status)) b.showed++; else if (APPT_NOSHOW_RE.test(a.status)) b.noShow++; else if (a.startMs > now) b.upcoming++; else b.unresulted++
+    if (bookedIn) { b.booked++; if (a.by === 'self') b.byCustomer++; else b.byStaff++ }
+    if (occursIn) { if (apptShown(a.status)) b.showed++; else if (APPT_NOSHOW_RE.test(a.status)) b.noShow++; else if (a.startMs > now) b.upcoming++; else b.unresulted++ }
     apByUser.set(uid, b)
     const c = calendars.get(a.calendarId) || { id: a.calendarId, name: a.calendar, byRep: {} }
     const cb = c.byRep[uid] || (c.byRep[uid] = { booked: 0, showed: 0, noShow: 0 })
-    cb.booked++; if (apptShown(a.status)) cb.showed++; else if (APPT_NOSHOW_RE.test(a.status)) cb.noShow++
+    if (bookedIn) cb.booked++
+    if (occursIn) { if (apptShown(a.status)) cb.showed++; else if (APPT_NOSHOW_RE.test(a.status)) cb.noShow++ }
     calendars.set(a.calendarId, c)
   }
   // Now: open, value, stale (by tier), from the live snapshot; wins this week.
@@ -6216,12 +6223,22 @@ export async function buildSalesHub(locationId, { from, to, hours = null, staleD
   // Closed wins in the period, per rep and per pipeline, from the 400-day read
   // merged with the snapshot (deduped by id) so an old lead that closed this
   // month is counted for whoever owns it.
-  const wonById = new Map()
-  for (const o of [...(wonOpps || []), ...(snap.opps || [])]) if (o && o.id && String(o.status || '').toLowerCase() === 'won' && !wonById.has(o.id)) wonById.set(o.id, o)
-  const wonBy = new Map(), wonByPipe = new Map()
-  for (const o of wonById.values()) {
+  const closedById = new Map()
+  for (const o of [...(wonOpps || []), ...(snap.opps || [])]) { const st0 = String(o && o.status || '').toLowerCase(); if (o && o.id && (st0 === 'won' || st0 === 'lost' || st0 === 'abandoned') && !closedById.has(o.id)) closedById.set(o.id, o) }
+  const reasonNameC = {}; for (const r of (inp.reasons || [])) reasonNameC[r._id || r.id] = r.name
+  const reasonOfC = (o) => { const rid = o.lostReasonId || o.lost_reason_id || (o.lostReason && (o.lostReason.id || o.lostReason._id)) || null; return (rid && reasonNameC[rid]) || (typeof o.lostReason === 'string' && o.lostReason) || 'Unspecified' }
+  const wonBy = new Map(), wonByPipe = new Map(), lostBy = new Map(), lostByPipeC = new Map()
+  for (const o of closedById.values()) {
     if (!inPipe(o)) continue
     const sc = Date.parse(o.lastStatusChangeAt || o.lastStageChangeAt || o.updatedAt || ''); if (!Number.isFinite(sc)) continue
+    const stc = String(o.status || '').toLowerCase()
+    if (stc !== 'won') {
+      // Lost or abandoned: counts on the day it was marked, with its reason.
+      if (!inPeriod(sc)) continue
+      const uidL = o.assignedTo || 'unassigned'; const l = lostBy.get(uidL) || { lost: 0, reasons: {} }; l.lost++; const rn = reasonOfC(o); l.reasons[rn] = (l.reasons[rn] || 0) + 1; lostBy.set(uidL, l)
+      const pidL = pidOf(o) || 'none'; const lp = lostByPipeC.get(pidL) || {}; lp[rn] = (lp[rn] || 0) + 1; lostByPipeC.set(pidL, lp)
+      continue
+    }
     if (now - sc <= 7 * ACT_DAY) wins.push({ id: o.id, name: (o.contact && (o.contact.name || [o.contact.firstName, o.contact.lastName].filter(Boolean).join(' '))) || o.name || 'Deal', value: num(o.monetaryValue), cash: cashField ? num(oppCashValue(o, cashField)) : null, userId: o.assignedTo || null, user: userName[o.assignedTo] || null, at: sc, pipeline: pipeOf[o.pipelineStageId] || null })
     if (!inPeriod(sc)) continue
     const val = num(o.monetaryValue); const uid = o.assignedTo || 'unassigned'
@@ -6257,9 +6274,7 @@ export async function buildSalesHub(locationId, { from, to, hours = null, staleD
   // team and for each rep. Never merged across pipelines: a stage called "New
   // Lead" in two pipelines is two different steps with two different bases.
   const idx = stageIndexFrom(inp.pipelines || [])
-  const reachTeam = new Map(), reachRep = new Map(), lostByPipe = new Map()
-  const reasonName = {}; for (const r of (inp.reasons || [])) reasonName[r._id || r.id] = r.name
-  const reasonOf = (o) => { const rid = o.lostReasonId || o.lost_reason_id || (o.lostReason && (o.lostReason.id || o.lostReason._id)) || null; return (rid && reasonName[rid]) || (typeof o.lostReason === 'string' && o.lostReason) || 'Unspecified' }
+  const reachTeam = new Map(), reachRep = new Map()
   for (const o of (inp.opps || [])) {
     const pid = pidOf(o); if (!pid || !inPipe(o)) continue
     const pi = idx.get(pid); if (!pi) continue
@@ -6268,24 +6283,24 @@ export async function buildSalesHub(locationId, { from, to, hours = null, staleD
     const uid = o.assignedTo || 'unassigned'
     if (!reachRep.has(uid)) reachRep.set(uid, {}); const ru = reachRep.get(uid); if (!ru[pid]) ru[pid] = {}; const rr = ru[pid]
     for (const sdef of pi.stages) if (st === 'won' || (pos >= 0 && sdef.pos <= pos)) { t[sdef.name] = (t[sdef.name] || 0) + 1; rr[sdef.name] = (rr[sdef.name] || 0) + 1 }
-    if (st === 'lost' || st === 'abandoned') { if (!lostByPipe.has(pid)) lostByPipe.set(pid, {}); const l = lostByPipe.get(pid); const rn = reasonOf(o); l[rn] = (l[rn] || 0) + 1 }
   }
   const baseUsers = [...(perf.users || [])]
-  for (const uid of wonBy.keys()) if (uid !== 'unassigned' && !baseUsers.some((u) => u.id === uid)) baseUsers.push({ id: uid, name: userName[uid] || 'User', leads: 0, qualified: 0, won: 0, lost: 0, revenue: 0, winRate: null, avgDeal: null, avgCloseDays: null, stages: {}, lostReasons: [], byPipeline: [] })
-  const reps = baseUsers.filter((u) => u.leads > 0 || (nowBy.get(u.id) || {}).open > 0 || wonBy.has(u.id)).map((u) => {
+  for (const uid of new Set([...wonBy.keys(), ...lostBy.keys()])) if (uid !== 'unassigned' && !baseUsers.some((u) => u.id === uid)) baseUsers.push({ id: uid, name: userName[uid] || 'User', leads: 0, qualified: 0, won: 0, lost: 0, revenue: 0, winRate: null, avgDeal: null, avgCloseDays: null, stages: {}, lostReasons: [], byPipeline: [] })
+  const reps = baseUsers.filter((u) => u.leads > 0 || (nowBy.get(u.id) || {}).open > 0 || wonBy.has(u.id) || lostBy.has(u.id)).map((u) => {
     const ap = apByUser.get(u.id) || { booked: 0, byStaff: 0, byCustomer: 0, showed: 0, noShow: 0, upcoming: 0, unresulted: 0 }
     const w = wonBy.get(u.id) || { won: 0, revenue: 0, closeSum: 0, closeN: 0 }
+    const l = lostBy.get(u.id) || { lost: 0, reasons: {} }
     const c = callsByUser.get(u.id)
     const sp = spByUser[u.id] || null
     const n = nowBy.get(u.id) || { open: 0, openValue: 0, stale: 0, t7: 0, t14: 0, t21: 0, t30: 0, oldest: 0 }
     return {
-      id: u.id, name: u.name, leads: u.leads, qualified: u.qualified, won: w.won, lost: u.lost, revenue: Math.round(w.revenue), winRate: u.leads ? Math.round((w.won / u.leads) * 100) : null, avgDeal: w.won ? Math.round(w.revenue / w.won) : null, avgCloseDays: w.closeN ? Math.round(w.closeSum / w.closeN) : null,
+      id: u.id, name: u.name, leads: u.leads, qualified: u.qualified, won: w.won, lost: l.lost, revenue: Math.round(w.revenue), winRate: (w.won + l.lost) ? Math.round((w.won / (w.won + l.lost)) * 100) : null, avgDeal: w.won ? Math.round(w.revenue / w.won) : null, avgCloseDays: w.closeN ? Math.round(w.closeSum / w.closeN) : null,
       booked: ap.booked, byStaff: ap.byStaff, byCustomer: ap.byCustomer, showed: ap.showed, noShow: ap.noShow, upcoming: ap.upcoming, unresulted: ap.unresulted,
       showRate: (ap.showed + ap.noShow) ? Math.round((ap.showed / (ap.showed + ap.noShow)) * 100) : null,
       calls: c ? (c.outbound || 0) : 0, connected: c ? (c.outboundConnected || 0) : 0, minutes: c ? Math.round(((c.outboundSec || 0) + (c.inboundSec || 0)) / 60) : 0,
       speedMin: sp ? sp.medianMin : null, speedMeasured: sp ? sp.measured : 0, speedAfter: sp ? sp.afterCount : 0, within5Pct: sp ? sp.within5Pct : null,
       cash: cashOf(u.id), open: n.open, openValue: Math.round(n.openValue), stale: n.stale, staleTiers: { t7: n.t7, t14: n.t14, t21: n.t21, t30: n.t30 }, oldestIdle: n.oldest,
-      stages: u.stages, lostReasons: u.lostReasons, byPipeline: u.byPipeline, reachByPipeline: reachRep.get(u.id) || {},
+      stages: u.stages, lostReasons: Object.entries(l.reasons).map(([reason, count]) => ({ reason, count })).sort((a, b) => b.count - a.count), byPipeline: u.byPipeline, reachByPipeline: reachRep.get(u.id) || {},
     }
   }).sort((a, b) => (b.revenue - a.revenue) || (b.won - a.won) || (b.booked - a.booked))
   const sum = (k) => reps.reduce((a, r) => a + (r[k] || 0), 0)
@@ -6294,7 +6309,7 @@ export async function buildSalesHub(locationId, { from, to, hours = null, staleD
   const team = {
     reps: reps.length, leads: sum('leads'), booked: sum('booked'), byStaff: sum('byStaff'), byCustomer: sum('byCustomer'), showed: sum('showed'), noShow: sum('noShow'),
     showRate: teamShowBase ? Math.round((sum('showed') / teamShowBase) * 100) : null, won: sum('won'), lost: sum('lost'), revenue: sum('revenue'),
-    winRate: sum('leads') ? Math.round((sum('won') / sum('leads')) * 100) : null, cash: cashField ? sum('cash') : null, calls: sum('calls'), minutes: sum('minutes'),
+    winRate: (sum('won') + sum('lost')) ? Math.round((sum('won') / (sum('won') + sum('lost'))) * 100) : null, cash: cashField ? sum('cash') : null, calls: sum('calls'), minutes: sum('minutes'),
     open: sum('open'), openValue: sum('openValue'), stale: sum('stale'), speedMin: speed && speed.medianMin != null ? speed.medianMin : (spMed.length ? spMed[Math.floor(spMed.length / 2)] : null),
     speedAfter: speed && speed.after ? speed.after.count : null, speedFull: !!(speed && speed.full),
   }
@@ -6305,20 +6320,21 @@ export async function buildSalesHub(locationId, { from, to, hours = null, staleD
   // deal now. Empty ones (a web-form pipeline nobody uses) stay out of the way;
   // a pipeline chosen by name is always shown.
   const pipelines = (perf.pipelines || []).filter((p) => !pipeline || p.id === pipeline).map((p) => {
-    const t = reachTeam.get(p.id) || {}; const l = lostByPipe.get(p.id) || {}; const ob = openByPipe.get(p.id) || { open: 0, openValue: 0, stale: 0 }
+    const t = reachTeam.get(p.id) || {}; const l = lostByPipeC.get(p.id) || {}; const ob = openByPipe.get(p.id) || { open: 0, openValue: 0, stale: 0 }
+    const lostN = Object.values(l).reduce((a, b) => a + b, 0)
     let leads = 0
     for (const r of reps) for (const bp of (r.byPipeline || [])) if (bp.id === p.id) leads += bp.leads
     const wp = wonByPipe.get(p.id) || { won: 0, revenue: 0 }; const won = wp.won, revenue = wp.revenue
     return {
       id: p.id, name: p.name, stages: (p.stages || []).map((name) => ({ name, reached: t[name] || 0 })),
-      leads, won, revenue: Math.round(revenue), winRate: leads ? Math.round((won / leads) * 100) : null, open: ob.open, openValue: Math.round(ob.openValue), stale: ob.stale,
+      leads, won, lost: lostN, revenue: Math.round(revenue), winRate: (won + lostN) ? Math.round((won / (won + lostN)) * 100) : null, open: ob.open, openValue: Math.round(ob.openValue), stale: ob.stale,
       lostReasons: Object.entries(l).map(([reason, count]) => ({ reason, count })).sort((a, b) => b.count - a.count),
     }
-  }).filter((p) => p.id === pipeline || p.leads > 0 || p.open > 0 || p.won > 0)
+  }).filter((p) => p.id === pipeline || p.leads > 0 || p.open > 0 || p.won > 0 || p.lost > 0)
   const lostByReason = {}
   for (const r of reps) for (const lr of (r.lostReasons || [])) lostByReason[lr.reason] = (lostByReason[lr.reason] || 0) + lr.count
   return {
-    connected: true, tz, period: { from, to }, cashField: cashField || null, staleDays, pipelineId: pipeline || null, wonBasis: 'closed',
+    connected: true, tz, period: { from, to }, cashField: cashField || null, staleDays, pipelineId: pipeline || null, wonBasis: 'closed', basis: 'event',
     team, reps, wins: wins.slice(0, 40),
     pipelines, stageOpen: [...stageOpen.values()].map((x) => ({ ...x, value: Math.round(x.value) })).sort((a, b) => b.open - a.open),
     calendars: [...calendars.values()], lostByReason: Object.entries(lostByReason).map(([reason, count]) => ({ reason, count })).sort((a, b) => b.count - a.count),

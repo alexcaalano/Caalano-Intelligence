@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.581.0'
+const APP_VERSION = '3.582.0'
 // The business clock. Every server window is cut on the client's local day
 // (Caalano Systems location timezone), so any day the app derives on its own -
 // preset ranges, "today", CSV dates - must use the same clock rather than the
@@ -16282,7 +16282,7 @@ function SalesHubView({ clientId, authUser, currency, nonce, pipe: pipeProp, onP
     <div className="hub-stats hub-primary">
       <HubStat label="Revenue" value={money(team.revenue)} sub={targets.revenue ? `of ${money(targets.revenue)} team target` : `${fmtNumber(team.won || 0)} deals`} tone={targets.revenue ? ((team.revenue || 0) >= targets.revenue * (monthly ? elapsed : 1) ? 'good' : 'warn') : ''} big />
       {cashOn ? <HubStat label="Cash collected" value={money(team.cash)} sub={team.revenue ? `${Math.round(((team.cash || 0) / team.revenue) * 100)}% of won value` : null} big /> : null}
-      <HubStat label="Deals closed" value={fmtNumber(team.won || 0)} sub={`${hubPct(team.winRate)} win rate · ${fmtNumber(team.lost || 0)} lost`} big />
+      <HubStat label="Deals closed" value={fmtNumber(team.won || 0)} sub={`${fmtNumber(team.lost || 0)} lost · ${hubPct(team.winRate)} win rate of decided`} big />
       <HubStat label="Meetings held" value={fmtNumber(team.showed || 0)} sub={`${fmtNumber(team.booked || 0)} booked · ${hubPct(team.showRate)} show rate`} tone={team.showRate != null ? (team.showRate >= 80 ? 'good' : team.showRate >= 65 ? '' : 'warn') : ''} big />
       <HubStat label="Speed to lead" value={team.speedMin != null ? repMin(team.speedMin) : '-'} sub={`team median, in hours${team.speedAfter ? ` · ${team.speedAfter} after hours` : ''}`} tone={team.speedMin != null ? (team.speedMin <= 15 ? 'good' : team.speedMin <= 60 ? '' : 'warn') : ''} big />
     </div>
@@ -16421,7 +16421,7 @@ function SalesHubView({ clientId, authUser, currency, nonce, pipe: pipeProp, onP
         {calCard}
         {lostCard}
       </div>
-      <p className="cap act-foot">Won, revenue and cash count by close date: a deal counts in the period its status changed to won, whatever month the lead came in, so a deal closed today shows today. Leads are deals created in the period, per assigned rep; win rate is closed wins over those leads; lost counts deals from those leads. Open and stale are what is on the desk now. Each pipeline's funnel and lost reasons are kept apart; a stage is never counted across pipelines. Speed to lead follows the client's business-hours rule and counts the first reply a person sent{team.speedFull ? ', measured on every lead' : ', measured on as many leads as the read allowed'}. Calls come from the CRM's call export. Re-reads every 3 minutes, every minute in TV mode.</p>
+      <p className="cap act-foot">Everything counts in the period it happened. Leads by the date they came in. Bookings by the date they were booked; held, no-shows and show rate by the appointment's own date. Won and lost by the date the status changed, whatever month the lead came in, so a deal closed today shows today; win rate is won over won plus lost decided in the period. Open and stale are what is on the desk now; the funnel is this period's leads and how far they have got. Each pipeline's funnel and lost reasons are kept apart; a stage is never counted across pipelines. Speed to lead follows the client's business-hours rule and counts the first reply a person sent{team.speedFull ? ', measured on every lead' : ', measured on as many leads as the read allowed'}. Calls come from the CRM's call export. Re-reads every 3 minutes, every minute in TV mode.</p>
     </div>
   )
 }

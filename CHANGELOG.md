@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.603.0 - 2026-09-13 · `PENDING`
+## v3.603.0 - 2026-09-13 · `000a448`
 
 **A lighter first load** - the Sales Hub with Goals and Deals & Actions,
 the Settings page and its editors, the Creative Cockpit with Meta

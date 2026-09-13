@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.578.0'
+const APP_VERSION = '3.579.0'
 // The business clock. Every server window is cut on the client's local day
 // (Caalano Systems location timezone), so any day the app derives on its own -
 // preset ranges, "today", CSV dates - must use the same clock rather than the
@@ -16006,36 +16006,57 @@ const HUB_PREFS_KEY = 'caalano_hub_prefs'
 function hubPrefs() { try { return { confetti: true, sound: true, ...(JSON.parse(localStorage.getItem(HUB_PREFS_KEY) || '{}')) } } catch { return { confetti: true, sound: true } } }
 function saveHubPrefs(p) { try { localStorage.setItem(HUB_PREFS_KEY, JSON.stringify(p)) } catch { /* private mode */ } }
 // A short rising chime from the browser's own synth: no file, no download.
-// The sales gong as a micro-reward: a sharp, bright metallic strike that
-// resolves within a second into a short rising major chime. Clean and
-// synthesised, so no file to load and nothing behind it. Under two seconds.
+// The gong. A real recording wins if the site ships one at /gong.mp3 (drop
+// it in public/); otherwise the crash is synthesised: broadband noise through
+// a bank of resonant filters for the wash, forty detuned inharmonic partials
+// that bloom just after the hit for the metal, and a low thump for the mallet.
+let hubGongFile = null // null = not checked yet, true = plays, false = missing
 function hubChime() {
+  if (hubGongFile === false) return hubGongSynth()
+  try {
+    const a = new Audio('/gong.mp3'); a.volume = 1
+    a.play().then(() => { hubGongFile = true }).catch(() => { hubGongFile = false; hubGongSynth() })
+  } catch { hubGongFile = false; hubGongSynth() }
+}
+function hubGongSynth() {
   try {
     const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return
     const ac = new AC(); const t0 = ac.currentTime
-    const master = ac.createGain(); master.gain.value = 1
-    const comp = ac.createDynamicsCompressor(); comp.threshold.value = -8; comp.ratio.value = 2.5; comp.attack.value = 0.02
+    const master = ac.createGain(); master.gain.value = 0.4
+    const comp = ac.createDynamicsCompressor(); comp.threshold.value = -12; comp.ratio.value = 3; comp.attack.value = 0.01; comp.release.value = 0.4
     master.connect(comp); comp.connect(ac.destination)
-    const tone = (freq, at, peak, dec, type = 'sine', detune = 0) => {
-      const o = ac.createOscillator(); o.type = type; o.frequency.value = freq; o.detune.value = detune
-      const g = ac.createGain(); g.gain.setValueAtTime(0.0001, at); g.gain.exponentialRampToValueAtTime(peak, at + 0.008); g.gain.exponentialRampToValueAtTime(0.0001, at + dec)
-      o.connect(g); g.connect(master); o.start(at); o.stop(at + dec + 0.05)
+    // 1. The crash: noise through resonant bands. Hits hard, dips, swells back
+    //    (the gong's "waaah") and washes out over three seconds.
+    const N = 3.6
+    const nb = ac.createBuffer(1, Math.floor(ac.sampleRate * N), ac.sampleRate); const nd = nb.getChannelData(0)
+    for (let i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1
+    const src = ac.createBufferSource(); src.buffer = nb
+    const wash = ac.createGain()
+    wash.gain.setValueAtTime(0.0001, t0); wash.gain.exponentialRampToValueAtTime(1, t0 + 0.012); wash.gain.exponentialRampToValueAtTime(0.45, t0 + 0.14); wash.gain.exponentialRampToValueAtTime(0.75, t0 + 0.4); wash.gain.exponentialRampToValueAtTime(0.0001, t0 + 3.4)
+    for (const [f, q, g] of [[600, 2, 0.5], [1300, 2.5, 0.6], [2400, 3, 0.6], [3900, 3, 0.5], [6200, 2.5, 0.35], [9000, 2, 0.2]]) {
+      const bp = ac.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = f; bp.Q.value = q
+      const gg = ac.createGain(); gg.gain.value = g; src.connect(bp); bp.connect(gg); gg.connect(wash)
     }
-    // 1. The strike: a crisp burst of high noise plus two inharmonic metallic
-    //    partials that die in a quarter second - the "clang" of the mallet.
-    const n = ac.createBufferSource(); const buf = ac.createBuffer(1, Math.floor(ac.sampleRate * 0.07), ac.sampleRate); const d = buf.getChannelData(0)
-    for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / d.length, 1.5)
-    n.buffer = buf; const hp = ac.createBiquadFilter(); hp.type = 'bandpass'; hp.frequency.value = 5200; hp.Q.value = 0.9
-    const ng = ac.createGain(); ng.gain.setValueAtTime(1.3, t0); ng.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.07)
-    n.connect(hp); hp.connect(ng); ng.connect(master); n.start(t0)
-    tone(2637, t0, 0.42, 0.28); tone(2637 * 1.43, t0, 0.28, 0.2); tone(1319, t0, 0.38, 0.45); tone(3951, t0, 0.2, 0.12)
-    // 2. The resolve: three quick rising notes of a major chord (G5 B5 D6),
-    //    each a sine with a touch of octave for sparkle, the last one held.
-    const notes = [[784, 0.06, 0.18, 0.7], [988, 0.17, 0.18, 0.8], [1175, 0.28, 0.24, 1.4]]
-    for (const [f, dt, pk, dec] of notes) { tone(f, t0 + dt, pk, dec); tone(f * 2, t0 + dt, pk * 0.25, dec * 0.6); tone(f, t0 + dt, pk * 0.35, dec, 'sine', 6) }
-    // 3. A soft octave bloom under the final note so it lands as a chord.
-    tone(1568, t0 + 0.3, 0.1, 1.2); tone(2349, t0 + 0.32, 0.06, 1)
-    setTimeout(() => { try { ac.close() } catch { /* ignore */ } }, 2500)
+    wash.connect(master); src.start(t0); src.stop(t0 + N)
+    // 2. The metal: inharmonic partials in detuned pairs so they beat and
+    //    shimmer. The lows ring longest; the highs bloom in after the hit.
+    const base = 130; let seed = 7; const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647 }
+    for (let i = 0; i < 40; i++) {
+      const r = 1 + i * 0.42 + rnd() * 0.35; const f = base * r; if (f > 9000) break
+      const lvl = (0.32 / Math.pow(r, 0.55)) * (0.7 + rnd() * 0.6)
+      const dec = Math.max(1.2, 6.5 / Math.pow(r, 0.45))
+      const bloom = i > 4 ? 0.05 + rnd() * 0.3 : 0.006
+      for (const det of [-4, 4]) {
+        const o = ac.createOscillator(); o.type = 'sine'; o.frequency.value = f; o.detune.value = det + (rnd() - 0.5) * 6
+        const g = ac.createGain(); g.gain.setValueAtTime(0.0001, t0); g.gain.exponentialRampToValueAtTime(lvl, t0 + bloom); g.gain.exponentialRampToValueAtTime(0.0001, t0 + dec)
+        o.connect(g); g.connect(master); o.start(t0); o.stop(t0 + dec + 0.1)
+      }
+    }
+    // 3. The body: the mallet's thump, a short low sweep.
+    const th = ac.createOscillator(); th.type = 'sine'; th.frequency.setValueAtTime(140, t0); th.frequency.exponentialRampToValueAtTime(55, t0 + 0.25)
+    const tg = ac.createGain(); tg.gain.setValueAtTime(0.0001, t0); tg.gain.exponentialRampToValueAtTime(0.9, t0 + 0.006); tg.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.4)
+    th.connect(tg); tg.connect(master); th.start(t0); th.stop(t0 + 0.45)
+    setTimeout(() => { try { ac.close() } catch { /* ignore */ } }, 7500)
   } catch { /* no audio */ }
 }
 // The gong strike on screen: mallet swings in, the gong shudders and rings
@@ -16100,7 +16121,11 @@ function hubTargetsSum(clientId, reps) {
   for (const r of reps) { const t = { ...k.default, ...((k.byUser || {})[r.id] || {}) }; for (const [key, v] of Object.entries(t)) if (Number(v) > 0 && !['showRate', 'winRate', 'speedMin'].includes(key)) out[key] = (out[key] || 0) + Number(v) }
   return out
 }
-function SalesHubView({ clientId, authUser, currency, nonce }) {
+function SalesHubView({ clientId, authUser, currency, nonce, pipe: pipeProp, onPipe, pipes: pipesProp }) {
+  // Follows the workspace's pipeline picker like every other tab: one
+  // pipeline recalculates everything within it; "All" keeps each pipeline's
+  // funnel and lost reasons apart.
+  const [pipeSel, setPipeSel] = usePipeState(pipeProp, onPipe, pipesProp)
   const [period, setPeriod] = useState('this_month')
   const [stale, setStale] = useState(7)
   const [tick, setTick] = useState(0)
@@ -16124,7 +16149,7 @@ function SalesHubView({ clientId, authUser, currency, nonce }) {
     let dead = false
     setSt((s) => ({ status: s.data ? 'refreshing' : 'loading', data: s.data }))
     const r = presetRange(period)
-    fetch(`/.netlify/functions/windsor?scope=saleshub&client=${encodeURIComponent(clientId)}&${rangeQuery(r)}&preset=${period}&stale=${stale}${hoursQuery(loadHours(clientId))}${tick || nonce ? `&_r=${tick}.${nonce || 0}` : ''}`, { credentials: 'same-origin' })
+    fetch(`/.netlify/functions/windsor?scope=saleshub&client=${encodeURIComponent(clientId)}&${rangeQuery(r)}&preset=${period}&stale=${stale}${pipeSel && pipeSel !== 'all' ? `&pipeline=${encodeURIComponent(pipeSel)}` : ''}${hoursQuery(loadHours(clientId))}${tick || nonce ? `&_r=${tick}.${nonce || 0}` : ''}`, { credentials: 'same-origin' })
       .then((x) => x.json().catch(() => ({ error: `server ${x.status}` })))
       .then((j) => {
         if (dead) return
@@ -16136,7 +16161,7 @@ function SalesHubView({ clientId, authUser, currency, nonce }) {
       })
       .catch((e) => { if (!dead) setSt({ status: 'err', data: { error: String((e && e.message) || e) } }) })
     return () => { dead = true }
-  }, [clientId, period, stale, tick, nonce]) // eslint-disable-line
+  }, [clientId, period, stale, pipeSel, tick, nonce]) // eslint-disable-line
   useEffect(() => { const iv = setInterval(() => { if (document.visibilityState === 'visible') setTick((t) => t + 1) }, tv ? 60000 : 180000); return () => clearInterval(iv) }, [tv])
   useEffect(() => { if (!tv) return; const onKey = (e) => { if (e.key === 'Escape') setTv(false) }; window.addEventListener('keydown', onKey); document.body.classList.add('hub-tv-on'); return () => { window.removeEventListener('keydown', onKey); document.body.classList.remove('hub-tv-on') } }, [tv])
   const d = st.data || {}
@@ -16175,15 +16200,19 @@ function SalesHubView({ clientId, authUser, currency, nonce }) {
     }
     return out.sort((a, b) => (a.tone === 'bad' ? 0 : 1) - (b.tone === 'bad' ? 0 : 1)).slice(0, 12)
   }, [reps, team]) // eslint-disable-line
-  const stageMax = Math.max(1, ...(d.stageOpen || []).map((s) => s.open))
-  const funnel = (d.pipelines || []).find((p) => p.stages.some((s) => s.reached))
+  const pipesAll = d.pipelines || []
+  const multi = (pipesProp && pipesProp.length > 1) || pipesAll.length > 1
+  const focus = d.pipelineId ? (pipesAll.find((p) => p.id === d.pipelineId) || null) : null
+  const periodLabel = ((HUB_PERIODS.find(([id]) => id === period) || [])[1] || '').toLowerCase()
   const head = (
-    <div className="act-bar">
+    <div className="act-bar hub-bar">
       <div className="act-filters">
         <label className="act-sel"><select value={period} onChange={(e) => setPeriod(e.target.value)}>{HUB_PERIODS.map(([id, l]) => <option key={id} value={id}>{l}</option>)}</select></label>
         <label className="act-sel"><select value={stale} onChange={(e) => setStale(Number(e.target.value))}><option value={7}>Stale after 7 days</option><option value={14}>Stale after 14 days</option><option value={30}>Stale after 30 days</option></select></label>
         <button type="button" className="btn-ghost sm" disabled={st.status === 'refreshing'} onClick={() => setTick((t) => t + 1)}>{st.status === 'refreshing' ? 'Refreshing…' : 'Refresh'}</button>
         <button type="button" className="btn-primary act-btn" onClick={() => setTv(true)}>📺 TV mode</button>
+      </div>
+      <div className="hub-tools">
         <label className="alloc-check"><input type="checkbox" checked={prefs.confetti} onChange={(e) => { const p = { ...prefs, confetti: e.target.checked }; setPrefs(p); saveHubPrefs(p) }} /> Confetti</label>
         <label className="alloc-check"><input type="checkbox" checked={prefs.sound} onChange={(e) => { const p = { ...prefs, sound: e.target.checked }; setPrefs(p); saveHubPrefs(p) }} /> Gong</label>
         <button type="button" className="btn-ghost sm" onClick={() => hubStrike({ id: 'test', user: (authUser && authUser.name) || 'Test rep', name: 'Sample deal', value: 12500 })}>Test the gong</button>
@@ -16195,18 +16224,75 @@ function SalesHubView({ clientId, authUser, currency, nonce }) {
   if (d.ghl === false) return <div className="card"><p className="cap">{d.error || 'This account has no Caalano Systems connection.'}</p></div>
   const lbTop = [...reps].sort((a, b) => b.revenue - a.revenue || b.won - a.won).slice(0, 3)
   const medal = ['🥇', '🥈', '🥉']
-  const winsFeed = (limit) => (d.wins || []).slice(0, limit).map((w) => <div className="hub-win" key={w.id}><span className="hub-win-m">🎉</span><div><b>{w.user || 'Someone'}</b> closed <b>{w.name}</b>{w.value ? ` for ${money(w.value)}` : ''}{cashOn && w.cash ? ` · ${money(w.cash)} collected` : ''}</div><span className="cap">{actHrs(Math.round((Date.now() - w.at) / 3600000))}</span></div>)
+  const winsFeed = (limit) => (d.wins || []).slice(0, limit).map((w) => <div className="hub-win" key={w.id}><span className="hub-win-m">🎉</span><div><b>{w.user || 'Someone'}</b> closed <b>{w.name}</b>{w.value ? ` for ${money(w.value)}` : ''}{cashOn && w.cash ? ` · ${money(w.cash)} collected` : ''}{multi && w.pipeline ? <span className="cap"> · {w.pipeline}</span> : null}</div><span className="cap">{actHrs(Math.round((Date.now() - w.at) / 3600000))}</span></div>)
   const leaderboard = (
     <div className="card rep-card hub-lb">
-      <div className="rep-lb-head"><h4>Leaderboard</h4><span className="cap">by revenue{(HUB_PERIODS.find(([id]) => id === period) || [])[1] ? ` · ${(HUB_PERIODS.find(([id]) => id === period) || [])[1].toLowerCase()}` : ''}</span></div>
+      <div className="rep-lb-head"><h4>Leaderboard</h4><span className="cap">by revenue{periodLabel ? ` · ${periodLabel}` : ''}{focus ? ` · ${focus.name}` : ''}</span></div>
       <div className="rep-podium">{lbTop.map((r, i) => <div key={r.id} className={`rep-pod p${i + 1}`}><div className="rep-pod-m">{medal[i]}</div><b>{r.name}</b><div className="rep-pod-v">{money(r.revenue)}</div><div className="cap">{r.won} won · {r.booked} booked</div></div>)}</div>
       <div className="rep-lb-rows">{[...reps].sort((a, b) => b.revenue - a.revenue || b.won - a.won).map((r, i) => <div key={r.id} className="rep-lb-row hub-lb-row"><span>{i + 1}</span><span className="rep-lb-name">{r.name}</span><span>{money(r.revenue)}</span><span>{r.won} won</span><span>{r.booked} booked</span><span>{r.showed} held</span></div>)}</div>
     </div>
   )
+  // The four numbers a sales manager asks for first, then the supporting ones.
+  const primary = (
+    <div className="hub-stats hub-primary">
+      <HubStat label="Revenue" value={money(team.revenue)} sub={targets.revenue ? `of ${money(targets.revenue)} team target` : `${fmtNumber(team.won || 0)} deals`} tone={targets.revenue ? ((team.revenue || 0) >= targets.revenue * (monthly ? elapsed : 1) ? 'good' : 'warn') : ''} big />
+      {cashOn ? <HubStat label="Cash collected" value={money(team.cash)} sub={team.revenue ? `${Math.round(((team.cash || 0) / team.revenue) * 100)}% of won value` : null} big /> : null}
+      <HubStat label="Deals closed" value={fmtNumber(team.won || 0)} sub={`${hubPct(team.winRate)} win rate · ${fmtNumber(team.lost || 0)} lost`} big />
+      <HubStat label="Meetings held" value={fmtNumber(team.showed || 0)} sub={`${fmtNumber(team.booked || 0)} booked · ${hubPct(team.showRate)} show rate`} tone={team.showRate != null ? (team.showRate >= 80 ? 'good' : team.showRate >= 65 ? '' : 'warn') : ''} big />
+      <HubStat label="Speed to lead" value={team.speedMin != null ? repMin(team.speedMin) : '-'} sub={`team median, in hours${team.speedAfter ? ` · ${team.speedAfter} after hours` : ''}`} tone={team.speedMin != null ? (team.speedMin <= 15 ? 'good' : team.speedMin <= 60 ? '' : 'warn') : ''} big />
+    </div>
+  )
+  const secondary = (
+    <div className="hub-stats hub-secondary">
+      <HubStat label="Leads" value={fmtNumber(team.leads || 0)} sub={`${team.reps} reps`} />
+      <HubStat label="Booked" value={fmtNumber(team.booked || 0)} sub={`${fmtNumber(team.byStaff || 0)} by reps · ${fmtNumber(team.byCustomer || 0)} by customers`} />
+      <HubStat label="No-shows" value={fmtNumber(team.noShow || 0)} sub={`${fmtNumber(team.showed || 0)} held`} />
+      <HubStat label="Calls" value={fmtNumber(team.calls || 0)} sub={`${fmtNumber(team.minutes || 0)} minutes`} />
+      <HubStat label="Open pipeline" value={money(team.openValue)} sub={`${fmtNumber(team.open || 0)} deals · ${fmtNumber(team.stale || 0)} stale`} tone={team.open && team.stale / team.open > 0.4 ? 'warn' : ''} />
+    </div>
+  )
+  // One pipeline at a time: its funnel and its open deals side by side.
+  const pipeCard = (p) => {
+    const first = (p.stages || [])[0]; const base = first ? first.reached : 0
+    const open = (d.stageOpen || []).filter((so) => so.pipelineId === p.id)
+    const order = new Map((p.stages || []).map((sdef, i) => [sdef.name, i]))
+    open.sort((a, b) => (order.get(a.stage) ?? 99) - (order.get(b.stage) ?? 99))
+    const openMax = Math.max(1, ...open.map((so) => so.open))
+    return (
+      <div className="card hub-pipecard" key={p.id}>
+        <div className="rep-lb-head"><h4>{multi ? p.name : 'The pipeline'}</h4><span className="cap">{fmtNumber(p.leads)} leads · {fmtNumber(p.won)} won · {money(p.revenue)} · {hubPct(p.winRate)} win rate</span></div>
+        <div className="hub-pipe-cols">
+          <div><div className="hub-sub">How far the leads got</div>{base ? p.stages.map((sdef, i) => <RepBar key={sdef.name} label={sdef.name} value={sdef.reached} max={base} text={`${fmtNumber(sdef.reached)}${i ? ` · ${p.stages[i - 1].reached ? Math.round((sdef.reached / p.stages[i - 1].reached) * 100) : 0}% of previous` : ''}`} />) : <p className="cap">No leads in this period.</p>}</div>
+          <div><div className="hub-sub">Open deals by stage <span className="cap">· {fmtNumber(p.open)} worth {money(p.openValue)}{p.stale ? ` · ${p.stale} stale` : ''}</span></div>{open.length ? open.map((so) => <RepBar key={so.stageId} label={so.stage} value={so.open} max={openMax} text={`${fmtNumber(so.open)} · ${money(so.value)}${so.stale ? ` · ${so.stale} stale` : ''}`} tone={so.stale && so.stale / so.open > 0.5 ? 'warn' : ''} />) : <p className="cap">No open deals.</p>}</div>
+        </div>
+      </div>
+    )
+  }
+  const lostCard = (
+    <div className="card rep-card"><h4>Lost reasons</h4>
+      {pipesAll.length > 1 ? pipesAll.map((p) => <div className="hub-lost-grp" key={p.id}><div className="hub-sub">{p.name}</div>{(p.lostReasons || []).length ? p.lostReasons.slice(0, 6).map((x) => <RepBar key={x.reason} label={x.reason} value={x.count} max={p.lostReasons[0].count} tone="bad" />) : <p className="cap">Nothing lost.</p>}</div>)
+        : (d.lostByReason || []).length ? d.lostByReason.slice(0, 8).map((x) => <RepBar key={x.reason} label={x.reason} value={x.count} max={d.lostByReason[0].count} tone="bad" text={`${fmtNumber(x.count)} · ${reps.filter((r) => (r.lostReasons || []).some((y) => y.reason === x.reason)).sort((a, b) => ((b.lostReasons.find((y) => y.reason === x.reason) || {}).count || 0) - ((a.lostReasons.find((y) => y.reason === x.reason) || {}).count || 0)).slice(0, 2).map((r) => `${r.name} ${(r.lostReasons.find((y) => y.reason === x.reason) || {}).count}`).join(', ')}`} />) : <p className="cap">Nothing lost in this period.</p>}
+    </div>
+  )
+  const calCard = (
+    <div className="card rep-card"><h4>Appointments by calendar</h4>
+      {(d.calendars || []).length ? d.calendars.map((c) => {
+        const tot = Object.values(c.byRep).reduce((a, b) => ({ booked: a.booked + b.booked, showed: a.showed + b.showed, noShow: a.noShow + b.noShow }), { booked: 0, showed: 0, noShow: 0 })
+        const sr = (tot.showed + tot.noShow) ? Math.round((tot.showed / (tot.showed + tot.noShow)) * 100) : null
+        return <div className="hub-cal" key={c.id}>
+          <div className="hub-cal-h"><b>{c.name}</b><span className="hub-cal-n"><span><b>{tot.booked}</b> booked</span><span><b>{tot.showed}</b> held</span><span className={sr != null && sr < 65 ? 'act-bad' : ''}><b>{hubPct(sr)}</b> show</span></span></div>
+          <div className="hub-chips">{Object.entries(c.byRep).sort((x, y) => y[1].booked - x[1].booked).slice(0, 8).map(([uid, b]) => { const rr = reps.find((x) => x.id === uid); const s2 = (b.showed + b.noShow) ? Math.round((b.showed / (b.showed + b.noShow)) * 100) : null; return <span className="hub-chip-rep" key={uid}>{rr ? rr.name : 'Unassigned'} <b>{b.booked}</b>{s2 != null ? <i>{s2}%</i> : null}</span> })}</div>
+        </div>
+      }) : <p className="cap">No appointments in this period.</p>}
+    </div>
+  )
+  const flagsByRep = []
+  for (const f of flags) { let g = flagsByRep.find((x) => x.rep.id === f.rep.id); if (!g) { g = { rep: f.rep, tone: f.tone, items: [] }; flagsByRep.push(g) } g.items.push(f.text); if (f.tone === 'bad') g.tone = 'bad' }
+  const facts = (title, rows) => <div className="hub-facts"><b>{title}</b><dl>{rows.filter((r) => r).map(([k, v]) => <React.Fragment key={k}><dt>{k}</dt><dd>{v == null || v === '' ? '-' : v}</dd></React.Fragment>)}</dl></div>
   if (tv) {
     return (
       <div className="hub-tv">
-        <div className="hub-tv-head"><div><b>{(d.period && d.period.from) || ''}</b> <span>Sales Hub · {(HUB_PERIODS.find(([id]) => id === period) || [])[1]}{monthly ? ` · day ${day} of ${dim}` : ''}</span></div>
+        <div className="hub-tv-head"><div><b>{(d.period && d.period.from) || ''}</b> <span>Sales Hub · {(HUB_PERIODS.find(([id]) => id === period) || [])[1]}{focus ? ` · ${focus.name}` : ''}{monthly ? ` · day ${day} of ${dim}` : ''}</span></div>
           <div className="hub-tv-ctl">
             <label className="alloc-check"><input type="checkbox" checked={prefs.confetti} onChange={(e) => { const p = { ...prefs, confetti: e.target.checked }; setPrefs(p); saveHubPrefs(p) }} /> Confetti</label>
             <label className="alloc-check"><input type="checkbox" checked={prefs.sound} onChange={(e) => { const p = { ...prefs, sound: e.target.checked }; setPrefs(p); saveHubPrefs(p) }} /> Gong</label>
@@ -16216,13 +16302,7 @@ function SalesHubView({ clientId, authUser, currency, nonce }) {
         {celebrate ? <HubGong key={celebrate.key} win={celebrate} currency={currency} onDone={() => { clearTimeout(strikeT.current); setCelebrate(null) }} /> : null}
         <div className="hub-tv-grid">
           <div className="hub-tv-col">
-            <div className="hub-stats">
-              <HubStat label="Revenue" value={money(team.revenue)} sub={targets.revenue ? `of ${money(targets.revenue)} target` : null} tone={targets.revenue ? ((team.revenue || 0) >= targets.revenue * (monthly ? elapsed : 1) ? 'good' : 'warn') : ''} big />
-              {cashOn ? <HubStat label="Cash collected" value={money(team.cash)} big /> : null}
-              <HubStat label="Deals closed" value={fmtNumber(team.won || 0)} sub={`${hubPct(team.winRate)} win rate`} big />
-              <HubStat label="Meetings booked" value={fmtNumber(team.booked || 0)} sub={`${fmtNumber(team.showed || 0)} held · ${hubPct(team.showRate)} show rate`} big />
-              <HubStat label="Speed to lead" value={team.speedMin != null ? repMin(team.speedMin) : '-'} sub="team median, in hours" big />
-            </div>
+            {primary}
             {gauges.length ? <div className="card rep-cockpit"><div className="rep-cockpit-grid">{gauges}</div></div> : null}
           </div>
           <div className="hub-tv-col">{leaderboard}<div className="card rep-card"><h4>Latest wins</h4>{(d.wins || []).length ? winsFeed(8) : <p className="cap">No wins in the last 7 days yet.</p>}</div></div>
@@ -16234,22 +16314,22 @@ function SalesHubView({ clientId, authUser, currency, nonce }) {
     <div className="act-wrap hub-wrap">
       {head}
       {celebrate ? <HubGong key={celebrate.key} win={celebrate} currency={currency} onDone={() => { clearTimeout(strikeT.current); setCelebrate(null) }} /> : null}
-      <div className="hub-stats">
-        <HubStat label="Revenue" value={money(team.revenue)} sub={targets.revenue ? `of ${money(targets.revenue)} team target` : `${fmtNumber(team.won || 0)} deals`} tone={targets.revenue ? ((team.revenue || 0) >= targets.revenue * (monthly ? elapsed : 1) ? 'good' : 'warn') : ''} big />
-        {cashOn ? <HubStat label="Cash collected" value={money(team.cash)} sub={team.revenue ? `${Math.round(((team.cash || 0) / team.revenue) * 100)}% of won value` : null} /> : null}
-        <HubStat label="Deals closed" value={fmtNumber(team.won || 0)} sub={`${hubPct(team.winRate)} win rate · ${fmtNumber(team.lost || 0)} lost`} />
-        <HubStat label="Leads" value={fmtNumber(team.leads || 0)} sub={`${team.reps} reps`} />
-        <HubStat label="Booked" value={fmtNumber(team.booked || 0)} sub={`${fmtNumber(team.byStaff || 0)} by reps · ${fmtNumber(team.byCustomer || 0)} by customers`} />
-        <HubStat label="Held" value={fmtNumber(team.showed || 0)} sub={`${hubPct(team.showRate)} show rate · ${fmtNumber(team.noShow || 0)} no-shows`} tone={team.showRate != null ? (team.showRate >= 80 ? 'good' : team.showRate >= 65 ? '' : 'warn') : ''} />
-        <HubStat label="Speed to lead" value={team.speedMin != null ? repMin(team.speedMin) : '-'} sub={`team median, in hours${team.speedAfter ? ` · ${team.speedAfter} after hours` : ''}`} tone={team.speedMin != null ? (team.speedMin <= 15 ? 'good' : team.speedMin <= 60 ? '' : 'warn') : ''} />
-        <HubStat label="Calls" value={fmtNumber(team.calls || 0)} sub={`${fmtNumber(team.minutes || 0)} minutes`} />
-        <HubStat label="Open pipeline" value={money(team.openValue)} sub={`${fmtNumber(team.open || 0)} deals · ${fmtNumber(team.stale || 0)} stale`} tone={team.open && team.stale / team.open > 0.4 ? 'warn' : ''} />
-      </div>
+      {primary}
+      {secondary}
+      {multi && !focus && pipesAll.length > 1 ? <div className="hub-pipes">{pipesAll.map((p) => <button type="button" className="hub-pipe" key={p.id} onClick={() => setPipeSel(p.id)} title="Show this pipeline only">
+        <span className="hub-pipe-n">{p.name}</span>
+        <span className="hub-pipe-row"><span><b>{money(p.revenue)}</b> revenue</span><span><b>{fmtNumber(p.won)}</b> won</span><span><b>{fmtNumber(p.leads)}</b> leads</span><span><b>{hubPct(p.winRate)}</b> win rate</span><span><b>{fmtNumber(p.open)}</b> open{p.stale ? ` · ${p.stale} stale` : ''}</span></span>
+        <span className="hub-pipe-go">Focus ›</span>
+      </button>)}</div> : null}
+      {focus ? <div className="hub-focus"><span>Showing <b>{focus.name}</b> only. Leads, deals, speed to lead and stages are within it; appointments and calls are per rep across the account.</span><button type="button" className="btn-ghost sm" onClick={() => setPipeSel('all')}>All pipelines</button></div> : null}
       {gauges.length ? <div className="card rep-cockpit"><div className="rep-cockpit-head"><h4>{monthly ? `This month against the team's targets` : 'Against the team\'s monthly targets'}</h4>{monthly ? <span className="cap">Day {day} of {dim} · {Math.round(elapsed * 100)}% of the month gone</span> : null}</div><div className="rep-cockpit-grid">{gauges}</div></div>
         : (authUser && isAdminishFE(authUser.role) ? <div className="card rep-cockpit-empty"><b>No rep targets yet.</b> <span className="cap">Set them in Settings → this client → Rep KPIs and the month gauges appear here.</span></div> : null)}
-      {flags.length ? <div className="card hub-flags"><h4>Coaching flags</h4>{flags.map((f, i) => <button type="button" className={`hub-flag ${f.tone}`} key={i} onClick={() => setOpenRep(openRep === f.rep.id ? null : f.rep.id)}><b>{f.rep.name}</b><span>{f.text}</span></button>)}</div> : null}
+      <div className="hub-band">
+        {flagsByRep.length ? <div className="card hub-flags"><div className="rep-lb-head"><h4>Coaching flags</h4><span className="cap">{flags.length} to talk about</span></div>{flagsByRep.map((g) => <button type="button" className={`hub-flag ${g.tone}`} key={g.rep.id} onClick={() => setOpenRep(openRep === g.rep.id ? null : g.rep.id)}><b>{g.rep.name}</b><ul>{g.items.map((t, i) => <li key={i}>{t}</li>)}</ul></button>)}</div> : null}
+        {leaderboard}
+      </div>
       <div className="card hub-board">
-        <div className="rep-lb-head"><h4>Rep board</h4><label className="act-sel">Sort<select value={sortKey} onChange={(e) => setSortKey(e.target.value)}><option value="revenue">Revenue</option><option value="attain">Attainment</option><option value="won">Won</option><option value="booked">Booked</option><option value="showed">Held</option><option value="showRate">Show rate</option><option value="winRate">Win rate</option><option value="calls">Calls</option><option value="speed">Speed to lead</option><option value="stale">Stale</option><option value="leads">Leads</option></select></label></div>
+        <div className="rep-lb-head"><h4>Rep board</h4><span className="cap">tap a rep for the detail</span><label className="act-sel">Sort<select value={sortKey} onChange={(e) => setSortKey(e.target.value)}><option value="revenue">Revenue</option><option value="attain">Attainment</option><option value="won">Won</option><option value="booked">Booked</option><option value="showed">Held</option><option value="showRate">Show rate</option><option value="winRate">Win rate</option><option value="calls">Calls</option><option value="speed">Speed to lead</option><option value="stale">Stale</option><option value="leads">Leads</option></select></label></div>
         <div className="hub-board-rows">
           <div className="hub-row head"><span>Rep</span><span>Leads</span><span>Booked</span><span>Held</span><span>Show</span><span>Won</span><span>Revenue</span>{cashOn ? <span>Cash</span> : null}<span>Win</span><span>Calls</span><span>Min</span><span>Speed</span><span>Open</span><span>Stale</span><span>Target</span></div>
           {board.map((r) => { const a = attain(r); const s = status(r); return (
@@ -16261,26 +16341,29 @@ function SalesHubView({ clientId, authUser, currency, nonce }) {
               </button>
               {openRep === r.id ? <div className="hub-row-detail">
                 <div className="hub-detail-grid">
-                  <div><b>Appointments</b><div className="cap">{r.booked} booked · {r.byStaff} by them, {r.byCustomer} by customers · {r.showed} held · {r.noShow} no-show · {r.upcoming} to come{r.unresulted ? ` · ${r.unresulted} unresulted` : ''}</div></div>
-                  <div><b>Pipeline now</b><div className="cap">{r.open} open worth {money(r.openValue)} · {r.stale} stale ({r.staleTiers.t7} at 7+, {r.staleTiers.t14} at 14+, {r.staleTiers.t21} at 21+, {r.staleTiers.t30} at 30+){r.oldestIdle ? ` · oldest ${r.oldestIdle} days` : ''}</div></div>
-                  <div><b>Speed to lead</b><div className="cap">{r.speedMin != null ? `median ${repMin(r.speedMin)} in hours · ${r.speedMeasured} leads measured${r.within5Pct != null ? ` · ${r.within5Pct}% under 5 min` : ''}${r.speedAfter ? ` · ${r.speedAfter} after hours` : ''}` : 'not measured'}</div></div>
-                  <div><b>Lost reasons</b><div className="cap">{(r.lostReasons || []).length ? r.lostReasons.slice(0, 4).map((x) => `${x.reason} ${x.count}`).join(' · ') : 'nothing lost'}{r.avgCloseDays != null ? ` · ${r.avgCloseDays} days to close` : ''}</div></div>
+                  {facts('Appointments', [['Booked', fmtNumber(r.booked)], ['By the rep', fmtNumber(r.byStaff)], ['By customers', fmtNumber(r.byCustomer)], ['Held', fmtNumber(r.showed)], ['No-show', fmtNumber(r.noShow)], ['Still to come', fmtNumber(r.upcoming)], r.unresulted ? ['Unresulted', <span className="act-bad">{fmtNumber(r.unresulted)}</span>] : null])}
+                  {facts('Pipeline now', [['Open deals', fmtNumber(r.open)], ['Open value', money(r.openValue)], ['Stale', <span className={r.stale ? 'act-bad' : ''}>{fmtNumber(r.stale)}</span>], ['7+ · 14+ · 21+ · 30+ days', `${r.staleTiers.t7} · ${r.staleTiers.t14} · ${r.staleTiers.t21} · ${r.staleTiers.t30}`], ['Oldest idle', r.oldestIdle ? `${r.oldestIdle} days` : '-']])}
+                  {facts('Speed to lead', r.speedMin != null ? [['Median, in hours', repMin(r.speedMin)], ['Leads measured', fmtNumber(r.speedMeasured)], r.within5Pct != null ? ['Under 5 minutes', `${r.within5Pct}%`] : null, ['After hours', fmtNumber(r.speedAfter || 0)]] : [['Median', 'not measured']])}
+                  {facts('Closing', [['Won', fmtNumber(r.won)], ['Lost', fmtNumber(r.lost)], ['Win rate', hubPct(r.winRate)], ['Average deal', r.avgDeal ? money(r.avgDeal) : '-'], ['Days to close', r.avgCloseDays != null ? r.avgCloseDays : '-'], ...((r.lostReasons || []).slice(0, 3).map((x) => [`Lost: ${x.reason}`, fmtNumber(x.count)]))])}
                 </div>
-                {Object.keys(r.stages || {}).length ? <div className="hub-stage-line">{funnel ? funnel.stages.map((s) => <span key={s.name}><b>{(r.stages || {})[s.name] || 0}</b> {s.name}</span>) : null}</div> : null}
+                <div className="hub-detail-funnels">{pipesAll.map((p) => {
+                  const reach = (r.reachByPipeline || {})[p.id] || {}; const stages = p.stages || []; const base = stages.length ? (reach[stages[0].name] || 0) : 0
+                  if (!base) return null
+                  let last = 0; stages.forEach((sdef, i) => { if (reach[sdef.name]) last = i })
+                  return <div className="hub-mini-funnel" key={p.id}><div className="hub-sub">{multi ? p.name : 'How far this rep\'s leads got'} <span className="cap">· {fmtNumber(base)} leads</span></div>{stages.slice(0, Math.max(last + 1, Math.min(3, stages.length))).map((sdef) => <RepBar key={sdef.name} label={sdef.name} value={reach[sdef.name] || 0} max={base} text={`${fmtNumber(reach[sdef.name] || 0)} · ${Math.round(((reach[sdef.name] || 0) / base) * 100)}%`} />)}</div>
+                })}</div>
               </div> : null}
             </React.Fragment>
           ) })}
         </div>
       </div>
-      <div className="rep-grid">
-        {leaderboard}
+      <div className={`hub-pipecards ${pipesAll.length > 1 ? 'many' : ''}`}>{pipesAll.map(pipeCard)}</div>
+      <div className="rep-grid hub-bottom">
         <div className="card rep-card"><h4>Latest wins</h4>{(d.wins || []).length ? winsFeed(10) : <p className="cap">No wins in the last 7 days yet.</p>}</div>
-        <div className="card rep-card"><h4>Open deals by stage</h4>{(d.stageOpen || []).length ? d.stageOpen.map((s) => <RepBar key={s.stageId} label={`${s.stage}${s.pipeline && (d.pipelines || []).length > 1 ? ` · ${s.pipeline}` : ''}`} value={s.open} max={stageMax} text={`${fmtNumber(s.open)} · ${money(s.value)}${s.stale ? ` · ${s.stale} stale` : ''}`} tone={s.stale && s.stale / s.open > 0.5 ? 'warn' : ''} />) : <p className="cap">No open deals.</p>}</div>
-        <div className="card rep-card"><h4>How far the team's leads got</h4>{funnel ? funnel.stages.map((s, i) => <RepBar key={s.name} label={s.name} value={s.reached} max={Math.max(1, funnel.stages[0].reached)} text={`${fmtNumber(s.reached)}${i ? ` · ${funnel.stages[i - 1].reached ? Math.round((s.reached / funnel.stages[i - 1].reached) * 100) : 0}% of previous` : ''}`} />) : <p className="cap">No leads in this period.</p>}</div>
-        <div className="card rep-card"><h4>Appointments by calendar</h4>{(d.calendars || []).length ? d.calendars.map((c) => { const tot = Object.values(c.byRep).reduce((a, b) => ({ booked: a.booked + b.booked, showed: a.showed + b.showed, noShow: a.noShow + b.noShow }), { booked: 0, showed: 0, noShow: 0 }); const sr = (tot.showed + tot.noShow) ? Math.round((tot.showed / (tot.showed + tot.noShow)) * 100) : null; return <div className="hub-cal" key={c.id}><div className="rep-bar-l"><span><b>{c.name}</b></span><b>{tot.booked} booked · {tot.showed} held · {hubPct(sr)}</b></div><div className="cap">{Object.entries(c.byRep).sort((x, y) => y[1].booked - x[1].booked).slice(0, 6).map(([uid, b]) => { const rr = reps.find((x) => x.id === uid); const s2 = (b.showed + b.noShow) ? Math.round((b.showed / (b.showed + b.noShow)) * 100) : null; return `${rr ? rr.name : 'Unassigned'} ${b.booked}${s2 != null ? ` (${s2}%)` : ''}` }).join(' · ')}</div></div> }) : <p className="cap">No appointments in this period.</p>}</div>
-        <div className="card rep-card"><h4>Lost reasons</h4>{(d.lostByReason || []).length ? d.lostByReason.slice(0, 8).map((x) => <RepBar key={x.reason} label={x.reason} value={x.count} max={d.lostByReason[0].count} tone="bad" text={`${fmtNumber(x.count)} · ${reps.filter((r) => (r.lostReasons || []).some((y) => y.reason === x.reason)).sort((a, b) => ((b.lostReasons.find((y) => y.reason === x.reason) || {}).count || 0) - ((a.lostReasons.find((y) => y.reason === x.reason) || {}).count || 0)).slice(0, 2).map((r) => `${r.name} ${(r.lostReasons.find((y) => y.reason === x.reason) || {}).count}`).join(', ')}`} />) : <p className="cap">Nothing lost in this period.</p>}</div>
+        {calCard}
+        {lostCard}
       </div>
-      <p className="cap act-foot">Leads are deals created in the period, per assigned rep. Won and lost count deals from those leads. Open and stale are what is on the desk now. Speed to lead follows the client's business-hours rule and counts the first reply a person sent{team.speedFull ? ', measured on every lead' : ', measured on as many leads as the read allowed'}. Calls come from the CRM's call export. Re-reads every 3 minutes, every minute in TV mode.</p>
+      <p className="cap act-foot">Leads are deals created in the period, per assigned rep. Won and lost count deals from those leads. Open and stale are what is on the desk now. Each pipeline's funnel and lost reasons are kept apart; a stage is never counted across pipelines. Speed to lead follows the client's business-hours rule and counts the first reply a person sent{team.speedFull ? ', measured on every lead' : ', measured on as many leads as the read allowed'}. Calls come from the CRM's call export. Re-reads every 3 minutes, every minute in TV mode.</p>
     </div>
   )
 }
@@ -17189,7 +17272,7 @@ function ClientWorkspace({ client, index, data, config, range, nonce, wonBasis =
         {curTab === 'timing' && <><EnquiryTimesSection clientId={client.id} range={range} nonce={nonce} pipe={pipe} onPipe={setPipe} /><TimingView clientId={client.id} range={range} nonce={nonce} currency={data.currency} /><StageTimingSection clientId={client.id} nonce={nonce} /></>}
         {curTab === 'lostreasons' && <LostReasonsView clientId={client.id} range={range} nonce={nonce} currency={data.currency} pipeName={pipeName} />}
         {curTab === 'actions' && <DealsActionsView clientId={client.id} authUser={authUser} currency={data.currency} nonce={nonce} />}
-        {curTab === 'saleshub' && <SalesHubView clientId={client.id} authUser={authUser} currency={data.currency} nonce={nonce} />}
+        {curTab === 'saleshub' && <SalesHubView clientId={client.id} authUser={authUser} currency={data.currency} nonce={nonce} pipe={pipe} onPipe={setPipe} pipes={pipes} />}
         {curTab === 'calperf' && <CalPerfView clientId={client.id} range={range} nonce={nonce} />}
         {curTab === 'clinic' && <ClinicView clientId={client.id} currency={data.currency} nonce={nonce} />}
         {curTab === 'optlog' && <ChangeLogTab clientId={client.id} range={range} nonce={nonce} hasMeta={!!(cfg.meta || client.meta)} hasGoogle={!!(cfg.google || client.google)} />}

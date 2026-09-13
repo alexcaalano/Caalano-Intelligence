@@ -3403,7 +3403,8 @@ export default async (req) => {
     if (isAccountUser(me)) return json({ error: 'The Sales Hub is for managers; your view is Deals & Actions.' }, 403)
     try {
       const staleDays = Math.max(3, Math.min(180, Number(url.searchParams.get('stale')) || 7))
-      return json({ scope: 'saleshub', client, ghl: true, period: { from, to, preset }, ...(await buildSalesHub(cc.ghl, { from, to, hours: parseHours(url), staleDays })) })
+      const pipeline = url.searchParams.get('pipeline') || null
+      return json({ scope: 'saleshub', client, ghl: true, period: { from, to, preset }, ...(await buildSalesHub(cc.ghl, { from, to, hours: parseHours(url), staleDays, pipeline: pipeline && pipeline !== 'all' ? pipeline : null })) })
     } catch (e) { return json({ scope: 'saleshub', client, ghl: true, error: String((e && e.message) || e).slice(0, 240) }) }
   }
 

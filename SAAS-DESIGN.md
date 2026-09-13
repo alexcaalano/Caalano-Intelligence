@@ -1146,3 +1146,12 @@ agency-wide board.
 
 Later: contests; the forecast; agency-wide roll-up across clients; AI call
 grading feeding a "coaching" column on the rep board.
+
+Update 2026-09-13 (v3.579.0): the hub follows the workspace pipeline
+picker; "All pipelines" keeps each pipeline's funnel, open deals and lost
+reasons in its own card and never merges a stage across pipelines (the
+same rule as the Caalano360 tab and the Revenue bottleneck). Appointments
+and calls stay per rep across the account because calendars are not tied
+to a pipeline. The celebration is a full-screen gong strike with the rep
+and the deal value; a recording at /gong.mp3 replaces the synthesised
+crash when present.

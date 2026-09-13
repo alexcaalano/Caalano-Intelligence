@@ -18,6 +18,33 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.579.0 - 2026-09-13 · `PENDING`
+
+**Sales Hub laid out properly** - the four numbers a manager asks for
+first (revenue, deals closed, meetings held, speed to lead) lead in big
+tiles, with leads, booked, no-shows, calls and open pipeline smaller under
+them. Coaching flags are grouped per rep and sit beside the leaderboard.
+The rep detail is now four fact columns (appointments, pipeline now, speed
+to lead, closing) and a compact funnel of that rep's leads, instead of a
+wall of stage counts. Appointments by calendar show booked, held and show
+rate as columns with a chip per rep. The gong and confetti toggles sit
+at the right of the toolbar.
+
+**Pipelines kept apart** - the hub follows the workspace pipeline picker
+like every other tab. With one pipeline chosen, leads, deals, stages,
+speed to lead and lost reasons are all within it. On "All pipelines" a
+multi-pipeline account gets a strip with each pipeline's own revenue, won,
+leads, win rate and open deals (with a Focus button), one pipeline card
+each with its own funnel and open-deals-by-stage, and lost reasons listed
+per pipeline. A stage is never counted across pipelines.
+
+**The gong crash** - the win sound is now a proper gong smash: a
+broadband crash through resonant bands that dips and swells back, forty
+detuned ringing partials underneath, and the mallet's thump. If a
+recording is preferred, a file at /gong.mp3 plays instead of the synth.
+
+---
+
 ## v3.578.0 - 2026-09-13 · `66b93ad`
 
 **A sharper gong** - the win sound is now a bright metallic strike that

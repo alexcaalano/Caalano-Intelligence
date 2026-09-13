@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.588.0 - 2026-09-13 · `PENDING`
+## v3.588.0 - 2026-09-13 · `2f42d66`
 
 **TV mode tidy** - the header now reads "September 2026 · Sales Hub ·
 month to date · day 13 of 30" and TV mode is always month to date. The

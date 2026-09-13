@@ -3476,7 +3476,12 @@ export default async (req) => {
     let d = null; try { d = await build(win.from, win.to) } catch (e) { return json({ scope: 'goalhistory', client, key, today, cells: {}, error: String((e && e.message) || e).slice(0, 160) }) }
     const reps = (d && d.reps) || []
     const cells = {}
-    for (const g of which) { const target = goalTargetFor(g, key); cells[g.id] = { target, actual: goalActual({ ...g, target }, reps) } }
+    for (const g of which) {
+      const target = goalTargetFor(g, key)
+      const shares = goalShares({ ...g, target }, reps.map((r) => r.id))
+      const byRep = reps.filter((r) => r.id !== 'unassigned' && (r.id in shares)).map((r) => ({ id: r.id, name: r.name, actual: repValue(r, g.metric, g.pipelines), share: shares[r.id] }))
+      cells[g.id] = { target, actual: goalActual({ ...g, target }, reps), byRep }
+    }
     return json({ scope: 'goalhistory', client, key, today, cells })
   }
   // Live CRM events for the Sales Hub's gong and wins feed: the last day of

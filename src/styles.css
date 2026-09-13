@@ -5390,6 +5390,10 @@ button.act-tier.on { border-color: var(--text); }
 .plan-in::placeholder { color: var(--faint); font-weight: 600; }
 .plan-t { font-weight: 700; font-size: 12.5px; }
 .plan-a { font-size: 12.5px; font-variant-numeric: tabular-nums; margin-top: 3px; } .plan-a small { color: var(--muted); }
+.plan-drill { display: block; width: 100%; background: none; border: none; font: inherit; font-size: 12.5px; color: inherit; cursor: pointer; padding: 2px 0; border-radius: 6px; }
+.plan-drill:hover:not(:disabled) { background: color-mix(in srgb, var(--brand) 10%, transparent); }
+.plan-drill.on { outline: 2px solid var(--brand); outline-offset: -1px; }
+.plan-drill:disabled { cursor: default; }
 .plan-cell.good .plan-a { color: var(--pos); font-weight: 700; } .plan-cell.bad .plan-a { color: var(--neg); font-weight: 700; } .plan-cell.warn .plan-a { color: #d9822b; font-weight: 700; }
 .plan-hit { font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .plan-range { font-weight: 700; margin-left: auto; white-space: nowrap; } .plan-range.good { color: var(--pos); } .plan-range.bad { color: var(--neg); } .plan-range.warn { color: #d9822b; }

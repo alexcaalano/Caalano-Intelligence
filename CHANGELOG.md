@@ -18,6 +18,18 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.597.0 - 2026-09-13 · `PENDING`
+
+**Further back, and into each month** - the Month by month board can
+show the last 6 or 12 months (five quarters with 12), and tapping any
+past or current cell opens the split by rep for that period: each rep's
+number against their share, green, amber or red. Past months' targets
+are editable in place like future ones, and the month re-grades against
+the new number as soon as it is saved. Twelve months is the limit because
+the CRM snapshot reaches back about fourteen.
+
+---
+
 ## v3.596.0 - 2026-09-13 · `b3a60df`
 
 **Month by month loads on real accounts** - the board now reads one

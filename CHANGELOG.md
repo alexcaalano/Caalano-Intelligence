@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.579.0 - 2026-09-13 · `PENDING`
+## v3.579.0 - 2026-09-13 · `21a2e58`
 
 **Sales Hub laid out properly** - the four numbers a manager asks for
 first (revenue, deals closed, meetings held, speed to lead) lead in big

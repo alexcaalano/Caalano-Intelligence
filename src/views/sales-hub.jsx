@@ -868,6 +868,9 @@ export function ActConversation({ clientId, row, data, canWrite, write, busy, lo
   const [subject, setSubject] = useState('')
   const [channel, setChannel] = useState('')
   const [reason, setReason] = useState('')
+  // The thread opens at its newest message, like the CRM does.
+  const msgsRef = useRef(null)
+  useEffect(() => { const el = msgsRef.current; if (el) el.scrollTop = el.scrollHeight }, [st.conv])
   const load = () => {
     setSt((s) => ({ ...s, status: 'loading' }))
     const q = row.id ? `&convId=${encodeURIComponent(row.id)}` : `&conv=${encodeURIComponent(row.contactId || '')}`
@@ -892,16 +895,18 @@ export function ActConversation({ clientId, row, data, canWrite, write, busy, lo
         </label> : <span className="cap">{ACT_CHANNELS[replyType] || replyType}</span>}
         <button type="button" className="btn-ghost sm" onClick={() => setOpen(false)}>Close</button></div>
       {st.status === 'loading' ? <p className="cap">Loading messages…</p> : st.status === 'err' ? <p className="cap act-bad">{st.error}</p> : !(conv.messages || []).length ? <p className="cap">No messages found.</p> : (
-        <div className="act-msgs">{conv.messages.map((m) => <div key={m.id} className={`act-msg-b ${m.direction === 'inbound' ? 'in' : 'out'}`}><div>{m.body || <i className="cap">({String(m.type || 'message').replace(/^TYPE_/, '').toLowerCase()})</i>}</div><div className="cap">{m.at ? new Date(m.at).toLocaleString('en-AU', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }) : ''}{m.direction === 'outbound' ? (m.userId ? ` · ${(userName && userName[m.userId]) || 'staff'}` : ' · automation') : ''}</div></div>)}</div>
+        <div className="act-msgs" ref={msgsRef}>{conv.messages.map((m) => { const when = m.at ? new Date(m.at).toLocaleString('en-AU', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }) : ''; const who = m.userId ? ((userName && userName[m.userId]) || 'staff') : m.direction === 'inbound' ? null : (m.source || 'automation'); const typeLabel = String(m.type || 'message').replace(/^TYPE_/, '').replace(/_/g, ' ').toLowerCase()
+          if (m.kind === 'activity' || m.kind === 'call') return <div key={m.id} className={`act-msg-sys ${m.kind}`}><span className="act-msg-sys-i" aria-hidden="true">{m.kind === 'call' ? '📞' : '⚙'}</span><span>{m.body || typeLabel}</span><span className="cap">{[when, who].filter(Boolean).join(' · ')}</span></div>
+          return <div key={m.id} className={`act-msg-b ${m.direction === 'inbound' ? 'in' : 'out'}`}><div>{m.body || <i className="cap">({typeLabel})</i>}</div><div className="cap">{[when, who].filter(Boolean).join(' · ')}</div></div> })}</div>
       )}
       {canReply ? <div className="act-note">
         {replyType === 'Email' ? <input className="act-in" type="text" value={subject} onChange={(e) => setSubject(e.target.value)} placeholder="Subject (optional)" maxLength={200} /> : null}
         <textarea value={text} onChange={(e) => setText(e.target.value)} placeholder={`Reply by ${ACT_CHANNELS[replyType] || replyType}…`} rows={2} />
         <div className="act-note-btns">
           <button type="button" className="btn-primary act-btn" disabled={busy || !text.trim()} onClick={async () => { const ok = await write({ op: 'reply', contactId: row.contactId, conversationId: conv.id || row.id, type: replyType, body: text.trim(), ...(replyType === 'Email' && subject.trim() ? { subject: subject.trim() } : {}) }, row.id, null, !keep); if (ok && keep) { setText(''); load() } }}>{keep ? 'Send' : 'Send & mark handled'}</button>
-          <ActOpen href={crmConvLink(loc, row.id)} label="Open in CRM" />
+          <ActOpen href={crmLink(loc, row.contactId) || crmConvLink(loc, row.id)} label="Open in CRM" />
         </div>
-      </div> : <div className="act-ctl"><ActOpen href={crmConvLink(loc, row.id)} label="Reply in CRM" /></div>}
+      </div> : <div className="act-ctl"><ActOpen href={crmLink(loc, row.contactId) || crmConvLink(loc, row.id)} label="Reply in CRM" /></div>}
       {canWrite && row.oppId && !keep ? <div className="act-ctl act-close-lost">
         <span className="cap">Not interested?</span>
         <select className="act-in" value={reason} onChange={(e) => setReason(e.target.value)}><option value="">Lost reason…</option>{(data.lostReasons || []).map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}</select>

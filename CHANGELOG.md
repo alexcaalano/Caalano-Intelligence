@@ -18,6 +18,20 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.608.0 - 2026-09-13 · `PENDING`
+
+**Conversations read like the CRM's** - a thread now opens at its newest
+message instead of the top. Rows that are not messages, the CRM's
+"Opportunity updated" and other activity entries and calls, draw as small
+centred notes with the time and who or what did it, not as speech
+bubbles, so a reply from the contact is never confused with an automation
+log. Every Open in CRM and Reply in CRM link on Deals & Actions now opens
+the contact's own page, which always lands on the right person; the
+conversation-by-id address it used before could open someone else's
+thread.
+
+---
+
 ## v3.607.0 - 2026-09-13 · `8ce17da`
 
 **Settings gets a CRM connection section** - beside Clients, for admins:

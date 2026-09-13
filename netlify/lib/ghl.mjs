@@ -5816,8 +5816,14 @@ export async function contactConversation(locationId, { contactId = null, conver
   if (!convId) return { id: null, messages: [], replyType: 'SMS' }
   const mj = await ghlGet(locTok, `/conversations/${encodeURIComponent(convId)}/messages`, { limit: 30 }).catch(() => null)
   const raw = (mj && mj.messages && (mj.messages.messages || mj.messages)) || (Array.isArray(mj) ? mj : [])
+  // Not everything in a thread is a message: the CRM logs opportunity,
+  // appointment and invoice activity (TYPE_ACTIVITY_*) and calls in the same
+  // list. Each row says what it is so the viewer can draw a system note or a
+  // call line instead of a speech bubble.
+  const kindOf = (t) => (/^TYPE_ACTIVITY/i.test(t) ? 'activity' : /call|voicemail/i.test(t) ? 'call' : 'message')
   const messages = raw.map((m) => ({
     id: m.id || m._id, direction: String(m.direction || '').toLowerCase(), type: m.messageType || m.type || null,
+    kind: kindOf(String(m.messageType || m.type || '')),
     body: htmlToText(m.body || (m.meta && m.meta.email && m.meta.email.subject) || '').slice(0, 2000),
     at: Date.parse(m.dateAdded || m.dateUpdated || m.createdAt) || null, userId: msgUserId(m) || null, source: m.source || null, status: m.status || null,
   })).filter((m) => m.at).sort((a, b) => a.at - b.at).slice(-30)

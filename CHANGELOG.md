@@ -18,6 +18,14 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.610.0 - 2026-09-13 · `PENDING`
+
+**Every mini board shows three places** - a board with only one or two
+reps on it now keeps the silver and bronze rows, dimmed and blank, so the
+Sales Hub's boards line up whatever the numbers are.
+
+---
+
 ## v3.609.0 - 2026-09-13 · `a0e2e55`
 
 **No more "Failed to fetch dynamically imported module"** - a page opened

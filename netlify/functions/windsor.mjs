@@ -2650,6 +2650,9 @@ const VIEWER_REQ_TABS = {
   // viewer granted the tab got a page of 403s. Mapped to the tab that issues it,
   // so it is still gated on that tab being ticked for them.
   'scope:usercalls': ['calls'],
+  // Daily ad spend, for the headline sparklines and the channel performance
+  // module: the same figures the Overview's health read already shows.
+  'scope:spenddaily': ['overall', 'meta', 'google'],
   // Ad-account change history, shown on the Change Log tab beside the
   // Optimisation Log sheet - so it rides the same grant that tab already needs.
   'scope:changehist': ['optlog'],
@@ -2670,7 +2673,7 @@ async function dashboardTabsFor(client) {
     const d = s && s.dashboards && s.dashboards[client]
     if (!d || (d.audience !== 'viewer' && d.audience !== 'viewers') || !Array.isArray(d.modules)) return []
     const tabs = new Set()
-    for (const m of d.modules) { const t = String((m && m.type) || ''); if (t === 'heading') continue; if (t.startsWith('tab:')) { const x = DASH_TAB_OF[t.slice(4)]; if (x) tabs.add(x) } else if (t.includes(':') && !t.startsWith('sec:')) { const x = DASH_TAB_OF[t.split(':')[0]]; if (x) tabs.add(x) } else tabs.add('overall') }
+    for (const m of d.modules) { const t = String((m && m.type) || ''); if (t === 'heading') continue; if (t.startsWith('tab:')) { const x = DASH_TAB_OF[t.slice(4)]; if (x) tabs.add(x) } else if (t.includes(':') && !t.startsWith('sec:')) { const x = DASH_TAB_OF[t.split(':')[0]]; if (x) tabs.add(x) } else { tabs.add('overall'); if (t === 'sec:movers' || t === 'sec:findings') { tabs.add('forms'); tabs.add('calls') } } }
     return [...tabs]
   } catch { return [] }
 }

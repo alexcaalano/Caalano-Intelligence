@@ -2027,14 +2027,14 @@ export function DashboardBuilder({ client: c }) {
       <div className="dash-add">
         <span className="cap">Who can see it</span>
         <span className="chan-toggle sm">
-          {DASH_AUD.map((a) => <button key={a} type="button" className={dashAudience(d) === a ? 'on' : ''} onClick={() => up({ audience: a })}>{a === 'super' ? 'Super Admins only' : a === 'admin' ? 'Admin' : a === 'user' ? 'User' : 'Viewer'}</button>)}
+          {DASH_AUD.map((a) => <button key={a} type="button" className={dashAudience(d) === a ? 'on' : ''} onClick={() => up({ audience: a })}>{a === 'super' ? 'Super Admins only' : a === 'admin' ? 'Admin' : a === 'user' ? 'User' : 'Account Admin/User'}</button>)}
         </span>
         {(() => {
           const a = dashAudience(d)
-          if (a === 'viewer') return <span className="cap">Open to <b>everyone</b>: every staff role sees the tab, and it appears as a <b>Custom dashboard</b> tick box in each viewer's allocation for this client - a viewer sees it only once their box is ticked. Modules marked agency-internal are hidden from viewers automatically.</span>
-          if (a === 'user') return <span className="cap">Open to <b>Users, Admins and Super Admins</b>. Viewers (clients) do not see it.</span>
-          if (a === 'admin') return <span className="cap">Open to <b>Admins and Super Admins</b>. Users and viewers do not see it.</span>
-          return <span className="cap">Only Super Admins see the tab. Staff and viewers see nothing new.</span>
+          if (a === 'viewer') return <span className="cap">Open to <b>everyone</b>: every staff role sees the tab, and it appears as a <b>Custom dashboard</b> tick box in each Account Admin's or Account User's allocation for this client - they see it only once their box is ticked, and then they see every module on it, spend and cost included.</span>
+          if (a === 'user') return <span className="cap">Open to <b>Users, Admins and Super Admins</b>. Account Admins and Account Users (clients) do not see it.</span>
+          if (a === 'admin') return <span className="cap">Open to <b>Admins and Super Admins</b>. Users, Account Admins and Account Users do not see it.</span>
+          return <span className="cap">Only Super Admins see the tab. Staff, Account Admins and Account Users see nothing new.</span>
         })()}
       </div>
       <div className="dash-add">
@@ -2047,7 +2047,7 @@ export function DashboardBuilder({ client: c }) {
         const def = DASH_MODULES.find((x) => x.type === m.type) || { label: m.type }
         return <div className={`dash-row${isHeading(m) ? ' dash-row-h' : ''}`} key={`${m.type}:${i}`}>
           <span className="dash-n">{i + 1}</span>
-          <div className="dash-lab"><b>{def.label}{def.internal ? <span className="dash-int">agency-internal · hidden from viewers</span> : null}</b>{def.hint ? <small>{def.hint}</small> : null}<input value={m.title || ''} onChange={(e) => setTitle(i, e.target.value)} placeholder={isHeading(m) ? 'Section title, e.g. Sales performance' : `Title shown to the client (default: ${def.label})`} maxLength={60} /></div>
+          <div className="dash-lab"><b>{def.label}{def.internal ? <span className="dash-int" title="This module includes the agency's spend and cost figures; everyone given the dashboard sees them">shows spend and cost</span> : null}</b>{def.hint ? <small>{def.hint}</small> : null}<input value={m.title || ''} onChange={(e) => setTitle(i, e.target.value)} placeholder={isHeading(m) ? 'Section title, e.g. Sales performance' : `Title shown to the client (default: ${def.label})`} maxLength={60} /></div>
           <div className="dash-btns"><button type="button" onClick={() => move(i, -1)} disabled={i === 0} title="Move up">▲</button><button type="button" onClick={() => move(i, 1)} disabled={i === d.modules.length - 1} title="Move down">▼</button><button type="button" onClick={() => remove(i)} title="Remove">✕</button></div>
         </div>
       }) : <div className="cap">No modules yet. Add one below, or start from a preset.</div>}

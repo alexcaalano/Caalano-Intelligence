@@ -33,7 +33,7 @@ const lazyView = (load, name) => {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-export const APP_VERSION = '3.611.0'
+export const APP_VERSION = '3.612.0'
 // The business clock. Every server window is cut on the client's local day
 // (Caalano Systems location timezone), so any day the app derives on its own -
 // preset ranges, "today", CSV dates - must use the same clock rather than the
@@ -8492,16 +8492,21 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
   const [refreshTick, setRefreshTick] = useState(0)   // the tab's own Refresh button
   const nx = (k) => (retries[k] ? `r${retries[k]}.${nonce || 0}` : (poll ? `p:${poll}` : (nonce ? `p:${nonce}` : 0)))
   const isViewer = !!(authUser && isClientRoleFE(authUser.role))
+  // The feeds behind the story, movers, indexing and channel modules: staff
+  // always; a client-side user only when they hold a custom dashboard, since
+  // that is the one place those modules can reach them (the server checks the
+  // same thing).
+  const feedsOn = !isViewer || !!(authUser && Array.isArray(authUser.tabs) && authUser.tabs.includes('custom'))
   // Daily ad spend for the V2 headline sparklines - its own light read, only
   // when V2 is drawing, so V1 never pays for it.
-  const spendDaily = useSwrJson(!isViewer ? spendDailyUrl(clientId, range, nx('ads')) : null)
+  const spendDaily = useSwrJson(feedsOn ? spendDailyUrl(clientId, range, nx('ads')) : null)
   // V2: the forms feed (forms + located leads) so the indexing and movers can
   // speak for the Forms and Location tabs too. Not fetched in V1.
-  const formsFeed = useForms(!isViewer ? clientId : null, range, nx('forms'))
+  const formsFeed = useForms(feedsOn ? clientId : null, range, nx('forms'))
   // Call Reporting figures per rep, one light read (calls only, no cadence) for
   // ranges up to a month, so the indexing can speak for that tab as well.
   const rangeDays = range && range.from && range.to ? Math.round((Date.parse(range.to) - Date.parse(range.from)) / 86400000) + 1 : 0
-  const callsFeed = useSwrJson(!isViewer && rangeDays > 0 && rangeDays <= 31 ? `/.netlify/functions/windsor?scope=usercalls&client=${clientId}&${rangeQuery(range)}&callsonly=1${nonceParam(nx('calls'))}` : null)
+  const callsFeed = useSwrJson(feedsOn && rangeDays > 0 && rangeDays <= 31 ? `/.netlify/functions/windsor?scope=usercalls&client=${clientId}&${rangeQuery(range)}&callsonly=1${nonceParam(nx('calls'))}` : null)
   // Cash position row: per-client switch in Settings → Account summary.
   const [cashOn, setCashOn] = useState(() => loadCashOn(clientId))
   useEffect(() => { setCashOn(loadCashOn(clientId)); return onSettings(() => setCashOn(loadCashOn(clientId))) }, [clientId])
@@ -8700,7 +8705,9 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
     const shown = (layout.modules || []).map((m, i) => {
       const def = DASH_MODULES.find((x) => x.type === m.type); if (!def) return null
       if (m.type === 'heading') return <div className="dash-sec-h" key={i}><h3>{m.title || 'Section'}</h3></div>
-      if (def.internal && isViewer) return null   // the agency's own reads never reach a client
+      // Every module on a dashboard is shown to whoever has been given the
+      // tab, Account Admins and Account Users included: the agency decides
+      // what goes on it, so nothing is hidden behind their back.
       const title = m.title || def.label
       if (m.type.startsWith('tab:')) { const node = tabNode(m.type.slice(4)); return node ? <div className="dash-mod" key={i}><div className="cc-group-lab dash-mod-t">{title}</div>{node}</div> : null }
       if (!m.type.startsWith('sec:') && m.type.includes(':')) {
@@ -16508,7 +16515,7 @@ function ClientPicker({ clients, selected, onToggle }) {
    allocation through `allowedTabsFE`, the same function the client workspace
    uses to build its tab strip, so what's listed here is what renders. */
 const SENSITIVE_TABS = {
-  custom: 'The custom dashboard built for this client. Agency-internal modules on it (story strip, priority actions, movers, indexing, channel performance, efficiency row) are hidden from viewers automatically.',
+  custom: 'The custom dashboard built for this client. Every module on it is shown to whoever has been given the tab, Account Admins and Account Users included; modules marked as showing spend and cost include the agency\'s cost figures.',
   timing: 'Grades their own sales team’s response times.',
   users: 'Per-rep performance inside their business.',
   optlog: 'Our change log for the account.',

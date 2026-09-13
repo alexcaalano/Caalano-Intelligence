@@ -18,6 +18,19 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.612.0 - 2026-09-13 · `PENDING`
+
+**Custom dashboards show every module to everyone given them** - the
+modules that used to be marked "agency-internal, hidden from viewers"
+(story strip, channel performance, movers, indexing, efficiency, priority
+actions) are no longer held back from Account Admins and Account Users.
+The agency decides what goes on a dashboard, and whoever is given the tab
+sees all of it. The badge now reads "shows spend and cost" so it is clear
+those modules carry cost figures, and the audience wording in the
+dashboard builder says Account Admin and Account User rather than Viewer.
+
+---
+
 ## v3.611.0 - 2026-09-13 · `21e9308`
 
 **Wins on old leads count, cash per pipeline, boards spread evenly** -

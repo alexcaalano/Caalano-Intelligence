@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.602.0 - 2026-09-13 · `PENDING`
+## v3.602.0 - 2026-09-13 · `28bbdae`
 
 **Goal progress that cannot time out, and a hub that opens warm** - goal
 progress on the hub and in Settings now reads one window per request

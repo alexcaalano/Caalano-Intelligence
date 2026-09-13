@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.609.0 - 2026-09-13 · `PENDING`
+## v3.609.0 - 2026-09-13 · `a0e2e55`
 
 **No more "Failed to fetch dynamically imported module"** - a page opened
 before a deploy could ask for a screen by its old file name and hit that

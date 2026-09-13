@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.583.0 - 2026-09-13 · `PENDING`
+## v3.583.0 - 2026-09-13 · `28174c3`
 
 **Top appointment setter** - the Sales Hub now counts the appointments
 each person actually set (the CRM's record of who made the booking),

@@ -3393,7 +3393,11 @@ export default async (req) => {
     // withDeals=1: only the reps who own opportunities (the Rep KPIs editor);
     // without it every user, for linking a login to a CRM user.
     const withDeals = url.searchParams.get('withDeals') === '1'
-    try { return json({ scope: 'crmusers', client, withDeals, users: (await (withDeals ? ghlRepRows(cc.ghl) : ghlUserRows(cc.ghl))).map((u) => ({ id: u.user_id, name: u.user_name, deals: u.deals })).filter((u) => u.id) }) }
+    try {
+      const users = (await (withDeals ? ghlRepRows(cc.ghl) : ghlUserRows(cc.ghl))).map((u) => ({ id: u.user_id, name: u.user_name, deals: u.deals })).filter((u) => u.id)
+      const pipelines = url.searchParams.get('pipelines') === '1' ? (await listPipelines(cc.ghl).catch(() => [])).map((p) => ({ id: p.id, name: p.name })) : undefined
+      return json({ scope: 'crmusers', client, withDeals, users, ...(pipelines ? { pipelines } : {}) })
+    }
     catch (e) { return json({ scope: 'crmusers', client, users: [], error: String((e && e.message) || e).slice(0, 200) }) }
   }
   // The Sales Hub: the manager's view of the whole team. Staff and Account

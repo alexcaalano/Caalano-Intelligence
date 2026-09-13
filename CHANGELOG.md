@@ -18,6 +18,31 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.593.0 - 2026-09-13 · `PENDING`
+
+**Goals: business, pipeline and rep targets in one builder** - Settings,
+a client, Goals replaces Rep KPIs. A goal is a metric, a monthly target,
+which pipelines and which reps it covers, and how the number is shared
+among those reps: a shared team number, each rep gets the full target,
+split evenly, split by percentage, or a custom amount per rep. A goal on
+every pipeline and every rep is a business goal; on one pipeline, a
+pipeline goal; on one rep, that rep's own target, which beats any share
+of a wider goal for the same metric. Percentages must add to 100 and
+custom amounts to the target before a goal saves. Appointments, calls and
+speed to lead are per rep, so they cannot be set per pipeline.
+
+**Where goals show** - business and pipeline goals are the dials on the
+Sales Hub, with the split by rep behind each dial; with a pipeline chosen
+only that pipeline's goals show, measured within it. A rep's share sits
+on their My results cockpit and drives the rep board's attainment. Rate
+and speed dials read as the team figure against the target.
+
+**Nothing lost** - Rep KPIs set earlier appear as goals automatically (a
+default becomes "each rep gets this", a per-rep number becomes that
+rep's own goal) until goals are saved once.
+
+---
+
 ## v3.592.0 - 2026-09-13 · `cbb12a8`
 
 **Hub funnels on key events** - the pipeline card and the rep detail

@@ -1178,3 +1178,17 @@ relays first (contained, uses data we hold, the part clients feel in cost
 per lead), after the Railway and Postgres move; the on-site script only if
 clients keep asking and once Postgres can take the volume; never
 fingerprinting. Detail in task #34.
+
+## 21. Goals: one object for business, pipeline and rep targets (2026-09-13)
+
+Built in v3.593.0 (src/lib/goals.js, shared by the app and its tests). A
+goal is { metric, target, period, pipelines, reps, split }. The level
+falls out of the scope; the split (shared, each, even, weighted, custom)
+says how attached reps own the number. Attainment is measured on the hub's
+event-date basis within the goal's scope; the server carries per-rep
+per-pipeline closed figures and open counts for that. A single-rep goal
+beats a share of a wider goal for the same metric. Rep KPIs migrate on
+read until goals are saved once. Phase 2: quarterly and custom periods,
+month history kept once a month ends, copy last month. In the SaaS schema
+this is a `goals` table (workspace, id, metric, target, period, scope
+json, split json) with a `goal_months` table for history.

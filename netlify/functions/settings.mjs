@@ -9,7 +9,7 @@ import { CLIENT_PROFILE_SEEDS } from '../lib/profiles.mjs'
 
 const store = () => getStore({ name: 'caalano-settings', consistency: 'strong' })
 const KEY = 'all'
-const SECTIONS = ['keyevents', 'kpis', 'campmap', 'enabled', 'restricted', 'insights', 'clients', 'formmeta', 'metaconv', 'health', 'creativemeta', 'creativetax', 'clientctx', 'fatigue', 'competitors', 'socialkpis', 'optlog', 'qualstage', 'aliases', 'logos', 'curator', 'profile', 'dailyperf', 'adnames', 'pdfdl', 'clinic', 'geo', 'forecasts', 'ui', 'dashboards', 'repkpis']
+const SECTIONS = ['keyevents', 'kpis', 'campmap', 'enabled', 'restricted', 'insights', 'clients', 'formmeta', 'metaconv', 'health', 'creativemeta', 'creativetax', 'clientctx', 'fatigue', 'competitors', 'socialkpis', 'optlog', 'qualstage', 'aliases', 'logos', 'curator', 'profile', 'dailyperf', 'adnames', 'pdfdl', 'clinic', 'geo', 'forecasts', 'ui', 'dashboards', 'repkpis', 'goals']
 const json = (obj, status = 200) => new Response(JSON.stringify(obj), {
   status, headers: { 'content-type': 'application/json', 'cache-control': 'no-store' },
 })
@@ -34,7 +34,7 @@ export default async (req) => {
           const pick = (obj) => { const o = {}; for (const k in (obj || {})) { if (allow.has(String(k).split(':')[0])) o[k] = obj[k] } return o }
           const scoped = {}
           // Client-keyed sections the viewer UI reads, filtered to their clients.
-          for (const s of ['keyevents', 'kpis', 'enabled', 'clients', 'formmeta', 'qualstage', 'aliases', 'logos', 'metaconv', 'adnames', 'clinic', 'campmap', 'geo', 'dashboards', 'repkpis']) scoped[s] = pick(data[s])
+          for (const s of ['keyevents', 'kpis', 'enabled', 'clients', 'formmeta', 'qualstage', 'aliases', 'logos', 'metaconv', 'adnames', 'clinic', 'campmap', 'geo', 'dashboards', 'repkpis', 'goals']) scoped[s] = pick(data[s])
           // campmap used to be passed through whole, on the belief that it was
           // campaign-name-keyed and so not per-client. It is actually keyed by
           // client id (SETTINGS.campmap[clientId]), and campaign names carry the

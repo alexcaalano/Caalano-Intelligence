@@ -6236,7 +6236,8 @@ export async function buildSalesHub(locationId, { from, to, hours = null, staleD
   for (const o of [...(wonOpps || []), ...(snap.opps || [])]) { const st0 = String(o && o.status || '').toLowerCase(); if (o && o.id && (st0 === 'won' || st0 === 'lost' || st0 === 'abandoned') && !closedById.has(o.id)) closedById.set(o.id, o) }
   const reasonNameC = {}; for (const r of (inp.reasons || [])) reasonNameC[r._id || r.id] = r.name
   const reasonOfC = (o) => { const rid = o.lostReasonId || o.lost_reason_id || (o.lostReason && (o.lostReason.id || o.lostReason._id)) || null; return (rid && reasonNameC[rid]) || (typeof o.lostReason === 'string' && o.lostReason) || 'Unspecified' }
-  const wonBy = new Map(), wonByPipe = new Map(), lostBy = new Map(), lostByPipeC = new Map()
+  const wonBy = new Map(), wonByPipe = new Map(), lostBy = new Map(), lostByPipeC = new Map(), closedByUserPipe = new Map()
+  const cup = (uid, pid) => { const k = `${uid}|${pid}`; let c = closedByUserPipe.get(k); if (!c) { c = { won: 0, revenue: 0, cash: 0, lost: 0 }; closedByUserPipe.set(k, c) } return c }
   for (const o of closedById.values()) {
     if (!inPipe(o)) continue
     const sc = Date.parse(o.lastStatusChangeAt || o.lastStageChangeAt || o.updatedAt || ''); if (!Number.isFinite(sc)) continue
@@ -6245,6 +6246,7 @@ export async function buildSalesHub(locationId, { from, to, hours = null, staleD
       // Lost or abandoned: counts on the day it was marked, with its reason.
       if (!inPeriod(sc)) continue
       const uidL = o.assignedTo || 'unassigned'; const l = lostBy.get(uidL) || { lost: 0, reasons: {} }; l.lost++; const rn = reasonOfC(o); l.reasons[rn] = (l.reasons[rn] || 0) + 1; lostBy.set(uidL, l)
+      cup(uidL, pidOf(o) || 'none').lost++
       const pidL = pidOf(o) || 'none'; const lp = lostByPipeC.get(pidL) || {}; lp[rn] = (lp[rn] || 0) + 1; lostByPipeC.set(pidL, lp)
       continue
     }
@@ -6256,6 +6258,7 @@ export async function buildSalesHub(locationId, { from, to, hours = null, staleD
     const cr = Date.parse(o.createdAt); if (Number.isFinite(cr)) { const dd = (sc - cr) / ACT_DAY; if (dd >= 0 && dd < 400) { w.closeSum += dd; w.closeN++ } }
     wonBy.set(uid, w)
     const pid = pidOf(o) || 'none'; const wp = wonByPipe.get(pid) || { won: 0, revenue: 0 }; wp.won++; wp.revenue += val; wonByPipe.set(pid, wp)
+    const cc2 = cup(uid, pid); cc2.won++; cc2.revenue += val; if (cashField) cc2.cash += num(oppCashValue(o, cashField))
   }
   const idleOf = (o) => { const u = Math.max(Date.parse(o.updatedAt) || 0, Date.parse(o.lastStatusChangeAt) || 0, Date.parse(o.lastStageChangeAt) || 0) || Date.parse(o.createdAt); return Number.isFinite(u) ? Math.max(0, Math.round((now - u) / ACT_DAY)) : null }
   const stageOpen = new Map()
@@ -6267,6 +6270,7 @@ export async function buildSalesHub(locationId, { from, to, hours = null, staleD
     if (st === 'open') {
       const pb = openByPipe.get(pidOf(o)) || { open: 0, openValue: 0, stale: 0 }; pb.open++; pb.openValue += num(o.monetaryValue); openByPipe.set(pidOf(o), pb)
       const n = (uid && nowBy.get(uid)) || { open: 0, openValue: 0, stale: 0, t7: 0, t14: 0, t21: 0, t30: 0, oldest: 0 }
+      if (uid) { const opk = pidOf(o) || 'none'; n.byPipe = n.byPipe || {}; n.byPipe[opk] = (n.byPipe[opk] || 0) + 1 }
       n.open++; n.openValue += num(o.monetaryValue)
       const idle = idleOf(o)
       if (idle != null && idle >= staleDays) { n.stale++; openByPipe.get(pidOf(o)).stale++; if (idle >= 30) n.t30++; else if (idle >= 21) n.t21++; else if (idle >= 14) n.t14++; else n.t7++; if (idle > n.oldest) n.oldest = idle }
@@ -6313,6 +6317,9 @@ export async function buildSalesHub(locationId, { from, to, hours = null, staleD
       // (won or lost) in the period over those plus what is still open now.
       decided: w.won + l.lost, resultRate: (w.won + l.lost + n.open) ? Math.round(((w.won + l.lost) / (w.won + l.lost + n.open)) * 100) : null,
       stages: u.stages, lostReasons: Object.entries(l.reasons).map(([reason, count]) => ({ reason, count })).sort((a, b) => b.count - a.count), byPipeline: u.byPipeline, reachByPipeline: reachRep.get(u.id) || {},
+      // Closed-date figures and open deals per pipeline, for goals scoped to a pipeline.
+      closedByPipeline: Object.fromEntries([...closedByUserPipe.entries()].filter(([k]) => k.startsWith(u.id + '|')).map(([k, c]) => [k.slice(u.id.length + 1), { won: c.won, revenue: Math.round(c.revenue), cash: Math.round(c.cash), lost: c.lost }])),
+      openByPipeline: n.byPipe || {},
     }
   }).sort((a, b) => (b.revenue - a.revenue) || (b.won - a.won) || (b.booked - a.booked))
   const sum = (k) => reps.reduce((a, r) => a + (r[k] || 0), 0)

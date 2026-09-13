@@ -8,12 +8,13 @@ import {
 import {
   fmtCurrency, fmtNumber, fmtCompact, fmtPct, pctChange,
 } from './lib/format.js'
+import { GOAL_METRICS, goalMetric, SPLITS, normGoals, newGoalId, goalShares, goalShareFor, validateGoal, goalLevel, repValue, goalActual, repTargetsFromGoals, migrateRepKpis } from './lib/goals.js'
 // CHANGELOG.md is loaded on demand (dynamic import) inside the Super-Admin Logs
 // panel - keeping ~200KB of markdown out of the main bundle for every visitor.
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.592.0'
+const APP_VERSION = '3.593.0'
 // The business clock. Every server window is cut on the client's local day
 // (Caalano Systems location timezone), so any day the app derives on its own -
 // preset ranges, "today", CSV dates - must use the same clock rather than the
@@ -4207,6 +4208,7 @@ const KEV_KEY = 'caalano_keyevents'
 const ANNOT_KEY = 'caalano_annot'   // global: show the methodology prose or not
 const FORECAST_KEY = 'caalano_forecasts'   // { [scenarioId]: scenario } - saved Funnel Forecaster scenarios, shared
 const DASH_KEY = 'caalano_dashboards'  // { clientId: { name, chan, modules: [{ type, title? }] } } - Super Admin custom dashboards
+const GOALS_KEY = 'caalano_goals'          // { clientId: { goals: [...] } } business / pipeline / rep goals (see src/lib/goals.js)
 const REPKPI_KEY = 'caalano_repkpis'       // { clientId: { default: {kpi: n}, byUser: { crmUserId: {kpi: n} } } } monthly rep targets
 const GEO_KEY = 'caalano_geo'             // { clientId: { mode, origin, place, radiusKm, byPipeline } }
 const CLINIC_CFG_KEY = 'caalano_clinic'   // { clientId: { cals: { [calendarId]: 'clinical'|'triage' } } }
@@ -4264,7 +4266,7 @@ const UI_LAYOUT_KEY = 'caalano_ui_layout'      // 'v1' | 'v2' - this browser's o
 const PDFDL_KEY = 'caalano_pdfdl'                // { clientId: bool } - per-client "clients may download the report PDF" (admin-toggled)
 const readLS = (k) => { try { return JSON.parse(localStorage.getItem(k) || '{}') } catch { return {} } }
 const writeLS = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)) } catch {} }
-const SETTINGS = { campmap: readLS(CMAP_KEY), kpis: readLS(KPI_KEY), keyevents: readLS(KEV_KEY), annotations: readLS(ANNOT_KEY), enabled: readLS(ENABLED_KEY), restricted: readLS(RESTRICTED_KEY), insights: readLS(AI_KEY), clients: readLS(CLIENTS_KEY), formmeta: readLS(FORMMETA_KEY), metaconv: readLS(METACONV_KEY), creativemeta: readLS(CREATIVEMETA_KEY), creativetax: readLS(CREATIVETAX_KEY), clientctx: readLS(CLIENTCTX_KEY), fatigue: readLS(FATIGUE_KEY), competitors: readLS(COMPETITORS_KEY), socialkpis: readLS(SOCIALKPIS_KEY), optlog: readLS(OPTLOG_KEY), qualstage: readLS(QUALSTAGE_KEY), aliases: readLS(ALIASES_KEY), logos: readLS(LOGOS_KEY), curator: readLS(CURATOR_KEY), profile: readLS(PROFILE_KEY), dailyperf: readLS(DAILYPERF_KEY), adnames: readLS(ADNAMES_KEY), pdfdl: readLS(PDFDL_KEY), clinic: readLS(CLINIC_CFG_KEY), geo: readLS(GEO_KEY), forecasts: readLS(FORECAST_KEY), ui: readLS(UI_KEY), dashboards: readLS(DASH_KEY), repkpis: readLS(REPKPI_KEY), loaded: false }
+const SETTINGS = { campmap: readLS(CMAP_KEY), kpis: readLS(KPI_KEY), keyevents: readLS(KEV_KEY), annotations: readLS(ANNOT_KEY), enabled: readLS(ENABLED_KEY), restricted: readLS(RESTRICTED_KEY), insights: readLS(AI_KEY), clients: readLS(CLIENTS_KEY), formmeta: readLS(FORMMETA_KEY), metaconv: readLS(METACONV_KEY), creativemeta: readLS(CREATIVEMETA_KEY), creativetax: readLS(CREATIVETAX_KEY), clientctx: readLS(CLIENTCTX_KEY), fatigue: readLS(FATIGUE_KEY), competitors: readLS(COMPETITORS_KEY), socialkpis: readLS(SOCIALKPIS_KEY), optlog: readLS(OPTLOG_KEY), qualstage: readLS(QUALSTAGE_KEY), aliases: readLS(ALIASES_KEY), logos: readLS(LOGOS_KEY), curator: readLS(CURATOR_KEY), profile: readLS(PROFILE_KEY), dailyperf: readLS(DAILYPERF_KEY), adnames: readLS(ADNAMES_KEY), pdfdl: readLS(PDFDL_KEY), clinic: readLS(CLINIC_CFG_KEY), geo: readLS(GEO_KEY), forecasts: readLS(FORECAST_KEY), ui: readLS(UI_KEY), dashboards: readLS(DASH_KEY), repkpis: readLS(REPKPI_KEY), goals: readLS(GOALS_KEY), loaded: false }
 const settingsSubs = new Set()
 const bumpSettings = () => { for (const fn of settingsSubs) fn() }
 function onSettings(fn) { settingsSubs.add(fn); return () => settingsSubs.delete(fn) }
@@ -4294,8 +4296,9 @@ async function hydrateSettings() {
       // First run: migrate whatever this browser holds up to the server.
       saveSettingsRemote({ campmap: SETTINGS.campmap, kpis: SETTINGS.kpis, keyevents: SETTINGS.keyevents, enabled: SETTINGS.enabled, restricted: SETTINGS.restricted, insights: SETTINGS.insights, clients: SETTINGS.clients, formmeta: SETTINGS.formmeta, metaconv: SETTINGS.metaconv, creativemeta: SETTINGS.creativemeta, creativetax: SETTINGS.creativetax, clientctx: SETTINGS.clientctx, fatigue: SETTINGS.fatigue })
     } else {
-      for (const s of ['campmap', 'kpis', 'keyevents', 'enabled', 'restricted', 'insights', 'clients', 'formmeta', 'metaconv', 'creativemeta', 'creativetax', 'clientctx', 'fatigue', 'competitors', 'socialkpis', 'optlog', 'qualstage', 'aliases', 'logos', 'curator', 'profile', 'dailyperf', 'adnames', 'pdfdl', 'geo', 'annotations', 'forecasts', 'ui', 'dashboards', 'repkpis']) SETTINGS[s] = { ...SETTINGS[s], ...(d[s] || {}) }
+      for (const s of ['campmap', 'kpis', 'keyevents', 'enabled', 'restricted', 'insights', 'clients', 'formmeta', 'metaconv', 'creativemeta', 'creativetax', 'clientctx', 'fatigue', 'competitors', 'socialkpis', 'optlog', 'qualstage', 'aliases', 'logos', 'curator', 'profile', 'dailyperf', 'adnames', 'pdfdl', 'geo', 'annotations', 'forecasts', 'ui', 'dashboards', 'repkpis', 'goals']) SETTINGS[s] = { ...SETTINGS[s], ...(d[s] || {}) }
       writeLS(CMAP_KEY, SETTINGS.campmap); writeLS(KPI_KEY, SETTINGS.kpis); writeLS(KEV_KEY, SETTINGS.keyevents); writeLS(ENABLED_KEY, SETTINGS.enabled); writeLS(RESTRICTED_KEY, SETTINGS.restricted); writeLS(AI_KEY, SETTINGS.insights); writeLS(CLIENTS_KEY, SETTINGS.clients); writeLS(FORMMETA_KEY, SETTINGS.formmeta); writeLS(METACONV_KEY, SETTINGS.metaconv); writeLS(CREATIVEMETA_KEY, SETTINGS.creativemeta); writeLS(CREATIVETAX_KEY, SETTINGS.creativetax); writeLS(CLIENTCTX_KEY, SETTINGS.clientctx); writeLS(FATIGUE_KEY, SETTINGS.fatigue); writeLS(COMPETITORS_KEY, SETTINGS.competitors); writeLS(SOCIALKPIS_KEY, SETTINGS.socialkpis); writeLS(OPTLOG_KEY, SETTINGS.optlog); writeLS(QUALSTAGE_KEY, SETTINGS.qualstage); writeLS(ALIASES_KEY, SETTINGS.aliases); writeLS(LOGOS_KEY, SETTINGS.logos); writeLS(CURATOR_KEY, SETTINGS.curator); writeLS(PROFILE_KEY, SETTINGS.profile); writeLS(DAILYPERF_KEY, SETTINGS.dailyperf); writeLS(ADNAMES_KEY, SETTINGS.adnames); writeLS(PDFDL_KEY, SETTINGS.pdfdl); writeLS(FORECAST_KEY, SETTINGS.forecasts); writeLS(UI_KEY, SETTINGS.ui); writeLS(DASH_KEY, SETTINGS.dashboards); writeLS(GEO_KEY, SETTINGS.geo); writeLS(REPKPI_KEY, SETTINGS.repkpis); writeLS(ANNOT_KEY, SETTINGS.annotations)
+      writeLS(GOALS_KEY, SETTINGS.goals)
     }
   } catch { /* offline: keep the localStorage cache */ }
   SETTINGS.loaded = true
@@ -16121,16 +16124,15 @@ function HubStat({ label, value, sub, tone, big }) {
   return <div className={`hub-stat ${tone || ''} ${big ? 'big' : ''}`}><div className="hub-stat-l">{label}</div><div className="hub-stat-v">{value}</div>{sub ? <div className="hub-stat-s">{sub}</div> : null}</div>
 }
 // Attainment against the summed rep targets for the month.
-// Team gauges: which summed rep targets get a dial, and how to read the team
-// and each rep's actual for them.
-const HUB_GAUGE_DEFS = [['revenue', 'Revenue', 'money'], ['cash', 'Cash collected', 'money'], ['won', 'Deals closed', 'count'], ['booked', 'Meetings booked', 'count'], ['userBooked', 'Set by reps', 'count'], ['held', 'Meetings held', 'count'], ['calls', 'Calls made', 'count'], ['minutes', 'Minutes on the phone', 'count'], ['leads', 'Leads', 'count']]
-const hubTeamVal = (team, key) => (key === 'held' ? team.showed : key === 'userBooked' ? team.set : team[key])
-const hubRepVal = (r, key) => (key === 'held' ? r.showed : key === 'userBooked' ? r.set : r[key])
 // A half-circle dial: the arc fills with attainment, a tick marks where pace
 // says it should be today, the number in the middle is the percentage.
-function HubDial({ label, actual, target, fmt, elapsed, monthly, onClick, open }) {
-  const a = actual || 0; const ratio = Math.min(1, a / target); const need = target * (monthly ? elapsed : 1)
-  const tone = a >= need ? 'good' : a >= need * 0.8 ? 'warn' : 'bad'
+function HubDial({ label, sub, actual, target, fmt, kind = 'count', elapsed, monthly, onClick, open }) {
+  const a = actual || 0
+  const lower = kind === 'lower', rate = kind === 'pct'
+  const ratio = lower ? (actual == null ? 0 : Math.min(1, target / Math.max(a, 0.01))) : Math.min(1, a / target)
+  const need = (rate || lower) ? target : target * (monthly ? elapsed : 1)
+  const tone = actual == null && (rate || lower) ? '' : lower ? (a <= target ? 'good' : a <= target * 1.5 ? 'warn' : 'bad') : a >= need ? 'good' : a >= need * 0.8 ? 'warn' : 'bad'
+  const toGo = lower ? (actual == null ? 'not measured yet' : a <= target ? 'Inside target 🎯' : `${repMin(a - target)} over`) : rate ? (actual == null ? 'nothing to rate yet' : a >= target ? 'On target 🎯' : `${Math.round(target - a)} points short`) : (a >= target ? 'Target hit 🎯' : `${fmt(target - a)} to go`)
   const R = 54, C = Math.PI * R, cx = 64, cy = 70
   const th = Math.PI * (1 - (monthly ? elapsed : 1)); const px = cx + Math.cos(th), py = cy - Math.sin(th)
   const p1 = [cx + (R - 9) * Math.cos(th), cy - (R - 9) * Math.sin(th)], p2 = [cx + (R + 9) * Math.cos(th), cy - (R + 9) * Math.sin(th)]
@@ -16140,12 +16142,12 @@ function HubDial({ label, actual, target, fmt, elapsed, monthly, onClick, open }
       <svg viewBox="0 0 128 82" aria-hidden="true">
         <path className="hub-dial-bg" d={`M ${cx - R} ${cy} A ${R} ${R} 0 0 1 ${cx + R} ${cy}`} />
         <path className="hub-dial-fg" d={`M ${cx - R} ${cy} A ${R} ${R} 0 0 1 ${cx + R} ${cy}`} style={{ strokeDasharray: C, strokeDashoffset: C * (1 - ratio) }} />
-        {monthly ? <line className="hub-dial-pace" x1={p1[0]} y1={p1[1]} x2={p2[0]} y2={p2[1]} /> : null}
-        <text className="hub-dial-pct" x={cx} y={cy - 4}>{Math.round((a / target) * 100)}%</text>
+        {monthly && !rate && !lower ? <line className="hub-dial-pace" x1={p1[0]} y1={p1[1]} x2={p2[0]} y2={p2[1]} /> : null}
+        <text className="hub-dial-pct" x={cx} y={cy - 4}>{Math.round(ratio * 100)}%</text>
       </svg>
-      <div className="hub-dial-l">{label}</div>
-      <div className="hub-dial-v">{fmt(a)} <small>/ {fmt(target)}</small></div>
-      <div className="hub-dial-s">{a >= target ? 'Target hit 🎯' : `${fmt(target - a)} to go`}</div>
+      <div className="hub-dial-l">{label}{sub ? <span className="hub-dial-sub">{sub}</span> : null}</div>
+      <div className="hub-dial-v">{actual == null ? '-' : fmt(a)} <small>/ {fmt(target)}</small></div>
+      <div className="hub-dial-s">{toGo}</div>
     </button>
   )
 }
@@ -16160,12 +16162,6 @@ function hubFunnelStages(clientId, p) {
   const wanted = new Map(ke.map((e) => [e.ref, e.label || e.ref]))
   const picked = all.filter((st) => wanted.has(st.name)).map((st) => ({ ...st, label: wanted.get(st.name) }))
   return { stages: picked.length ? picked : all.map((st) => ({ ...st, label: st.name })), keyed: picked.length > 0 }
-}
-function hubTargetsSum(clientId, reps) {
-  const k = loadRepKpis(clientId)
-  const out = {}
-  for (const r of reps) { const t = { ...k.default, ...((k.byUser || {})[r.id] || {}) }; for (const [key, v] of Object.entries(t)) if (Number(v) > 0 && !['showRate', 'winRate', 'speedMin'].includes(key)) out[key] = (out[key] || 0) + Number(v) }
-  return out
 }
 function SalesHubView({ clientId, authUser, currency, nonce, pipe: pipeProp, onPipe, pipes: pipesProp }) {
   // Follows the workspace's pipeline picker like every other tab: one
@@ -16223,10 +16219,21 @@ function SalesHubView({ clientId, authUser, currency, nonce, pipe: pipeProp, onP
   const reps = d.reps || []
   const money = (v) => fmtCurrency(v || 0, currency)
   const cashOn = !!(d.cashField && loadCashOn(clientId))
-  const targets = useMemo(() => hubTargetsSum(clientId, reps), [clientId, reps, SETTINGS.repkpis]) // eslint-disable-line
+  const goalsAll = useMemo(() => loadGoals(clientId), [clientId, SETTINGS.goals, SETTINGS.repkpis]) // eslint-disable-line
+  const repIdsAll = useMemo(() => reps.map((r) => r.id), [reps])
+  // Goals shown as dials: with a pipeline chosen, only goals scoped to it (the
+  // rep numbers are within it, so a business goal would read wrong); on All,
+  // business and pipeline goals but not single-rep goals (those live on My
+  // results). Rate and speed goals are per rep and shown as the team figure.
+  const hubGoals = useMemo(() => goalsAll.filter((g) => !(g.reps && g.reps.length === 1) && (d.pipelineId ? (g.pipelines && g.pipelines.includes(d.pipelineId)) : true)).map((g) => {
+    const m = goalMetric(g.metric) || []; const scoped = g.pipelines && !d.pipelineId
+    return { goal: g, key: g.id, label: g.name || m[1], sub: scoped ? g.pipelines.map((pid) => ((d.pipelines || []).find((p) => p.id === pid) || {}).name || 'Pipeline').join(', ') : (g.reps ? `${g.reps.length} reps` : null), kind: m[2], fmt: m[2] === 'money' ? money : m[2] === 'pct' ? (v) => `${Math.round(v)}%` : m[2] === 'lower' ? repMin : fmtNumber, actual: goalActual(g, reps), target: g.target }
+  }), [goalsAll, reps, d.pipelineId, d.pipelines]) // eslint-disable-line
+  const bizRevenue = goalsAll.find((g) => g.metric === 'revenue' && !g.pipelines && !g.reps)
+  const targets = { revenue: bizRevenue ? bizRevenue.target : 0 }
   const now = new Date(); const dim = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate(); const day = now.getDate(); const elapsed = Math.min(1, Math.max(0.03, day / dim))
   const monthly = period === 'this_month'
-  const dialDefs = HUB_GAUGE_DEFS.filter(([k]) => targets[k] > 0 && (k !== 'cash' || cashOn))
+  const dialDefs = hubGoals.filter((x) => x.kind !== 'money' || x.goal.metric !== 'cash' || cashOn)
   // Mini leaderboards: who leads on each thing a sales floor competes on.
   const boards = [
     ['set', 'Top appointment setter', (r) => r.set, fmtNumber, 'set'],
@@ -16245,7 +16252,7 @@ function SalesHubView({ clientId, authUser, currency, nonce, pipe: pipeProp, onP
     return rows.length ? { key, title, rows, fmt, unit } : null
   }).filter(Boolean)
   // Attainment per rep: revenue target first, then deals, then bookings.
-  const attain = (r) => { const k = loadRepKpis(clientId); const t = { ...k.default, ...((k.byUser || {})[r.id] || {}) }; const key = t.revenue > 0 ? 'revenue' : t.won > 0 ? 'won' : t.booked > 0 ? 'booked' : null; if (!key) return null; const a = key === 'revenue' ? r.revenue : key === 'won' ? r.won : r.booked; return { key, pct: Math.round(((a || 0) / t[key]) * 100), need: monthly ? elapsed * 100 : 100 } }
+  const attain = (r) => { const t = repTargetsFromGoals(goalsAll, r.id, repIdsAll); const key = t.revenue > 0 ? 'revenue' : t.won > 0 ? 'won' : t.booked > 0 ? 'booked' : null; if (!key) return null; const a = key === 'revenue' ? r.revenue : key === 'won' ? r.won : r.booked; return { key, pct: Math.round(((a || 0) / t[key]) * 100), need: monthly ? elapsed * 100 : 100 } }
   const status = (r) => { const a = attain(r); if (!a) return null; return a.pct >= a.need ? ['On pace', 'good'] : a.pct >= a.need * 0.8 ? ['At risk', 'warn'] : ['Behind', 'bad'] }
   const sorters = { revenue: (a, b) => b.revenue - a.revenue, won: (a, b) => b.won - a.won, booked: (a, b) => b.booked - a.booked, showed: (a, b) => b.showed - a.showed, showRate: (a, b) => (b.showRate ?? -1) - (a.showRate ?? -1), winRate: (a, b) => (b.winRate ?? -1) - (a.winRate ?? -1), calls: (a, b) => b.calls - a.calls, speed: (a, b) => (a.speedMin ?? 1e9) - (b.speedMin ?? 1e9), stale: (a, b) => b.stale - a.stale, attain: (a, b) => ((attain(b) || {}).pct ?? -1) - ((attain(a) || {}).pct ?? -1), leads: (a, b) => b.leads - a.leads }
   const board = [...reps].sort(sorters[sortKey] || sorters.revenue)
@@ -16400,18 +16407,20 @@ function SalesHubView({ clientId, authUser, currency, nonce, pipe: pipeProp, onP
   )
   const flagsByRep = []
   for (const f of flags) { let g = flagsByRep.find((x) => x.rep.id === f.rep.id); if (!g) { g = { rep: f.rep, tone: f.tone, items: [] }; flagsByRep.push(g) } g.items.push(f.text); if (f.tone === 'bad') g.tone = 'bad' }
-  const dials = dialDefs.length ? <div className="hub-dials">{dialDefs.map(([k, label, kind]) => <HubDial key={k} label={label} actual={hubTeamVal(team, k)} target={targets[k]} fmt={kind === 'money' ? money : fmtNumber} elapsed={elapsed} monthly={monthly} open={openGauge === k} onClick={() => setOpenGauge(openGauge === k ? null : k)} />)}</div> : null
+  const dials = dialDefs.length ? <div className="hub-dials">{dialDefs.map((x) => <HubDial key={x.key} label={x.label} sub={x.sub} actual={x.actual} target={x.target} fmt={x.fmt} kind={x.kind} elapsed={elapsed} monthly={monthly} open={openGauge === x.key} onClick={() => setOpenGauge(openGauge === x.key ? null : x.key)} />)}</div> : null
   const gaugeDetail = (() => {
-    const def = openGauge && targets[openGauge] ? HUB_GAUGE_DEFS.find((x) => x[0] === openGauge) : null
-    if (!def) return null
-    const [k, label, kind] = def; const fmt = kind === 'money' ? money : fmtNumber; const share = monthly ? elapsed : 1
-    const rows = reps.filter((r) => r.id !== 'unassigned').map((r) => { const t = Number((repTargetsFor(clientId, r.id) || {})[k]) || 0; const v = hubRepVal(r, k) || 0; return { r, v, t, pct: t ? Math.round((v / t) * 100) : null } }).sort((a, b) => b.v - a.v)
-    const max = Math.max(1, ...rows.map((x) => Math.max(x.v, x.t)))
-    return <div className="hub-gauge-detail"><div className="rep-lb-head"><h4>{label} by rep</h4><span className="cap">{monthly ? `${Math.round(elapsed * 100)}% of the month gone` : ''}</span><button type="button" className="btn-ghost sm" onClick={() => setOpenGauge(null)}>Close</button></div>
-      {rows.map((x) => <RepBar key={x.r.id} label={x.r.name} value={x.v} max={max} text={x.t ? `${fmt(x.v)} / ${fmt(x.t)} · ${x.pct}%` : fmt(x.v)} tone={x.t ? (x.v >= x.t * share ? 'good' : x.v >= x.t * share * 0.8 ? 'warn' : 'bad') : ''} />)}</div>
+    const x = openGauge ? dialDefs.find((y) => y.key === openGauge) : null
+    if (!x) return null
+    const g = x.goal; const fmt = x.fmt; const share = monthly && x.kind !== 'pct' && x.kind !== 'lower' ? elapsed : 1
+    const shares = goalShares(g, repIdsAll); const inScope = new Set(Object.keys(shares))
+    const rows = reps.filter((r) => r.id !== 'unassigned' && inScope.has(r.id)).map((r) => { const t = shares[r.id]; const v = repValue(r, g.metric, g.pipelines); return { r, v: v == null ? 0 : v, t, pct: t ? Math.round(((v || 0) / t) * 100) : null } }).sort((a, b) => (x.kind === 'lower' ? a.v - b.v : b.v - a.v))
+    const max = Math.max(1, ...rows.map((y) => Math.max(y.v, y.t || 0)))
+    const toneOf = (y) => (!y.t ? '' : x.kind === 'lower' ? (y.v <= y.t ? 'good' : 'bad') : y.v >= y.t * share ? 'good' : y.v >= y.t * share * 0.8 ? 'warn' : 'bad')
+    return <div className="hub-gauge-detail"><div className="rep-lb-head"><h4>{x.label} by rep</h4><span className="cap">{g.split === 'shared' && !(g.reps && g.reps.length === 1) && x.kind !== 'pct' && x.kind !== 'lower' ? 'shared team number, no slices' : monthly ? `${Math.round(elapsed * 100)}% of the month gone` : ''}</span><button type="button" className="btn-ghost sm" onClick={() => setOpenGauge(null)}>Close</button></div>
+      {rows.map((y) => <RepBar key={y.r.id} label={y.r.name} value={y.v} max={max} text={y.t ? `${fmt(y.v)} / ${fmt(y.t)} · ${y.pct}%` : fmt(y.v)} tone={toneOf(y)} />)}</div>
   })()
   const gaugeCard = dialDefs.length ? <div className="card rep-cockpit"><div className="rep-cockpit-head"><h4>{monthly ? 'This month against the team\'s targets' : 'Against the team\'s monthly targets'}</h4><span className="cap">{monthly ? `Day ${day} of ${dim} · ${Math.round(elapsed * 100)}% of the month gone · ` : ''}tap a dial for the split by rep</span></div>{dials}{gaugeDetail}</div>
-    : (authUser && isAdminishFE(authUser.role) ? <div className="card rep-cockpit-empty"><b>No rep targets yet.</b> <span className="cap">Set them in Settings → this client → Rep KPIs and the gauges light up here.</span></div> : null)
+    : (authUser && isAdminishFE(authUser.role) ? <div className="card rep-cockpit-empty"><b>No goals yet.</b> <span className="cap">Set them in Settings → this client → Goals and the gauges light up here.</span></div> : null)
   const boardsGrid = boards.length ? <div className="hub-boards">{boards.map((b) => <div className="card hub-board-card" key={b.key}><div className="hub-board-t">{b.title}</div>{b.rows.map((x, i) => <div className="hub-board-row" key={x.r.id}><span>{medal[i]}</span><span className="hub-board-n">{x.r.name}</span><b>{b.fmt(x.v)}{b.unit ? <small> {b.unit}</small> : null}</b></div>)}</div>)}</div> : null
   const sp = boards.length ? boards[spot % boards.length] : null
   const spotlight = sp ? <div className="card hub-spot" key={sp.key}><div className="hub-spot-k">{sp.title}</div><div className="hub-spot-n">{sp.rows[0].r.name}</div><div className="hub-spot-v">{sp.fmt(sp.rows[0].v)}{sp.unit ? <small> {sp.unit}</small> : null}</div>{sp.rows.length > 1 ? <div className="hub-spot-r">{sp.rows.slice(1).map((x, i) => <span key={x.r.id}>{medal[i + 1]} {x.r.name} <b>{sp.fmt(x.v)}</b></span>)}</div> : null}</div> : null
@@ -16431,7 +16440,7 @@ function SalesHubView({ clientId, authUser, currency, nonce, pipe: pipeProp, onP
         {dialDefs.length ? <div className="hub-tv-dials">{dials}{gaugeDetail}</div> : primary}
         <div className="hub-tv-grid">
           <div className="hub-tv-col">{leaderboard}<div className="card rep-card"><h4>Latest wins</h4>{allWins.length ? winsFeed(6) : <p className="cap">No wins in the last 7 days yet.</p>}</div></div>
-          <div className="hub-tv-col">{spotlight}{boardsGrid}{!dialDefs.length && authUser && isAdminishFE(authUser.role) ? <p className="cap">Set Rep KPIs in Settings and the gauges light up here.</p> : null}</div>
+          <div className="hub-tv-col">{spotlight}{boardsGrid}{!dialDefs.length && authUser && isAdminishFE(authUser.role) ? <p className="cap">Set goals in Settings and the gauges light up here.</p> : null}</div>
         </div>
         <div className="hub-tv-brand"><span className="hub-tv-brand-p">Powered by</span> <b>Caalano<span>360</span></b></div>
       </div>
@@ -16711,53 +16720,94 @@ function saveRepKpis(clientId, obj) {
   SETTINGS.repkpis = { ...(SETTINGS.repkpis || {}), [clientId]: obj }
   writeLS(REPKPI_KEY, SETTINGS.repkpis); saveSettingsRemote({ repkpis: { [clientId]: obj } }); bumpSettings()
 }
-const repTargetsFor = (clientId, userId) => { const k = loadRepKpis(clientId); const o = { ...k.default, ...((userId && k.byUser[userId]) || {}) }; for (const key of Object.keys(o)) if (!(Number(o[key]) > 0)) delete o[key]; return o }
-function RepKpiEditor({ clientId }) {
-  const [reps, setReps] = useState(null)
-  const [v, setV] = useState(() => loadRepKpis(clientId))
-  const [dirty, setDirty] = useState(false)
+// Goals for a client. Until goals are saved once, the old Rep KPIs are shown
+// as goals (a default is "each rep gets this"; a per-rep number is that rep's
+// own goal), so nothing set before is lost.
+function loadGoals(clientId) {
+  const v = SETTINGS.goals && SETTINGS.goals[clientId]
+  if (v && Array.isArray(v.goals)) return normGoals(v.goals)
+  return migrateRepKpis(loadRepKpis(clientId))
+}
+const goalsSaved = (clientId) => !!(SETTINGS.goals && SETTINGS.goals[clientId] && Array.isArray(SETTINGS.goals[clientId].goals))
+function saveGoals(clientId, goals) {
+  const obj = { goals: normGoals(goals), savedAt: Date.now() }
+  SETTINGS.goals = { ...(SETTINGS.goals || {}), [clientId]: obj }
+  writeLS(GOALS_KEY, SETTINGS.goals); saveSettingsRemote({ goals: { [clientId]: obj } }); bumpSettings()
+}
+// A rep's own monthly targets: their share of every goal that covers them.
+const repTargetsFor = (clientId, userId, allRepIds = null) => repTargetsFromGoals(loadGoals(clientId), userId, allRepIds)
+// Goals: business, pipeline and rep targets in one builder. Metric, target,
+// which pipelines, which reps, and how the number is split among them.
+function GoalsEditor({ clientId, currency }) {
+  const [meta, setMeta] = useState({ users: null, pipelines: [] })
+  const [goals, setGoals] = useState(() => loadGoals(clientId))
+  const [edit, setEdit] = useState(null)
   const [saved, setSaved] = useState(false)
-  useEffect(() => { setV(loadRepKpis(clientId)); setDirty(false) }, [clientId])
+  useEffect(() => { setGoals(loadGoals(clientId)); setEdit(null) }, [clientId])
   useEffect(() => {
-    // Only the reps who own deals, not every login on the account.
-    fetch(`/.netlify/functions/windsor?scope=crmusers&withDeals=1&client=${encodeURIComponent(clientId)}`, { credentials: 'same-origin' })
-      .then((r) => r.json().catch(() => ({ users: [] }))).then((j) => setReps((j && j.users) || [])).catch(() => setReps([]))
+    fetch(`/.netlify/functions/windsor?scope=crmusers&withDeals=1&pipelines=1&client=${encodeURIComponent(clientId)}`, { credentials: 'same-origin' })
+      .then((r) => r.json().catch(() => ({}))).then((j) => setMeta({ users: (j && j.users) || [], pipelines: (j && j.pipelines) || [] })).catch(() => setMeta({ users: [], pipelines: [] }))
   }, [clientId])
-  const set = (scope, key, val) => {
-    setDirty(true); setSaved(false)
-    setV((cur) => {
-      const n = Number(val); const next = { default: { ...cur.default }, byUser: { ...cur.byUser } }
-      if (scope === 'default') { if (n > 0) next.default[key] = n; else delete next.default[key] }
-      else { const u = { ...(next.byUser[scope] || {}) }; if (n > 0) u[key] = n; else delete u[key]; if (Object.keys(u).length) next.byUser[scope] = u; else delete next.byUser[scope] }
-      return next
-    })
+  const users = meta.users || []
+  const repIds = users.map((u) => u.id)
+  const nameOf = (id) => (users.find((u) => u.id === id) || {}).name || 'Former rep'
+  const pipeName = (id) => (meta.pipelines.find((p) => p.id === id) || {}).name || 'Pipeline'
+  const fmtT = (g) => { const m = goalMetric(g.metric) || []; return m[2] === 'money' ? fmtCurrency(g.target, currency) : m[2] === 'pct' ? `${g.target}%` : m[2] === 'lower' ? `${g.target} min` : fmtNumber(g.target) }
+  const persist = (next) => { setGoals(next); saveGoals(clientId, next); setSaved(true); setTimeout(() => setSaved(false), 2000) }
+  const blank = () => ({ id: newGoalId(), name: '', metric: 'revenue', target: '', period: 'month', pipelines: null, reps: null, split: 'even', weights: {}, shares: {} })
+  const groups = [['business', 'Business and team goals', 'Every pipeline; all reps or the reps ticked.'], ['pipeline', 'Pipeline goals', 'One or more pipelines; split among the reps attached.'], ['rep', 'Rep goals', 'One rep\'s own target. Beats any share of a wider goal for the same metric.']]
+  const summary = (g) => {
+    const m = goalMetric(g.metric) || []
+    const scope = [g.pipelines ? g.pipelines.map(pipeName).join(', ') : 'All pipelines', g.reps ? g.reps.map(nameOf).join(', ') : 'All reps'].join(' · ')
+    const split = (SPLITS.find(([k]) => k === (g.reps && g.reps.length === 1 ? 'each' : g.split)) || [])[1] || ''
+    return `${m[1]} · ${fmtT(g)} monthly · ${scope}${m[2] === 'pct' || m[2] === 'lower' || (g.reps && g.reps.length === 1) ? '' : ` · ${split.toLowerCase()}`}`
   }
-  const save = () => { saveRepKpis(clientId, v); setDirty(false); setSaved(true) }
-  // Reps with deals, plus anyone who already has a target saved (so a target
-  // set for a rep who is between deals stays visible and editable).
-  const repIds = new Set((reps || []).map((r) => r.id))
-  const kept = Object.keys(v.byUser || {}).filter((id) => !repIds.has(id)).map((id) => [id, 'Former rep'])
-  const cols = [['default', 'Every rep (default)'], ...((reps || []).map((r) => [r.id, r.name])), ...kept]
+  const form = edit ? (() => {
+    const g = edit; const m = goalMetric(g.metric) || []; const isRate = m[2] === 'pct' || m[2] === 'lower'
+    const set = (patch) => setEdit({ ...g, ...patch })
+    const ids = g.reps || repIds
+    const errs = validateGoal({ ...g, target: Number(g.target) }, repIds)
+    const toggle = (list, id) => { const cur = list || []; return cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id] }
+    const shares = goalShares({ ...g, target: Number(g.target) || 0 }, repIds)
+    return (
+      <div className="card goal-form">
+        <div className="rep-lb-head"><h4>{goals.some((x) => x.id === g.id) ? 'Edit goal' : 'New goal'}</h4><button type="button" className="btn-ghost sm" onClick={() => setEdit(null)}>Cancel</button></div>
+        <div className="goal-grid">
+          <label className="goal-f">Metric<select value={g.metric} onChange={(e) => { const mm = goalMetric(e.target.value); set({ metric: e.target.value, pipelines: mm && !mm[3] ? null : g.pipelines }) }}>{GOAL_METRICS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></label>
+          <label className="goal-f">Target a month{m[2] === 'pct' ? ' (%)' : m[2] === 'lower' ? ' (minutes)' : m[2] === 'money' ? ` (${currency || 'AUD'})` : ''}<input type="number" min="0" step={m[2] === 'money' ? '100' : '1'} inputMode="decimal" value={g.target} onChange={(e) => set({ target: e.target.value })} /></label>
+          <label className="goal-f">Name <span className="cap">(optional)</span><input type="text" value={g.name} placeholder={m[1] ? `${m[1]} goal` : ''} onChange={(e) => set({ name: e.target.value })} /></label>
+        </div>
+        <div className="goal-f"><span>Pipelines</span>{m[3] === false ? <p className="cap">{m[1]} is per rep, not per pipeline.</p> : <div className="hub-chips">
+          <button type="button" className={`goal-chip ${!g.pipelines ? 'on' : ''}`} onClick={() => set({ pipelines: null })}>All pipelines</button>
+          {meta.pipelines.map((p) => <button type="button" key={p.id} className={`goal-chip ${g.pipelines && g.pipelines.includes(p.id) ? 'on' : ''}`} onClick={() => { const n = toggle(g.pipelines, p.id); set({ pipelines: n.length ? n : null }) }}>{p.name}</button>)}
+        </div>}</div>
+        <div className="goal-f"><span>Reps</span><div className="hub-chips">
+          <button type="button" className={`goal-chip ${!g.reps ? 'on' : ''}`} onClick={() => set({ reps: null })}>All reps</button>
+          {users.map((u) => <button type="button" key={u.id} className={`goal-chip ${g.reps && g.reps.includes(u.id) ? 'on' : ''}`} onClick={() => { const n = toggle(g.reps, u.id); set({ reps: n.length ? n : null }) }}>{u.name}</button>)}
+          {meta.users === null ? <span className="cap">Loading reps…</span> : null}
+        </div></div>
+        {!isRate && !(g.reps && g.reps.length === 1) ? <label className="goal-f">How the number is shared<select value={g.split} onChange={(e) => set({ split: e.target.value })}>{SPLITS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></label> : null}
+        {!isRate && (g.split === 'weighted' || g.split === 'custom') && !(g.reps && g.reps.length === 1) ? <div className="goal-f"><span>{g.split === 'weighted' ? 'Percentage per rep' : 'Amount per rep'}</span>
+          <div className="goal-shares">{ids.map((id) => <label key={id}><span>{nameOf(id)}</span><input type="number" min="0" step={g.split === 'weighted' ? '1' : '1'} value={g.split === 'weighted' ? (g.weights[id] ?? '') : (g.shares[id] ?? '')} onChange={(e) => set(g.split === 'weighted' ? { weights: { ...g.weights, [id]: e.target.value } } : { shares: { ...g.shares, [id]: e.target.value } })} />{g.split === 'weighted' ? <b>= {shares[id] != null ? fmtT({ ...g, target: shares[id] }) : '-'}</b> : null}</label>)}</div>
+          <p className="cap">{g.split === 'weighted' ? `Adds up to ${ids.reduce((a, id) => a + (Number(g.weights[id]) || 0), 0)}%` : `Adds up to ${fmtT({ ...g, target: ids.reduce((a, id) => a + (Number(g.shares[id]) || 0), 0) })} of ${fmtT({ ...g, target: Number(g.target) || 0 })}`}</p></div> : null}
+        {!isRate && g.split === 'even' && ids.length && Number(g.target) > 0 ? <p className="cap">Each of the {ids.length} reps gets {fmtT({ ...g, target: shares[ids[0]] || 0 })}.</p> : null}
+        {errs.length ? <ul className="goal-errs">{errs.map((e, i) => <li key={i}>{e}</li>)}</ul> : null}
+        <div className="act-note-btns"><button type="button" className="btn-primary act-btn" disabled={errs.length > 0} onClick={() => { const next = goals.some((x) => x.id === g.id) ? goals.map((x) => (x.id === g.id ? { ...g, target: Number(g.target) } : x)) : [...goals, { ...g, target: Number(g.target) }]; persist(next); setEdit(null) }}>Save goal</button></div>
+      </div>
+    )
+  })() : null
   return (
-    <div className="repkpi">
-      <p className="cap" style={{ marginTop: 0 }}>Monthly targets. The default applies to every rep; a number under a rep's name overrides it for them. Leave blank to not track that one. Reps see these as progress bars on My results, with a pace mark for how far through the month it is. Only reps with deals assigned are listed.</p>
-      <div className="table-wrap"><table className="mini-tbl repkpi-tbl">
-        <thead><tr><th className="lft">Target per month</th>{cols.map(([id, name]) => <th key={id} className="lft">{name}</th>)}</tr></thead>
-        <tbody>{REP_KPI_DEFS.map(([key, label, kind]) => (
-          <tr key={key}><td className="lft"><b>{label}</b>{kind === 'lower' ? <span className="cap"> · lower is better</span> : kind === 'pct' ? <span className="cap"> · %</span> : null}</td>
-            {cols.map(([id]) => { const val = id === 'default' ? v.default[key] : (v.byUser[id] || {})[key]; const ph = id === 'default' ? '-' : (v.default[key] != null ? String(v.default[key]) : '-')
-              return <td key={id}><input className="act-in repkpi-in" type="number" min="0" inputMode="decimal" placeholder={ph} value={val == null ? '' : val} onChange={(e) => set(id, key, e.target.value)} /></td> })}
-          </tr>
-        ))}</tbody>
-      </table></div>
-      {reps && !reps.length ? <p className="cap">No CRM users found for this account yet, so only the default column is shown.</p> : null}
-      <div className="act-ctl" style={{ marginTop: 10 }}><button type="button" className="btn-primary" disabled={!dirty} onClick={save}>Save targets</button>{saved ? <span className="cap" style={{ color: 'var(--pos)' }}>Saved.</span> : null}</div>
+    <div className="goals">
+      <p className="cap" style={{ marginTop: 0 }}>A goal is a metric, a monthly target, which pipelines and which reps it covers, and how the number is shared among those reps. A goal on every pipeline and every rep is a business goal; on one pipeline, a pipeline goal; on one rep, that rep's own target. Business and pipeline goals become the dials on the Sales Hub; a rep's share shows on their My results cockpit. {!goalsSaved(clientId) && goals.length ? 'The Rep KPIs set earlier are shown here as goals; save any change and they are kept as goals from then on.' : ''}</p>
+      <div className="act-note-btns" style={{ marginBottom: 12 }}><button type="button" className="btn-primary act-btn" disabled={!!edit} onClick={() => setEdit(blank())}>New goal</button>{saved ? <span className="cap">Saved.</span> : null}</div>
+      {form}
+      {groups.map(([lvl, title, hint]) => { const list = goals.filter((g) => goalLevel(g) === lvl); return (
+        <div className="goal-group" key={lvl}><div className="hub-sub">{title} <span className="cap">· {hint}</span></div>
+          {list.length ? list.map((g) => <div className="goal-row" key={g.id}><div><b>{g.name || (goalMetric(g.metric) || [])[1]}</b><div className="cap">{summary(g)}</div></div><div className="act-note-btns"><button type="button" className="btn-ghost sm" onClick={() => setEdit({ ...g, target: String(g.target) })}>Edit</button><button type="button" className="btn-ghost sm" onClick={() => { if (window.confirm('Delete this goal?')) persist(goals.filter((x) => x.id !== g.id)) }}>Delete</button></div></div>) : <p className="cap">None yet.</p>}
+        </div>) })}
     </div>
   )
 }
-// The month so far against the targets: one bar per tracked KPI. Pace = the
-// share of the month elapsed; on pace is green, a little behind amber, well
-// behind red. Rates and speed compare straight against the target.
 function RepCockpit({ clientId, rep, currency, nonce, canEdit }) {
   const st = useRepCard(clientId, rep, 'this_month', nonce)
   useSettingsSync()
@@ -16767,7 +16817,7 @@ function RepCockpit({ clientId, rep, currency, nonce, canEdit }) {
   const dim = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()
   const day = now.getDate()
   const elapsed = Math.min(1, Math.max(0.03, day / dim))
-  if (!keys.length) return canEdit ? <div className="card rep-cockpit-empty"><b>No monthly targets yet.</b> <span className="cap">Set them in Settings → this client → Rep KPIs, and this becomes the rep's cockpit.</span></div> : null
+  if (!keys.length) return canEdit ? <div className="card rep-cockpit-empty"><b>No monthly targets yet.</b> <span className="cap">Set goals in Settings → this client → Goals, and this becomes the rep's cockpit.</span></div> : null
   const d = st.data || {}
   const ap = d.appointments || {}
   const actual = {
@@ -19486,7 +19536,7 @@ function SettingsEditModal({ client: c, names, currency, canManageAccounts, onCl
   if (c.ghl) tabs.push(['forms', 'Forms', 'Tracking', 'Form → pipeline, and notes'])
   if (c.meta || c.google || c.ghl) tabs.push(['kpis', 'KPI targets', 'Targets', 'Budget, funnel and efficiency targets'])
   if (c.ghl) tabs.push(['geo', 'Catchment', 'Targets', 'Where the leads should come from'])
-  if (c.ghl) tabs.push(['repkpis', 'Rep KPIs', 'Targets', 'Monthly targets per rep'])
+  if (c.ghl) tabs.push(['goals', 'Goals', 'Targets', 'Business, pipeline and rep targets'])
   if (c.ghl && bizType === 'clinic') tabs.push(['clinic', 'Clinic', 'Operations', 'Practitioners and appointment types'])
   tabs.push(['optlog', 'Optimisation Log', 'Operations', 'The Google Sheet of changes made'])
   if (c.ghl && (c.meta || c.google)) tabs.push(['diagnostics', 'Diagnostics', 'Operations', 'Is tracking actually working'])
@@ -19568,7 +19618,7 @@ function SettingsEditModal({ client: c, names, currency, canManageAccounts, onCl
           {tab === 'timing' && <div className="set-tabpane"><TimingSettings clientId={c.id} hasMeta={!!c.meta} /></div>}
           {tab === 'dashboard' && canManageAccounts && <div className="set-tabpane"><div className="set-sec-t">Custom dashboard</div><DashboardBuilder client={c} /></div>}
           {tab === 'geo' && <GeoSettings clientId={c.id} />}
-          {tab === 'repkpis' && <div className="set-tabpane"><div className="set-sec-t">Rep KPIs - monthly targets per rep</div><RepKpiEditor clientId={c.id} /></div>}
+          {tab === 'goals' && <div className="set-tabpane"><div className="set-sec-t">Goals - business, pipeline and rep targets</div><GoalsEditor clientId={c.id} currency={c.currency} /></div>}
           {tab === 'clinic' && <ClinicSettings clientId={c.id} nonce={sig} />}
           {tab === 'metaconv' && <div className="set-tabpane"><div className="set-sec-t">Meta conversions - primary &amp; secondary results</div><MetaConversionsEditor clientId={c.id} currency={currency} /></div>}
           {tab === 'links' && <div className="set-tabpane"><div className="set-sec-t">Link campaigns to pipelines</div><CampaignLinker clientId={c.id} embedded nonce={sig} /></div>}

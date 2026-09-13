@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.605.0 - 2026-09-13 · `PENDING`
+## v3.605.0 - 2026-09-13 · `56cdaa3`
 
 **Connect from inside GoHighLevel** - an install started in the CRM
 itself (the agency Marketplace, "install for all sub-accounts") lands on

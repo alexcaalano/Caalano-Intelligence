@@ -18,6 +18,26 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.602.0 - 2026-09-13 · `PENDING`
+
+**Goal progress that cannot time out, and a hub that opens warm** - goal
+progress on the hub and in Settings now reads one window per request
+(this month, this quarter, each custom-dates goal), the same route the
+Month by month board uses, instead of building every window in one call.
+A hub build is now kept in the site's cache and shared by the hub, the
+goal dials and the board: a window still running is good for three
+minutes, a finished month or quarter for six hours. The hub re-reads
+progress every four minutes rather than on every poll. The warmer now
+builds each account's month-to-date hub every ten minutes, which also
+warms this month's goals, and its speed-to-lead entry carries the
+business hours the app sends, so that key is finally the one the tab
+reads. The separate 400-day read of closed deals is gone: it returned
+the same deals the snapshot already holds and, on a large account,
+paged the CRM live for nothing. When the snapshot is at its cap the hub
+says from which date closed deals are counted.
+
+---
+
 ## v3.601.0 - 2026-09-13 · `679df03`
 
 **A switch for each sound** - Gong sound, Lead sound and Booking sound

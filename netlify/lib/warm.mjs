@@ -130,7 +130,8 @@ export function planForClient(id, cc, ranges) {
     if (p30) for (const wb of ['closed', 'created']) urls.push(q({ scope: 'ccdrill', client: id, channel: 'all', from: p30.from, to: p30.to, wonBasis: wb }))
     urls.push(q({ scope: 'usercalls', client: id, from: r30.from, to: r30.to, callsonly: '1' }))
     urls.push(q({ scope: 'forms', client: id, from: r30.from, to: r30.to }))
-    urls.push(q({ scope: 'speed', client: id, from: r30.from, to: r30.to }))
+    urls.push(q({ scope: 'speed', client: id, from: r30.from, to: r30.to, ...DEFAULT_HOURS_QS }))
+    if (ranges.mtd) urls.push(q({ scope: 'saleshub', client: id, from: ranges.mtd.from, to: ranges.mtd.to, preset: 'this_month', stale: '7', ...DEFAULT_HOURS_QS }))
     urls.push(q({ scope: 'appts', client: id, from: r30.from, to: r30.to }))
     urls.push(q({ scope: 'cohorts', client: id, weeks: '12' }))
   }
@@ -145,8 +146,13 @@ export function planForAgency(ranges) {
 export function currentRanges() {
   const today = sydneyToday()
   const r30 = rollingRange(30, today)
-  return { r30, r7: rollingRange(7, today), p30: prevRangeOf(r30) }
+  // Month to date, the Sales Hub's default (and the goals' current window).
+  const mtd = { from: iso(today).slice(0, 8) + '01', to: iso(today) }
+  return { r30, r7: rollingRange(7, today), p30: prevRangeOf(r30), mtd }
 }
+// The app sends business hours on the speed and hub reads unless a client has
+// turned them off; a warmed key without them is one nobody reads.
+export const DEFAULT_HOURS_QS = { bhDays: '1,2,3,4,5', bhStart: '540', bhEnd: '1020' }
 
 // --- triggering -------------------------------------------------------------
 // Calls the background function and returns as soon as Netlify has accepted the

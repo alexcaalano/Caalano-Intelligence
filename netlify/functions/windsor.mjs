@@ -2634,7 +2634,7 @@ const VIEWER_REQ_TABS = {
   // given exactly this and nothing else.
   'scope:actions': ['actions'],
   'scope:repcard': ['actions'],
-  'scope:saleshub': ['saleshub'], 'scope:hublive': ['saleshub'], 'scope:goals': ['saleshub'], 'scope:goalhistory': ['saleshub'],
+  'scope:saleshub': ['saleshub'], 'scope:hublive': ['saleshub'], 'scope:goalhistory': ['saleshub'],
   'scope:speedscan': ['timing'],
   // The other two sections on the Timing tab. Both were added after this map and
   // never registered in it, and the map denies by default - so a viewer granted
@@ -2796,14 +2796,26 @@ const CACHEABLE_CHANNELS = new Set(['meta', 'google', 'attribution', 'blend'])
 // per-caller filtering) - the gate below enforces that, and each builder already
 // returns cache=!filtered, so a restricted caller still rebuilds live.
 const CACHEABLE_SCOPES_NOCLIENT = new Set(['agency', 'coverage', 'clinics'])
-// Goal windows: a hub build per (client, from, to), kept for three minutes so
-// the Sales Hub's poll and the settings page do not rebuild the same quarter.
-const _goalsMemo = new Map()
-function goalsBuildMemo(client, key, fn) {
-  const k = `${client}|${key}`; const hit = _goalsMemo.get(k)
-  if (hit && Date.now() - hit.at < 180000) return hit.p
-  const p = fn().catch((e) => { _goalsMemo.delete(k); throw e })
-  _goalsMemo.set(k, { at: Date.now(), p }); if (_goalsMemo.size > 60) _goalsMemo.delete(_goalsMemo.keys().next().value)
+// One Sales Hub build per (client, window, hours), shared by the hub itself,
+// every goal window and the Month by month board, and kept in Blobs so it
+// outlives the function instance: a window still running is good for three
+// minutes, a finished one for six hours (its numbers only move when history
+// is edited). The warmer's month-to-date hub build lands here too, so the
+// current month's goals are warm whenever the hub is.
+const HUB_LIVE_MS = 180000, HUB_PAST_MS = 6 * 3600000
+const _hubMem = new Map()
+const hubKey = (client, from, to, hours) => `hub:v1:${client}|${from}|${to}|${hours ? `${hours.days.join(',')}:${hours.startMin}:${hours.endMin}` : 'none'}`
+async function hubBuild(client, ghl, { from, to, hours, today }) {
+  const k = hubKey(client, from, to, hours); const ttl = to < today ? HUB_PAST_MS : HUB_LIVE_MS
+  const mem = _hubMem.get(k); if (mem && Date.now() - mem.at < ttl) return mem.p
+  const p = (async () => {
+    const hit = await readResultCache(k)
+    if (hit && hit.payload && Date.now() - hit.at < ttl) return hit.payload
+    const built = await buildSalesHub(ghl, { from, to, hours, staleDays: 7 })
+    writeResultCache(k, built)
+    return built
+  })().catch((e) => { _hubMem.delete(k); throw e })
+  _hubMem.set(k, { at: Date.now(), p }); if (_hubMem.size > 80) _hubMem.delete(_hubMem.keys().next().value)
   return p
 }
 async function readResultCache(key) { const t = Date.now(); try { return await cacheStore().get(key, { type: 'json' }) } catch { return null } finally { upstream.blob += Date.now() - t; upstream.blobN++ } }
@@ -3420,42 +3432,21 @@ export default async (req) => {
     try {
       const staleDays = Math.max(3, Math.min(180, Number(url.searchParams.get('stale')) || 7))
       const pipeline = url.searchParams.get('pipeline') || null
-      return json({ scope: 'saleshub', client, ghl: true, period: { from, to, preset }, ...(await buildSalesHub(cc.ghl, { from, to, hours: parseHours(url), staleDays, pipeline: pipeline && pipeline !== 'all' ? pipeline : null })) })
+      const hours = parseHours(url)
+      // The default shape (every pipeline, stale after 7 days) is the shared
+      // build the goal windows read; anything else is built for this request.
+      const shared = !(pipeline && pipeline !== 'all') && staleDays === 7
+      const today = shared ? new Date().toLocaleDateString('en-CA', { timeZone: await locationTimezone(cc.ghl).catch(() => 'Australia/Sydney') }) : null
+      const d = shared ? await hubBuild(client, cc.ghl, { from, to, hours, today }) : await buildSalesHub(cc.ghl, { from, to, hours, staleDays, pipeline })
+      return json({ scope: 'saleshub', client, ghl: true, period: { from, to, preset }, ...d })
     } catch (e) { return json({ scope: 'saleshub', client, ghl: true, error: String((e && e.message) || e).slice(0, 240) }) }
   }
 
-  // Goal progress: each goal measured in its own window (this month, this
-  // quarter, or its dates) whatever period the hub is showing. The browser
-  // posts the goals it holds; one hub build per distinct window, memoised for
-  // three minutes per client. Managers only, like the hub.
-  if (scope === 'goals') {
-    const cc = clientCfg(client)
-    if (!cc || !cc.ghl) return json({ scope: 'goals', client, goals: [] })
-    if (isAccountUser(me)) return json({ error: 'Managers only.' }, 403)
-    let body = {}; try { body = req.method === 'POST' ? JSON.parse(await req.text()) : {} } catch { body = {} }
-    const goals = normGoals(body.goals || [])
-    const tz = await locationTimezone(cc.ghl).catch(() => 'Australia/Sydney')
-    const today = new Date().toLocaleDateString('en-CA', { timeZone: tz })
-    const staleDays = 7; const hours = parseHours(url)
-    const builds = new Map()
-    const buildFor = (w) => { const k = `${w.from}|${w.to}`; if (!builds.has(k)) builds.set(k, goalsBuildMemo(client, k, () => buildSalesHub(cc.ghl, { from: w.from, to: w.to, hours, staleDays }))); return builds.get(k) }
-    const out = []
-    for (const g of goals) {
-      const w = goalWindow(g, today)
-      if (w.notYet) { out.push({ id: g.id, window: w, target: goalTargetFor(g, w.key), actual: null, byRep: [] }); continue }
-      let d = null; try { d = await buildFor(w) } catch (e) { out.push({ id: g.id, window: w, target: goalTargetFor(g, w.key), actual: null, error: String((e && e.message) || e).slice(0, 160) }); continue }
-      const reps = (d && d.reps) || []
-      const target = goalTargetFor(g, w.key)
-      const shares = goalShares({ ...g, target }, reps.map((r) => r.id))
-      const byRep = reps.filter((r) => r.id !== 'unassigned' && (r.id in shares)).map((r) => ({ id: r.id, name: r.name, actual: repValue(r, g.metric, g.pipelines), share: shares[r.id] }))
-      out.push({ id: g.id, window: w, target, actual: goalActual({ ...g, target }, reps), byRep })
-    }
-    return json({ scope: 'goals', client, today, goals: out })
-  }
-  // Goal history: the posted goals measured in ONE past period per call (a
-  // month 'YYYY-MM', a quarter 'YYYY-Qn', or 'range:<goalId>'), so each call
-  // is a single hub build and fits the function's time limit; the Month by
-  // month board asks for each period and fills cells in as they arrive.
+  // Goal progress and history share one route: the posted goals measured in
+  // ONE period per call (a month 'YYYY-MM', a quarter 'YYYY-Qn', or
+  // 'range:<goalId>'), so each call is a single hub build and fits the
+  // function's time limit. A window still running is cut at today, which
+  // makes this month's key the same build the hub itself reads.
   if (scope === 'goalhistory') {
     const cc = clientCfg(client)
     if (!cc || !cc.ghl) return json({ scope: 'goalhistory', client, key: null, cells: {} })
@@ -3466,7 +3457,7 @@ export default async (req) => {
     const tz = await locationTimezone(cc.ghl).catch(() => 'Australia/Sydney')
     const today = new Date().toLocaleDateString('en-CA', { timeZone: tz })
     const hours = parseHours(url)
-    const build = (from, to) => goalsBuildMemo(client, `${from}|${to}`, () => buildSalesHub(cc.ghl, { from, to, hours, staleDays: 7 }))
+    const build = (from, to) => hubBuild(client, cc.ghl, { from, to: to < today ? to : today, hours, today })
     let win = null, which = []
     if (/^\d{4}-Q[1-4]$/.test(key)) { const yy = +key.slice(0, 4), q = +key.slice(6) - 1; const m1 = q * 3 + 1, m3 = q * 3 + 3; const dim = new Date(Date.UTC(yy, m3, 0)).getUTCDate(); win = { from: `${yy}-${String(m1).padStart(2, '0')}-01`, to: `${yy}-${String(m3).padStart(2, '0')}-${dim}` }; which = goals.filter((g) => g.period === 'quarter') }
     else if (/^\d{4}-\d{2}$/.test(key)) { const yy = +key.slice(0, 4), mm = +key.slice(5, 7); const dim = new Date(Date.UTC(yy, mm, 0)).getUTCDate(); win = { from: `${key}-01`, to: `${key}-${dim}` }; which = goals.filter((g) => g.period === 'month') }

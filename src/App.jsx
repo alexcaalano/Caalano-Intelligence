@@ -14,7 +14,7 @@ import { GOAL_METRICS, goalMetric, SPLITS, normGoals, newGoalId, goalShares, val
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.601.0'
+const APP_VERSION = '3.602.0'
 // The business clock. Every server window is cut on the client's local day
 // (Caalano Systems location timezone), so any day the app derives on its own -
 // preset ranges, "today", CSV dates - must use the same clock rather than the
@@ -16204,6 +16204,37 @@ function hubFunnelStages(clientId, p) {
 // as $15,000 each) against their own figure. With no filter, an Overall
 // business group adds the pipeline goals together per metric. Quarterly goals
 // get a quarter grid; custom-dates goals a row each.
+// Progress for a set of goals, each in its own current window: one request per
+// distinct window (this month, this quarter, each range goal), through the
+// same goalhistory route the Month by month board uses, so a window is one
+// server-side hub build shared with the hub itself. Two requests in flight at
+// a time; each answer fills in as it lands. `refresh` re-reads when it changes.
+function useGoalProgress(clientId, goals, refresh) {
+  const [prog, setProg] = useState({})
+  useEffect(() => {
+    if (!goals.length) { setProg({}); return }
+    let dead = false
+    const today = tzTodayStr()
+    const byKey = new Map()
+    for (const g of goals) { const w = goalWindow(g, today); const key = g.period === 'range' ? `range:${g.id}` : w.key; if (!byKey.has(key)) byKey.set(key, []); byKey.get(key).push(g) }
+    const queue = [...byKey.keys()]
+    const worker = async () => {
+      while (queue.length && !dead) {
+        const key = queue.shift(); const list = byKey.get(key)
+        let j = null
+        try {
+          const r = await fetch(`/.netlify/functions/windsor?scope=goalhistory&client=${encodeURIComponent(clientId)}${hoursQuery(loadHours(clientId))}`, { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ goals: list, key }) })
+          j = await r.json().catch(() => ({ error: `server ${r.status}` }))
+        } catch (e) { j = { error: String((e && e.message) || e) } }
+        if (dead) return
+        setProg((p) => { const n = { ...p }; for (const g of list) { const w = goalWindow(g, today); const c = j && j.cells ? j.cells[g.id] : null; n[g.id] = { id: g.id, window: w, target: c ? c.target : goalTargetFor(g, w.key), actual: c ? c.actual : null, byRep: c ? c.byRep : [], notYet: !!(w.notYet || (j && j.notYet)), error: j && j.error ? j.error : null } } return n })
+      }
+    }
+    worker(); worker()
+    return () => { dead = true }
+  }, [clientId, goals, refresh]) // eslint-disable-line
+  return prog
+}
 function HubPlanBoard({ clientId, goals, currency, canEdit, today, pipelines, reps }) {
   const [draft, setDraft] = useState(goals)
   const [dirty, setDirty] = useState(false)
@@ -16411,14 +16442,12 @@ function SalesHubView({ clientId, authUser, currency, nonce, pipe: pipeProp, onP
   // on My results), each measured by the server in its own window - this
   // month, this quarter, or its dates - whatever period the hub is showing.
   const hubGoalList = useMemo(() => goalsAll.filter((g) => !(g.reps && g.reps.length === 1) && !goalWindow(g, today).ended), [goalsAll, today])
-  const [prog, setProg] = useState({})
-  useEffect(() => {
-    if (!hubGoalList.length || st.status === 'loading') return
-    let dead = false
-    fetch(`/.netlify/functions/windsor?scope=goals&client=${encodeURIComponent(clientId)}${hoursQuery(loadHours(clientId))}`, { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ goals: hubGoalList }) })
-      .then((r) => r.json().catch(() => null)).then((j) => { if (!dead && j && Array.isArray(j.goals)) setProg(Object.fromEntries(j.goals.map((x) => [x.id, x]))) }).catch(() => {})
-    return () => { dead = true }
-  }, [clientId, hubGoalList, tick, st.status]) // eslint-disable-line
+  // Progress re-reads at most every four minutes (the server keeps a live
+  // window for three), not on every poll of the board.
+  const [progTick, setProgTick] = useState(0)
+  const progAt = useRef(0)
+  useEffect(() => { if (st.status === 'loading') return; if (Date.now() - progAt.current >= 4 * 60000) { progAt.current = Date.now(); setProgTick((t) => t + 1) } }, [tick, st.status])
+  const prog = useGoalProgress(clientId, hubGoalList, progTick)
   const hubGoals = useMemo(() => hubGoalList.map((g) => {
     const m = goalMetric(g.metric) || []; const w = goalWindow(g, today); const p = prog[g.id]
     const scope = [g.pipelines ? g.pipelines.map((pid) => ((d.pipelines || []).find((x) => x.id === pid) || {}).name || 'Pipeline').join(', ') : null, g.reps ? `${g.reps.length} reps` : null].filter(Boolean).join(' · ')
@@ -16686,6 +16715,7 @@ function SalesHubView({ clientId, authUser, currency, nonce, pipe: pipeProp, onP
       {celebrate ? <HubGong key={celebrate.key} win={celebrate} currency={currency} onDone={() => { clearTimeout(strikeT.current); setCelebrate(null) }} /> : null}
       {primary}
       {secondary}
+      {d.reach && d.reach.truncated && d.reach.since ? <p className="cap hub-reach">Closed deals are counted from leads created since {fmtDMY(d.reach.since)}: the CRM read holds the newest {fmtNumber(d.reach.opps)} opportunities, so a win on a lead older than that is not in these numbers.</p> : null}
       {multi && !focus && pipesAll.length > 1 ? <div className="hub-pipes">{pipesAll.map((p) => <button type="button" className="hub-pipe" key={p.id} disabled={busy} onClick={() => setPipeSel(p.id)} title="Show this pipeline only">
         <span className="hub-pipe-n">{p.name}</span>
         <span className="hub-pipe-row"><span><b>{money(p.revenue)}</b> revenue</span><span><b>{fmtNumber(p.won)}</b> won</span><span><b>{p.avgDeal != null ? money(p.avgDeal) : '-'}</b> avg deal</span><span><b>{fmtNumber(p.leads)}</b> leads</span><span><b>{hubPct(p.winRate)}</b> win rate</span><span><b>{fmtNumber(p.open)}</b> open{p.stale ? ` · ${p.stale} stale` : ''}</span></span>
@@ -16990,14 +17020,7 @@ function GoalsEditor({ clientId, currency }) {
   const blank = () => ({ id: newGoalId(), name: '', metric: 'revenue', target: '', period: 'month', from: '', to: '', endsOn: '', byMonth: {}, byQuarter: {}, pipelines: null, reps: null, split: 'even', weights: {}, shares: {} })
   const today = tzTodayStr()
   // Progress for every goal in its own window, from the same read the hub uses.
-  const [prog, setProg] = useState({})
-  useEffect(() => {
-    if (!goals.length) { setProg({}); return }
-    let dead = false
-    fetch(`/.netlify/functions/windsor?scope=goals&client=${encodeURIComponent(clientId)}${hoursQuery(loadHours(clientId))}`, { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ goals }) })
-      .then((r) => r.json().catch(() => null)).then((j) => { if (!dead && j && Array.isArray(j.goals)) setProg(Object.fromEntries(j.goals.map((x) => [x.id, x]))) }).catch(() => {})
-    return () => { dead = true }
-  }, [clientId, goals]) // eslint-disable-line
+  const prog = useGoalProgress(clientId, goals, 0)
   const periodLabel = (g) => (g.period === 'quarter' ? 'quarterly' : g.period === 'range' ? `${g.from} to ${g.to}` : 'monthly')
   const groups = [['business', 'Business and team goals', 'Every pipeline; all reps or the reps ticked.'], ['pipeline', 'Pipeline goals', 'One or more pipelines; split among the reps attached.'], ['rep', 'Rep goals', 'One rep\'s own target. Beats any share of a wider goal for the same metric.']]
   const summary = (g) => {

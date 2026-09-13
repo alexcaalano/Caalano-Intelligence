@@ -6179,15 +6179,15 @@ export async function buildSalesHub(locationId, { from, to, hours = null, staleD
   const inPeriod = (ms) => Number.isFinite(ms) && (fromMs == null || ms >= fromMs) && (toMs == null || ms <= toMs)
   // Closed basis for everything sales: a win counts in the period its status
   // changed to won, whatever month the lead came in (the same rule as the
-  // Overview's "Closed" toggle), so a deal closed today shows today. The read
-  // reaches 400 days back for the leads those wins came from.
-  const back = from ? new Date(new Date(from + 'T00:00:00Z').getTime() - 400 * 86400000).toISOString().slice(0, 10) : from
-  const [inp, snap, rawAppts, speed, wonOpps, calls, cashField] = await Promise.all([
+  // Overview's "Closed" toggle), so a deal closed today shows today. Closed
+  // deals come from the shared snapshot, which holds the newest opportunities
+  // whatever their status; `reach` says how far back that goes so the hub can
+  // say so when an old lead's win could fall outside it.
+  const [inp, snap, rawAppts, speed, calls, cashField] = await Promise.all([
     _userPerfInputs(locationId, from, to),
     oppSnapshot(locTok, locationId),
     _rawAppointments(locTok, locationId, (fromMs != null ? fromMs : now - 30 * ACT_DAY) - 7 * ACT_DAY, (toMs != null ? toMs : now) + 90 * ACT_DAY),
     buildSpeedToLead(locationId, from, to, { sample: 200, budgetMs: 12000, hours, byUser: true, pipeline: pipeline || null }).catch(() => null),
-    allOpportunities(locTok, locationId, back, to, 2500).catch(() => []),
     buildUserCalls(locationId, from, to, true).catch(() => null),
     oppCustomFields(locTok, locationId).then(cashFieldOf).catch(() => null),
   ])
@@ -6229,11 +6229,11 @@ export async function buildSalesHub(locationId, { from, to, hours = null, staleD
   for (const p of (inp.pipelines || [])) for (const st of (p.stages || [])) { stageOf[st.id] = st.name; pipeOf[st.id] = p.name }
   const nowBy = new Map()
   const wins = []
-  // Closed wins in the period, per rep and per pipeline, from the 400-day read
-  // merged with the snapshot (deduped by id) so an old lead that closed this
-  // month is counted for whoever owns it.
+  // Closed wins in the period, per rep and per pipeline, from the snapshot
+  // (deduped by id) so an old lead that closed this month is counted for
+  // whoever owns it.
   const closedById = new Map()
-  for (const o of [...(wonOpps || []), ...(snap.opps || [])]) { const st0 = String(o && o.status || '').toLowerCase(); if (o && o.id && (st0 === 'won' || st0 === 'lost' || st0 === 'abandoned') && !closedById.has(o.id)) closedById.set(o.id, o) }
+  for (const o of (snap.opps || [])) { const st0 = String(o && o.status || '').toLowerCase(); if (o && o.id && (st0 === 'won' || st0 === 'lost' || st0 === 'abandoned') && !closedById.has(o.id)) closedById.set(o.id, o) }
   const reasonNameC = {}; for (const r of (inp.reasons || [])) reasonNameC[r._id || r.id] = r.name
   const reasonOfC = (o) => { const rid = o.lostReasonId || o.lost_reason_id || (o.lostReason && (o.lostReason.id || o.lostReason._id)) || null; return (rid && reasonNameC[rid]) || (typeof o.lostReason === 'string' && o.lostReason) || 'Unspecified' }
   const wonBy = new Map(), wonByPipe = new Map(), lostBy = new Map(), lostByPipeC = new Map(), closedByUserPipe = new Map()
@@ -6355,6 +6355,7 @@ export async function buildSalesHub(locationId, { from, to, hours = null, staleD
   for (const r of reps) for (const lr of (r.lostReasons || [])) lostByReason[lr.reason] = (lostByReason[lr.reason] || 0) + lr.count
   return {
     connected: true, tz, period: { from, to }, cashField: cashField || null, staleDays, pipelineId: pipeline || null, wonBasis: 'closed', basis: 'event', users: userName,
+    reach: { since: snap && Number.isFinite(snap.oldestMs) ? new Date(snap.oldestMs).toISOString().slice(0, 10) : null, truncated: !!(snap && snap.truncated), opps: (snap && snap.opps || []).length },
     team, reps, wins: wins.slice(0, 40),
     pipelines, stageOpen: [...stageOpen.values()].map((x) => ({ ...x, value: Math.round(x.value) })).sort((a, b) => b.open - a.open),
     calendars: [...calendars.values()], lostByReason: Object.entries(lostByReason).map(([reason, count]) => ({ reason, count })).sort((a, b) => b.count - a.count),

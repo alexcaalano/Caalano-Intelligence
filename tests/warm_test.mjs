@@ -27,7 +27,7 @@ const fixed = new Date(Date.UTC(2026, 8, 3, 12))          // 3 Sep 2026, Sydney 
 const r30 = rollingRange(30, fixed), r7 = rollingRange(7, fixed)
 ok('last_30d ends yesterday', r30.to === '2026-09-02' && r30.from === '2026-08-04', JSON.stringify(r30))
 ok('last_7d ends yesterday', r7.to === '2026-09-02' && r7.from === '2026-08-27', JSON.stringify(r7))
-const ranges = { r30, r7 }
+const ranges = { r30, r7, mtd: { from: '2026-09-01', to: '2026-09-03' } }   // month to date as of the fixed day
 const cc = { meta: '538799668712983', google: '774-276-3045', ghl: 'rQJAY6L6qt1JJfj16fZ8' }
 const warmKeys = new Set(planForClient('nexia-health', cc, ranges).map((qs) => key('/.netlify/functions/windsor?' + qs)))
 const want = {
@@ -45,7 +45,10 @@ const want = {
   spenddaily: key(`/.netlify/functions/windsor?scope=spenddaily&client=nexia-health&${rangeQuery(r30)}`),
   usercalls: key(`/.netlify/functions/windsor?scope=usercalls&client=nexia-health&${rangeQuery(r30)}&callsonly=1`),
   forms: key(`/.netlify/functions/windsor?scope=forms&client=nexia-health&${rangeQuery(r30)}`),
-  speed: key(`/.netlify/functions/windsor?scope=speed&client=nexia-health&${rangeQuery(r30)}`),
+  // The app appends the default business hours to speed and hub reads (App's
+  // hoursQuery(loadHours()) with DEFAULT_HOURS) unless a client turned them off.
+  speed: key(`/.netlify/functions/windsor?scope=speed&client=nexia-health&${rangeQuery(r30)}&bhDays=1,2,3,4,5&bhStart=540&bhEnd=1020`),
+  saleshub: key(`/.netlify/functions/windsor?scope=saleshub&client=nexia-health&${rangeQuery(ranges.mtd)}&preset=this_month&stale=7&bhDays=1,2,3,4,5&bhStart=540&bhEnd=1020`),
   appts: key(`/.netlify/functions/windsor?scope=appts&client=nexia-health&${rangeQuery(r30)}`),
   cohorts: key('/.netlify/functions/windsor?scope=cohorts&client=nexia-health&weeks=12'),
 }

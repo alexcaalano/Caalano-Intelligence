@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.582.0 - 2026-09-13 · `PENDING`
+## v3.582.0 - 2026-09-13 · `3647685`
 
 **Everything in the period it happened** - the Sales Hub now counts each
 thing on the date it occurred. Leads by the date they came in (the one

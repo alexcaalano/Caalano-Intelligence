@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.580.0 - 2026-09-13 · `PENDING`
+## v3.580.0 - 2026-09-13 · `494e4a5`
 
 **The real gong** - the win sound is now Alex's gong recording, shipped
 with the app and loaded when the Sales Hub opens so the first strike is

@@ -656,6 +656,26 @@ SQL files in `db/migrations/`, RLS policies, `entitle.mjs` with the current
 roles mapped onto it, `providers/windsor.mjs` wrapping `windsorFetch`.
 Tests: entitlement matrix, RLS isolation test with two organisations.
 
+**Phase 0 status (2026-09-13, v3.604.0).** Built: `db/migrations/0001_foundations.sql`
+(the schema above, with `version` on both settings tables, `crm_user_id` on
+memberships, `connections.kind` from section 16, and a `live_events` table
+for the webhook ring buffer) and `0002_plans.sql` (plan rows, prices still
+placeholders); `db/migrate.mjs` (`npm run db:migrate`, `npm run db:status`);
+`netlify/lib/entitle.mjs` (`can()`, the role and feature tables, and
+`membershipFromLegacy()` for today's users); `netlify/lib/db.mjs`
+(`withOrg()` / `asPlatform()`: a transaction with `app.org_id` or
+`app.platform_admin` set, and a refusal to run as a superuser or BYPASSRLS
+role, since those ignore the policies). Tests: `tests/entitle_test.mjs`
+(the matrix) and `tests/rls_test.mjs` (two organisations on an in-process
+Postgres: only own rows, a foreign-tenant write refused, nothing with no
+tenant set, the platform flag sees all, settings never leak out of the
+transaction). Row level security is FORCED on every tenant table, so the
+table owner is bound by the policies too. On Neon: run the migrations as
+the project's default role, and give the functions their own ordinary role
+(no BYPASSRLS) with select/insert/update/delete on the tables and usage on
+the sequences. Still to do in phase 0: the Windsor adapter behind the
+provider interface, and `scripts/migrate-blobs-to-pg.mjs`.
+
 **Phase 1 - Move Caalano Digital in.**
 A one-off `scripts/migrate-blobs-to-pg.mjs`: creates organisation
 `caalano` (kind agency, plan `caalano`), one workspace per

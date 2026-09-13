@@ -18,6 +18,22 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.604.0 - 2026-09-13 · `PENDING`
+
+**SaaS foundations, phase 0 (no user-visible change)** - the Postgres
+schema from the SaaS design ships as migration files with a runner
+(`npm run db:migrate`), every tenant table carrying row level security
+that is forced even for the table owner. One entitlement function now
+answers every "may this person do this" question, with today's roles
+(including Account Admin and Account User) mapped onto it and the full
+matrix under test. A transaction helper sets the tenant for every query
+and refuses to run as a role that bypasses the policies. An isolation
+test runs the migrations on an in-process Postgres with two
+organisations and proves one cannot see, change or write the other's
+rows. Nothing in the running app reads the database yet.
+
+---
+
 ## v3.603.0 - 2026-09-13 · `000a448`
 
 **A lighter first load** - the Sales Hub with Goals and Deals & Actions,

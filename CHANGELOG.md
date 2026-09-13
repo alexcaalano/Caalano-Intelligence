@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.576.0 - 2026-09-13 · `PENDING`
+## v3.576.0 - 2026-09-13 · `0fbc8ec`
 
 **The gong strike on screen** - a new deal on the Sales Hub now takes over
 the screen: a mallet swings in and hits a brass gong, shock rings ripple

@@ -18,6 +18,15 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.580.0 - 2026-09-13 · `PENDING`
+
+**The real gong** - the win sound is now Alex's gong recording, shipped
+with the app and loaded when the Sales Hub opens so the first strike is
+on time. The synthesised crash stays as the fallback if the file ever
+fails to load.
+
+---
+
 ## v3.579.0 - 2026-09-13 · `21a2e58`
 
 **Sales Hub laid out properly** - the four numbers a manager asks for

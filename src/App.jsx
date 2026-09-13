@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.579.0'
+const APP_VERSION = '3.580.0'
 // The business clock. Every server window is cut on the client's local day
 // (Caalano Systems location timezone), so any day the app derives on its own -
 // preset ranges, "today", CSV dates - must use the same clock rather than the
@@ -16011,10 +16011,16 @@ function saveHubPrefs(p) { try { localStorage.setItem(HUB_PREFS_KEY, JSON.string
 // a bank of resonant filters for the wash, forty detuned inharmonic partials
 // that bloom just after the hit for the metal, and a low thump for the mallet.
 let hubGongFile = null // null = not checked yet, true = plays, false = missing
+let hubGongAudio = null
+// Fetch the recording once when the hub opens so the first strike is not late.
+function hubGongPreload() {
+  if (hubGongAudio || hubGongFile === false) return
+  try { hubGongAudio = new Audio('/gong.mp3'); hubGongAudio.preload = 'auto'; hubGongAudio.load() } catch { hubGongFile = false }
+}
 function hubChime() {
   if (hubGongFile === false) return hubGongSynth()
   try {
-    const a = new Audio('/gong.mp3'); a.volume = 1
+    hubGongPreload(); const a = hubGongAudio; a.currentTime = 0; a.volume = 1
     a.play().then(() => { hubGongFile = true }).catch(() => { hubGongFile = false; hubGongSynth() })
   } catch { hubGongFile = false; hubGongSynth() }
 }
@@ -16145,6 +16151,7 @@ function SalesHubView({ clientId, authUser, currency, nonce, pipe: pipeProp, onP
     strikeT.current = setTimeout(() => setCelebrate(null), 10000)
   }
   useSettingsSync()
+  useEffect(() => { if (prefs.sound) hubGongPreload() }, [prefs.sound])
   useEffect(() => {
     let dead = false
     setSt((s) => ({ status: s.data ? 'refreshing' : 'loading', data: s.data }))

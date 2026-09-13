@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.612.0 - 2026-09-13 · `PENDING`
+## v3.612.0 - 2026-09-13 · `7476176`
 
 **Custom dashboards show every module to everyone given them** - the
 modules that used to be marked "agency-internal, hidden from viewers"

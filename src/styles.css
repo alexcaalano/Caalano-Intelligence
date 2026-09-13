@@ -5375,6 +5375,8 @@ button.act-tier.on { border-color: var(--text); }
 /* Month by month board */
 .hub-screens button { padding: 7px 12px; }
 .plan-board { display: grid; gap: 12px; }
+.plan-filters { display: grid; gap: 6px; }
+.plan-fl { min-width: 60px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; font-size: 10.5px; align-self: center; }
 .plan-save { align-items: center; }
 .plan-card .rep-lb-head { margin-bottom: 8px; }
 .plan-tbl th, .plan-tbl td { padding: 6px 6px; vertical-align: top; text-align: center; }

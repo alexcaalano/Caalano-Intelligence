@@ -14,7 +14,7 @@ import { GOAL_METRICS, goalMetric, SPLITS, normGoals, newGoalId, goalShares, val
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.597.0'
+const APP_VERSION = '3.598.0'
 // The business clock. Every server window is cut on the client's local day
 // (Caalano Systems location timezone), so any day the app derives on its own -
 // preset ranges, "today", CSV dates - must use the same clock rather than the
@@ -16165,18 +16165,19 @@ function hubFunnelStages(clientId, p) {
 }
 // Month by month: every goal against what happened, past months and the
 // current one, with the coming months' targets typed in place (the budget).
-// Quarterly goals get a quarter grid; custom-dates goals a row each.
-function HubPlanBoard({ clientId, goals, currency, canEdit, today }) {
+// Filter by pipeline to see that pipeline's goals; filter by rep to see each
+// goal as that rep's share (an even split of $30,000 between two reps reads
+// as $15,000 each) against their own figure. With no filter, an Overall
+// business group adds the pipeline goals together per metric. Quarterly goals
+// get a quarter grid; custom-dates goals a row each.
+function HubPlanBoard({ clientId, goals, currency, canEdit, today, pipelines, reps }) {
   const [draft, setDraft] = useState(goals)
   const [dirty, setDirty] = useState(false)
   const [back, setBack] = useState(6)
   const [drill, setDrill] = useState(null)
+  const [pipeF, setPipeF] = useState('all')
+  const [repF, setRepF] = useState('all')
   useEffect(() => { setDraft(goals); setDirty(false) }, [goals])
-  // The periods to show: the last 6 or 12 months including this one, the
-  // last 3 or 5 quarters (only when a quarterly goal exists), and each
-  // custom-dates goal's own window. Each is fetched on its own so no single
-  // request has to build more than one period. Twelve months is the limit:
-  // the CRM snapshot reaches back about fourteen months.
   const pastMonths = useMemo(() => { const y = +today.slice(0, 4), m = +today.slice(5, 7); return Array.from({ length: back }, (_, i) => { const mm = m - 1 - (back - 1 - i); const yy = y + Math.floor(mm / 12); return `${yy}-${String(((mm % 12) + 12) % 12 + 1).padStart(2, '0')}` }) }, [today, back])
   const pastQuarters = useMemo(() => { if (!goals.some((g) => g.period === 'quarter')) return []; const n = back > 6 ? 5 : 3; const y = +today.slice(0, 4), q = Math.floor((+today.slice(5, 7) - 1) / 3); return Array.from({ length: n }, (_, i) => { const qq = q - (n - 1 - i); return `${y + Math.floor(qq / 4)}-Q${((qq % 4) + 4) % 4 + 1}` }) }, [goals, today, back])
   const [hist, setHist] = useState({ cells: {}, pending: 0, error: null })
@@ -16200,8 +16201,22 @@ function HubPlanBoard({ clientId, goals, currency, canEdit, today }) {
     worker(); worker()
     return () => { dead = true }
   }, [clientId, goals, pastMonths, pastQuarters]) // eslint-disable-line
-  const d = { months: pastMonths, quarters: pastQuarters, error: hist.error }
-  const cellOf = (id, key) => { const per = hist.cells[key] || hist.cells[`range:${id}`]; return per ? per[id] || null : null }
+  // Names for the row labels and the filter chips: the hub's pipelines and
+  // reps plus anything a goal refers to that is not in the current period.
+  const pipeName = (id) => ((pipelines || []).find((p) => p.id === id) || {}).name || 'Pipeline'
+  const repName = (id) => ((reps || []).find((r) => r.id === id) || {}).name || 'Former rep'
+  const pipeIds = useMemo(() => { const ids = (pipelines || []).map((p) => p.id); for (const g of goals) for (const pid of (g.pipelines || [])) if (!ids.includes(pid)) ids.push(pid); return ids }, [pipelines, goals])
+  const repIds = useMemo(() => { const ids = (reps || []).filter((r) => r.id !== 'unassigned').map((r) => r.id); for (const g of goals) for (const uid of (g.reps || [])) if (!ids.includes(uid)) ids.push(uid); return ids }, [reps, goals])
+  const rawCell = (id, key) => { const per = hist.cells[key] || hist.cells[`range:${id}`]; return per ? per[id] || null : null }
+  // The cell for a goal in a period under the current filter: the rep's own
+  // share and figure when a rep is chosen, else the goal's total.
+  const cellOf = (g, key) => {
+    const c = rawCell(g.id, key)
+    if (!c) return null
+    if (repF === 'all') return c
+    const b = (c.byRep || []).find((x) => x.id === repF)
+    return b && b.share != null ? { target: b.share, actual: b.actual, byRep: [b] } : null
+  }
   const fmtFor = (g) => { const m = goalMetric(g.metric) || []; return (v) => (v == null ? '-' : m[2] === 'money' ? fmtCurrency(v, currency) : m[2] === 'pct' ? `${Math.round(v)}%` : m[2] === 'lower' ? repMin(v) : fmtNumber(v)) }
   const kindOf = (g) => (goalMetric(g.metric) || [])[2]
   const curM = today.slice(0, 7); const curQ = goalWindow({ period: 'quarter' }, today).key
@@ -16216,24 +16231,42 @@ function HubPlanBoard({ clientId, goals, currency, canEdit, today }) {
     setDirty(true)
     setDraft((cur) => cur.map((x) => { if (x.id !== g.id) return x; const next = { ...(x[map] || {}) }; const n = Number(val); if (!val || !(n > 0) || n === x.target) delete next[key]; else next[key] = n; return { ...x, [map]: next } }))
   }
+  // Which goals the filters keep. A rep filter keeps goals the rep has a
+  // slice of; a pipeline filter keeps goals scoped to that pipeline.
+  const goalShareOk = (g) => repF === 'all' || ((!g.reps || g.reps.includes(repF)) && (g.split !== 'shared' || (g.reps && g.reps.length === 1) || ['winRate', 'resultRate', 'showRate', 'speedMin'].includes(g.metric)))
+  const visible = draft.filter((g) => (pipeF === 'all' || (g.pipelines || []).includes(pipeF)) && goalShareOk(g))
+  // Overall business: with no filters, the pipeline goals added up per metric
+  // (money and counts only; a rate cannot be added).
+  const overall = (pipeF === 'all' && repF === 'all') ? (() => {
+    const byMetric = new Map()
+    for (const g of visible) if (g.pipelines && g.period === 'month' && ['money', 'count'].includes(kindOf(g))) { if (!byMetric.has(g.metric)) byMetric.set(g.metric, []); byMetric.get(g.metric).push(g) }
+    return [...byMetric.entries()].filter(([, list]) => list.length >= 1).map(([metric, list]) => ({ id: `sum:${metric}`, synthetic: true, list, metric, name: `${(goalMetric(metric) || [])[1]} · all pipelines`, period: 'month', target: list.reduce((a, g) => a + g.target, 0), pipelines: null, reps: null, split: 'shared', byMonth: {}, byQuarter: {} }))
+  })() : []
+  const sumCell = (row, key) => { let t = 0, a = 0, n = 0; for (const g of row.list) { const c = rawCell(g.id, key); t += goalTargetFor(g, key); if (c && c.actual != null) { a += c.actual; n++ } } return { target: t, actual: n ? a : null } }
   const futureM = monthKeysFrom(today, 4).slice(1), futureQ = quarterKeysFrom(today, 2).slice(1)
-  const monthCols = [...(d.months || []), ...futureM], quarterCols = [...(d.quarters || []), ...futureQ]
+  const monthCols = [...pastMonths, ...futureM], quarterCols = [...pastQuarters, ...futureQ]
   const mLabel = (k) => new Date(+k.slice(0, 4), +k.slice(5, 7) - 1, 1).toLocaleString('en-AU', { month: 'short', year: '2-digit' })
-  const groups = [['business', 'Business and team'], ['pipeline', 'Pipeline'], ['rep', 'Rep']]
+  const scopeLine = (g) => {
+    if (g.synthetic) return `${g.list.length} pipeline goal${g.list.length > 1 ? 's' : ''} added up: ${g.list.map((x) => (x.pipelines || []).map(pipeName).join(', ')).join(' + ')}`
+    const m = goalMetric(g.metric) || []
+    const split = (g.reps && g.reps.length === 1) || ['pct', 'lower'].includes(m[2]) ? '' : (SPLITS.find(([k]) => k === g.split) || [])[1] || ''
+    return [m[1], g.pipelines ? g.pipelines.map(pipeName).join(', ') : 'All pipelines', g.reps ? g.reps.map(repName).join(', ') : 'All reps', split.toLowerCase()].filter(Boolean).join(' · ')
+  }
+  const groups = [['overall', 'Overall business', 'Pipeline goals added together per metric.'], ['business', 'Business and team', ''], ['pipeline', 'Pipeline', ''], ['rep', 'Rep', '']]
   const grid = (period, cols, map, isCur, label) => {
-    const rows = draft.filter((g) => g.period === period)
+    const rows = [...(period === 'month' ? overall : []), ...visible.filter((g) => g.period === period)]
     if (!rows.length) return null
     return (
       <div className="card plan-card">
-        <div className="rep-lb-head"><h4>{period === 'quarter' ? 'Quarter by quarter' : 'Month by month'}</h4><span className="cap">target on top, what happened underneath · green hit, amber close, red missed · the current period is judged on pace · tap a cell for the split by rep</span>{period === 'month' ? <label className="act-sel">Back<select value={back} onChange={(e) => setBack(Number(e.target.value))}><option value={6}>6 months</option><option value={12}>12 months</option></select></label> : null}</div>
+        <div className="rep-lb-head"><h4>{period === 'quarter' ? 'Quarter by quarter' : 'Month by month'}{repF !== 'all' ? <span className="cap"> · {repName(repF)}'s share of each goal</span> : pipeF !== 'all' ? <span className="cap"> · {pipeName(pipeF)}</span> : null}</h4><span className="cap">target on top, what happened underneath · green hit, amber close, red missed · the current period is judged on pace · tap a cell for the split by rep</span>{period === 'month' ? <label className="act-sel">Back<select value={back} onChange={(e) => setBack(Number(e.target.value))}><option value={6}>6 months</option><option value={12}>12 months</option></select></label> : null}</div>
         <div className="table-wrap"><table className="mini-tbl plan-tbl">
           <thead><tr><th className="lft">Goal</th>{cols.map((k) => <th key={k} className={k === isCur ? 'cur' : k > isCur ? 'fut' : ''}>{label(k)}</th>)}<th>Hit</th></tr></thead>
-          <tbody>{groups.map(([lvl, title]) => { const list = rows.filter((g) => goalLevel(g) === lvl); return list.length ? [<tr key={lvl + '-h'} className="plan-grp"><td colSpan={cols.length + 2}>{title}</td></tr>, ...list.map((g) => { const f = fmtFor(g); let hit = 0, n = 0; return (
-            <tr key={g.id}><td className="lft"><b>{g.name || (goalMetric(g.metric) || [])[1]}</b><div className="cap">{(goalMetric(g.metric) || [])[1]}{g.pipelines ? ' · ' + g.pipelines.length + ' pipeline' + (g.pipelines.length > 1 ? 's' : '') : ''}{g.reps ? ' · ' + g.reps.length + ' rep' + (g.reps.length > 1 ? 's' : '') : ''}</div></td>
-              {cols.map((k) => { const cell = cellOf(g.id, k); const target = goalTargetFor(g, k); const t = k < isCur && cell && cell.actual != null ? tone(g, cell, k, false) : k === isCur ? tone(g, cell, k, true) : ''; if (k < isCur && cell && cell.actual != null) { n++; if (t === 'good') hit++ } const planned = (g[map] || {})[k] != null; return (
+          <tbody>{groups.map(([lvl, title, hint]) => { const list = rows.filter((g) => (lvl === 'overall' ? g.synthetic : !g.synthetic && goalLevel(g) === lvl)); return list.length ? [<tr key={lvl + '-h'} className="plan-grp"><td colSpan={cols.length + 2}>{title}{hint ? <span className="cap"> · {hint}</span> : null}</td></tr>, ...list.map((g) => { const f = fmtFor(g); const editable = canEdit && !g.synthetic && repF === 'all'; let hit = 0, n = 0; return (
+            <tr key={g.id}><td className="lft"><b>{g.name || (goalMetric(g.metric) || [])[1]}</b><div className="cap">{scopeLine(g)}</div></td>
+              {cols.map((k) => { const cell = g.synthetic ? sumCell(g, k) : cellOf(g, k); const target = g.synthetic ? cell.target : repF !== 'all' ? (cell ? cell.target : null) : goalTargetFor(g, k); const t = k < isCur && cell && cell.actual != null ? tone(g, cell, k, false) : k === isCur ? tone(g, cell, k, true) : ''; if (k < isCur && cell && cell.actual != null) { n++; if (t === 'good') hit++ } const planned = !g.synthetic && (g[map] || {})[k] != null; return (
                 <td key={k} className={`plan-cell ${t} ${k === isCur ? 'cur' : k > isCur ? 'fut' : ''}`}>
-                  {canEdit ? <input type="number" min="0" className={`plan-in ${planned ? 'planned' : ''}`} value={planned ? g[map][k] : ''} placeholder={String(g.target)} onChange={(e) => setTarget(g, map, k, e.target.value)} title={planned ? 'Planned for this period' : 'Default target; type to plan this period'} /> : <div className="plan-t">{f(target)}</div>}
-                  {k <= isCur ? <button type="button" className={`plan-a plan-drill ${drill && drill.id === g.id && drill.key === k ? 'on' : ''}`} disabled={!cell} onClick={() => setDrill(drill && drill.id === g.id && drill.key === k ? null : { id: g.id, key: k })}>{cell ? f(cell.actual) : hist.pending > 0 ? '…' : '-'}{cell && cell.actual != null && target && kindOf(g) !== 'lower' ? <small> {Math.round((cell.actual / target) * 100)}%</small> : null}</button> : <div className="plan-a cap">planned</div>}
+                  {editable ? <input type="number" min="0" className={`plan-in ${planned ? 'planned' : ''}`} value={planned ? g[map][k] : ''} placeholder={String(g.target)} onChange={(e) => setTarget(g, map, k, e.target.value)} title={planned ? 'Planned for this period' : 'Default target; type to plan this period'} /> : <div className="plan-t">{target == null ? (k > isCur ? f(goalTargetFor(g, k)) : '-') : f(target)}</div>}
+                  {k <= isCur ? <button type="button" className={`plan-a plan-drill ${drill && drill.id === g.id && drill.key === k ? 'on' : ''}`} disabled={!cell || g.synthetic} onClick={() => setDrill(drill && drill.id === g.id && drill.key === k ? null : { id: g.id, key: k })}>{cell ? f(cell.actual) : hist.pending > 0 ? '…' : '-'}{cell && cell.actual != null && target && kindOf(g) !== 'lower' ? <small> {Math.round((cell.actual / target) * 100)}%</small> : null}</button> : <div className="plan-a cap">planned</div>}
                 </td>) })}
               <td className="plan-hit">{n ? `${hit} / ${n}` : '-'}</td>
             </tr>) })] : null })}</tbody>
@@ -16241,29 +16274,34 @@ function HubPlanBoard({ clientId, goals, currency, canEdit, today }) {
       </div>
     )
   }
-  const ranges = draft.filter((g) => g.period === 'range')
+  const ranges = visible.filter((g) => g.period === 'range')
+  const drillPanel = (() => {
+    if (!drill) return null
+    const g = draft.find((x) => x.id === drill.id); const cell = g ? rawCell(g.id, drill.key) : null
+    if (!g || !cell) return null
+    const f = fmtFor(g); const k = kindOf(g); const label = /Q/.test(drill.key) ? drill.key.replace('-', ' ') : /^\d{4}-\d{2}$/.test(drill.key) ? mLabel(drill.key) : goalWindow(g, today).label
+    const rows = (cell.byRep || []).map((b) => ({ ...b, v: b.actual == null ? 0 : b.actual })).sort((a, b) => (k === 'lower' ? a.v - b.v : b.v - a.v))
+    const max = Math.max(1, ...rows.map((r) => Math.max(r.v, r.share || 0)))
+    const isCurrent = drill.key === curM || drill.key === curQ; const need = isCurrent && k !== 'pct' && k !== 'lower' ? goalWindow(g, today).elapsed : 1
+    const toneOf = (r) => (!r.share ? '' : k === 'lower' ? (r.v <= r.share ? 'good' : 'bad') : r.v >= r.share * need ? 'good' : r.v >= r.share * need * 0.8 ? 'warn' : 'bad')
+    return <div className="card plan-card"><div className="rep-lb-head"><h4>{g.name || (goalMetric(g.metric) || [])[1]} · {label}</h4><span className="cap">{f(cell.actual)} of {f(cell.target)}{g.split === 'shared' && !(g.reps && g.reps.length === 1) && k !== 'pct' && k !== 'lower' ? ' · shared team number, no slices' : ''}</span><button type="button" className="btn-ghost sm" onClick={() => setDrill(null)}>Close</button></div>
+      {rows.length ? rows.map((r) => <RepBar key={r.id} label={r.name} value={r.v} max={max} text={r.share ? `${f(r.v)} / ${f(r.share)} · ${Math.round((r.v / r.share) * 100)}%` : f(r.v)} tone={toneOf(r)} />) : <p className="cap">No rep had anything in this period.</p>}
+    </div>
+  })()
   return (
     <div className="plan-board">
+      <div className="plan-filters">
+        <div className="hub-chips"><span className="cap plan-fl">Pipeline</span><button type="button" className={`goal-chip ${pipeF === 'all' ? 'on' : ''}`} onClick={() => setPipeF('all')}>All</button>{pipeIds.map((id) => <button type="button" key={id} className={`goal-chip ${pipeF === id ? 'on' : ''}`} onClick={() => setPipeF(pipeF === id ? 'all' : id)}>{pipeName(id)}</button>)}</div>
+        <div className="hub-chips"><span className="cap plan-fl">Rep</span><button type="button" className={`goal-chip ${repF === 'all' ? 'on' : ''}`} onClick={() => setRepF('all')}>All</button>{repIds.map((id) => <button type="button" key={id} className={`goal-chip ${repF === id ? 'on' : ''}`} onClick={() => setRepF(repF === id ? 'all' : id)}>{repName(id)}</button>)}</div>
+      </div>
       {hist.error ? <p className="cap act-bad">Some periods could not be read: {hist.error}</p> : null}
       {hist.pending > 0 ? <p className="cap">Reading {hist.pending} more period{hist.pending === 1 ? '' : 's'}…</p> : null}
-      {canEdit ? <div className="act-note-btns plan-save"><button type="button" className="btn-primary act-btn" disabled={!dirty} onClick={() => { saveGoals(clientId, draft); setDirty(false) }}>Save targets</button>{dirty ? <span className="cap">Unsaved changes to the plan.</span> : <span className="cap">Type in a cell to plan that period; blank means the default target.</span>}</div> : null}
-      {(() => {
-        if (!drill) return null
-        const g = draft.find((x) => x.id === drill.id); const cell = g ? cellOf(g.id, drill.key) : null
-        if (!g || !cell) return null
-        const f = fmtFor(g); const k = kindOf(g); const label = /Q/.test(drill.key) ? drill.key.replace('-', ' ') : mLabel(drill.key)
-        const rows = (cell.byRep || []).map((b) => ({ ...b, v: b.actual == null ? 0 : b.actual })).sort((a, b) => (k === 'lower' ? a.v - b.v : b.v - a.v))
-        const max = Math.max(1, ...rows.map((r) => Math.max(r.v, r.share || 0)))
-        const isCurrent = drill.key === curM || drill.key === curQ; const need = isCurrent && k !== 'pct' && k !== 'lower' ? goalWindow(g, today).elapsed : 1
-        const toneOf = (r) => (!r.share ? '' : k === 'lower' ? (r.v <= r.share ? 'good' : 'bad') : r.v >= r.share * need ? 'good' : r.v >= r.share * need * 0.8 ? 'warn' : 'bad')
-        return <div className="card plan-card"><div className="rep-lb-head"><h4>{g.name || (goalMetric(g.metric) || [])[1]} · {label}</h4><span className="cap">{f(cell.actual)} of {f(cell.target)}{g.split === 'shared' && !(g.reps && g.reps.length === 1) && k !== 'pct' && k !== 'lower' ? ' · shared team number, no slices' : ''}</span><button type="button" className="btn-ghost sm" onClick={() => setDrill(null)}>Close</button></div>
-          {rows.length ? rows.map((r) => <RepBar key={r.id} label={r.name} value={r.v} max={max} text={r.share ? `${f(r.v)} / ${f(r.share)} · ${Math.round((r.v / r.share) * 100)}%` : f(r.v)} tone={toneOf(r)} />) : <p className="cap">No rep had anything in this period.</p>}
-        </div>
-      })()}
+      {canEdit && repF === 'all' ? <div className="act-note-btns plan-save"><button type="button" className="btn-primary act-btn" disabled={!dirty} onClick={() => { saveGoals(clientId, draft); setDirty(false) }}>Save targets</button>{dirty ? <span className="cap">Unsaved changes to the plan.</span> : <span className="cap">Type in a cell to plan that period; blank means the default target.</span>}</div> : repF !== 'all' ? <p className="cap">Showing {repName(repF)}'s share of each goal they are attached to, against their own figures. Shared team numbers with no slices are left out. Targets are edited with the rep filter off.</p> : null}
+      {drillPanel}
       {grid('month', monthCols, 'byMonth', curM, mLabel)}
       {grid('quarter', quarterCols, 'byQuarter', curQ, (k) => k.replace('-', ' '))}
-      {ranges.length ? <div className="card plan-card"><div className="rep-lb-head"><h4>Custom dates</h4></div>{ranges.map((g) => { const w = goalWindow(g, today); const cell = cellOf(g.id, w.key); const f = fmtFor(g); const t = cell ? tone(g, cell, w.key, w.active) : ''; return <div className="hub-win" key={g.id}><div><b>{g.name || (goalMetric(g.metric) || [])[1]}</b> <span className="cap">{w.label}{w.notYet ? ' · not started' : w.ended ? ' · ended' : ''}</span></div><span className={`plan-range ${t}`}>{cell ? `${f(cell.actual)} of ${f(g.target)}` : `target ${f(g.target)}`}</span></div> })}</div> : null}
-      {!draft.length ? <div className="card rep-cockpit-empty"><b>No goals yet.</b> <span className="cap">Add them in Settings → this client → Goals, then plan them here month by month.</span></div> : null}
+      {ranges.length ? <div className="card plan-card"><div className="rep-lb-head"><h4>Custom dates</h4></div>{ranges.map((g) => { const w = goalWindow(g, today); const cell = cellOf(g, w.key); const f = fmtFor(g); const t = cell ? tone(g, cell, w.key, w.active) : ''; return <div className="hub-win" key={g.id}><div><b>{g.name || (goalMetric(g.metric) || [])[1]}</b> <span className="cap">{w.label}{w.notYet ? ' · not started' : w.ended ? ' · ended' : ''} · {scopeLine(g)}</span></div><span className={`plan-range ${t}`}>{cell ? `${f(cell.actual)} of ${f(cell.target)}` : `target ${f(g.target)}`}</span></div> })}</div> : null}
+      {!visible.length && !overall.length ? <div className="card rep-cockpit-empty"><b>{draft.length ? 'No goals match this filter.' : 'No goals yet.'}</b> <span className="cap">{draft.length ? 'Clear the pipeline or rep filter above.' : 'Add them in Settings → this client → Goals, then plan them here month by month.'}</span></div> : null}
     </div>
   )
 }
@@ -16567,7 +16605,7 @@ function SalesHubView({ clientId, authUser, currency, nonce, pipe: pipeProp, onP
       <div className="act-wrap hub-wrap">
         {head}
         {celebrate ? <HubGong key={celebrate.key} win={celebrate} currency={currency} onDone={() => { clearTimeout(strikeT.current); setCelebrate(null) }} /> : null}
-        <HubPlanBoard clientId={clientId} goals={goalsAll} currency={currency} canEdit={!!(authUser && isAdminishFE(authUser.role))} today={today} />
+        <HubPlanBoard clientId={clientId} goals={goalsAll} currency={currency} canEdit={!!(authUser && isAdminishFE(authUser.role))} today={today} pipelines={d.pipelines || []} reps={reps} />
         <p className="cap act-foot">Each period is measured on the same basis as the live board: won, lost and cash by close date, bookings by booking date, held and show rate by appointment date, leads by the date they came in. A blank cell uses the goal's default target; a typed number plans that period.</p>
       </div>
     )

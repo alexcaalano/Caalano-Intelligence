@@ -18,6 +18,19 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.598.0 - 2026-09-13 · `PENDING`
+
+**Month by month: who and what, and filters** - every row now names its
+pipelines and reps in full, not "1 pipeline · 2 reps". Pipeline chips
+show one pipeline's goals; rep chips show each goal as that rep's share
+(an even split of $30,000 between two reps reads as $15,000 each)
+against the rep's own figure, with shared team numbers left out. With no
+filter, an Overall business group at the top adds the pipeline goals
+together per metric, so pipeline revenue and deal goals roll up into the
+business number.
+
+---
+
 ## v3.597.0 - 2026-09-13 · `14192db`
 
 **Further back, and into each month** - the Month by month board can

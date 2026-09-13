@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.578.0 - 2026-09-13 · `PENDING`
+## v3.578.0 - 2026-09-13 · `66b93ad`
 
 **A sharper gong** - the win sound is now a bright metallic strike that
 resolves in under a second into a short rising chime: a clean micro-reward

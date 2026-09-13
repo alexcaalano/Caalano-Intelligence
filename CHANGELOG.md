@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.606.0 - 2026-09-13 · `PENDING`
+## v3.606.0 - 2026-09-13 · `469d233`
 
 **Open in CRM goes to your white-label address** - Settings, Appearance
 gains a "CRM web address" field for admins, agency-wide and saved to the

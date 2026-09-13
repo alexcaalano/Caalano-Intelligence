@@ -1165,3 +1165,16 @@ location (Blobs store caalano-live); the hub polls them for the gong and
 the wins feed only, never for a KPI, so nothing double counts. In the
 SaaS build the same receiver writes to Postgres and the poll becomes a
 server push; the webhook contract is the same.
+
+## 20. Parked: first-party pixel and Conversion API relays (2026-09-13)
+
+Assessed against Tracklution, Cometly and Triple Whale and parked by Alex.
+They are four pieces: a first-party script served from the client's own
+subdomain that keeps UTMs and click ids on a first-party id; a conversion
+capture path; server-side Conversion API relays to Meta, Google and TikTok
+with hashed contact details; and an attribution layer with the usual
+models. Verdict: do not build the platform. If revisited, build the CAPI
+relays first (contained, uses data we hold, the part clients feel in cost
+per lead), after the Railway and Postgres move; the on-site script only if
+clients keep asking and once Postgres can take the volume; never
+fingerprinting. Detail in task #34.

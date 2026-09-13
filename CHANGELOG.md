@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.597.0 - 2026-09-13 · `PENDING`
+## v3.597.0 - 2026-09-13 · `14192db`
 
 **Further back, and into each month** - the Month by month board can
 show the last 6 or 12 months (five quarters with 12), and tapping any

@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.604.0 - 2026-09-13 · `PENDING`
+## v3.604.0 - 2026-09-13 · `b734ed6`
 
 **SaaS foundations, phase 0 (no user-visible change)** - the Postgres
 schema from the SaaS design ships as migration files with a runner

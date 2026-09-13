@@ -18,6 +18,17 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.577.0 - 2026-09-13 · `PENDING`
+
+**Rep KPIs lists only reps** - the targets editor under Settings -> Rep
+KPIs now shows just the CRM users who own at least one deal, most deals
+first, instead of every login on the account. A rep who already has a
+target saved but no deals right now stays in the table as "Former rep".
+The label column no longer breaks words in half and stays put when the
+table scrolls sideways.
+
+---
+
 ## v3.576.0 - 2026-09-13 · `0fbc8ec`
 
 **The gong strike on screen** - a new deal on the Sales Hub now takes over

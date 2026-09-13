@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.576.0'
+const APP_VERSION = '3.577.0'
 // The business clock. Every server window is cut on the client's local day
 // (Caalano Systems location timezone), so any day the app derives on its own -
 // preset ranges, "today", CSV dates - must use the same clock rather than the
@@ -16488,7 +16488,8 @@ function RepKpiEditor({ clientId }) {
   const [saved, setSaved] = useState(false)
   useEffect(() => { setV(loadRepKpis(clientId)); setDirty(false) }, [clientId])
   useEffect(() => {
-    fetch(`/.netlify/functions/windsor?scope=crmusers&client=${encodeURIComponent(clientId)}`, { credentials: 'same-origin' })
+    // Only the reps who own deals, not every login on the account.
+    fetch(`/.netlify/functions/windsor?scope=crmusers&withDeals=1&client=${encodeURIComponent(clientId)}`, { credentials: 'same-origin' })
       .then((r) => r.json().catch(() => ({ users: [] }))).then((j) => setReps((j && j.users) || [])).catch(() => setReps([]))
   }, [clientId])
   const set = (scope, key, val) => {
@@ -16501,10 +16502,14 @@ function RepKpiEditor({ clientId }) {
     })
   }
   const save = () => { saveRepKpis(clientId, v); setDirty(false); setSaved(true) }
-  const cols = [['default', 'Every rep (default)'], ...((reps || []).map((r) => [r.id, r.name]))]
+  // Reps with deals, plus anyone who already has a target saved (so a target
+  // set for a rep who is between deals stays visible and editable).
+  const repIds = new Set((reps || []).map((r) => r.id))
+  const kept = Object.keys(v.byUser || {}).filter((id) => !repIds.has(id)).map((id) => [id, 'Former rep'])
+  const cols = [['default', 'Every rep (default)'], ...((reps || []).map((r) => [r.id, r.name])), ...kept]
   return (
     <div className="repkpi">
-      <p className="cap" style={{ marginTop: 0 }}>Monthly targets. The default applies to every rep; a number under a rep's name overrides it for them. Leave blank to not track that one. Reps see these as progress bars on My results, with a pace mark for how far through the month it is.</p>
+      <p className="cap" style={{ marginTop: 0 }}>Monthly targets. The default applies to every rep; a number under a rep's name overrides it for them. Leave blank to not track that one. Reps see these as progress bars on My results, with a pace mark for how far through the month it is. Only reps with deals assigned are listed.</p>
       <div className="table-wrap"><table className="mini-tbl repkpi-tbl">
         <thead><tr><th className="lft">Target per month</th>{cols.map(([id, name]) => <th key={id} className="lft">{name}</th>)}</tr></thead>
         <tbody>{REP_KPI_DEFS.map(([key, label, kind]) => (

@@ -10,7 +10,7 @@
 // debug call; they live in one place (FIELDS) so they are trivial to correct.
 
 import { createHash } from 'node:crypto'
-import { buildAttribution, sampleAttribution, sampleChannels, buildCrm, auditLocation, isConnected, bookedTrends, crmTrends, attributionCoverage, wonInPeriod, monthlyDeals, oppTimestampFields, socialDMs, tagAudit, locationTimezone, locationProfile, periodBounds, listCalendars, listPipelines, ghlOpportunityRows, ghlPipelineRows, ghlUserRows, listLocations, checkLocationAccess, customClients, deletedClients, sampleForms, buildForms, buildSpeedToLead, speedLeadList, speedScanChunk, finalizeSpeed, buildAppointmentInsights, buildUserPerformance, buildUserPerformanceCombos, buildCreativePerf, buildUpdateExtra, fetchOppNotes, deriveBusinessHours, isQualified, buildCohorts as ghlCohorts, buildCcDrill, buildKeyPeople, buildStageTiming, buildEnquiryTimes, buildUserCalls, buildCallCohort, buildClinic, warmOppSnapshot, resilientFetch, startRequestBudget, buildCalPerf, clinicConfig, dayListBetween, buildActions, applyAction, ghlUserIdForEmail, buildRepCard, contactNotes, contactConversation, buildSalesHub } from '../lib/ghl.mjs'
+import { buildAttribution, sampleAttribution, sampleChannels, buildCrm, auditLocation, isConnected, bookedTrends, crmTrends, attributionCoverage, wonInPeriod, monthlyDeals, oppTimestampFields, socialDMs, tagAudit, locationTimezone, locationProfile, periodBounds, listCalendars, listPipelines, ghlOpportunityRows, ghlPipelineRows, ghlUserRows, listLocations, checkLocationAccess, ghlRepRows, customClients, deletedClients, sampleForms, buildForms, buildSpeedToLead, speedLeadList, speedScanChunk, finalizeSpeed, buildAppointmentInsights, buildUserPerformance, buildUserPerformanceCombos, buildCreativePerf, buildUpdateExtra, fetchOppNotes, deriveBusinessHours, isQualified, buildCohorts as ghlCohorts, buildCcDrill, buildKeyPeople, buildStageTiming, buildEnquiryTimes, buildUserCalls, buildCallCohort, buildClinic, warmOppSnapshot, resilientFetch, startRequestBudget, buildCalPerf, clinicConfig, dayListBetween, buildActions, applyAction, ghlUserIdForEmail, buildRepCard, contactNotes, contactConversation, buildSalesHub } from '../lib/ghl.mjs'
 import { DEMO_CLIENT_ID, DEMO_LOCATION, DEMO_META_ACCT, DEMO_GOOGLE_ACCT, DEMO_GA4_PROP, demoWindsor } from '../lib/demo.mjs'
 // Stand-in for the Windsor API key, used only when the request is for the demo
 // client. windsorFetch reads it as "generate, don't fetch".
@@ -3389,7 +3389,10 @@ export default async (req) => {
     if (!me || !(isAdminish(me.role))) return json({ error: 'Admins only.' }, 403)
     const cc = clientCfg(client)
     if (!cc || !cc.ghl) return json({ scope: 'crmusers', client, users: [] })
-    try { return json({ scope: 'crmusers', client, users: (await ghlUserRows(cc.ghl)).map((u) => ({ id: u.user_id, name: u.user_name })).filter((u) => u.id) }) }
+    // withDeals=1: only the reps who own opportunities (the Rep KPIs editor);
+    // without it every user, for linking a login to a CRM user.
+    const withDeals = url.searchParams.get('withDeals') === '1'
+    try { return json({ scope: 'crmusers', client, withDeals, users: (await (withDeals ? ghlRepRows(cc.ghl) : ghlUserRows(cc.ghl))).map((u) => ({ id: u.user_id, name: u.user_name, deals: u.deals })).filter((u) => u.id) }) }
     catch (e) { return json({ scope: 'crmusers', client, users: [], error: String((e && e.message) || e).slice(0, 200) }) }
   }
   // The Sales Hub: the manager's view of the whole team. Staff and Account

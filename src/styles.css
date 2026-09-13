@@ -5261,6 +5261,8 @@ button.act-tier.on { border-color: var(--text); }
 
 /* ---- Rep KPIs: targets editor and the monthly cockpit --------------------- */
 .repkpi-tbl th, .repkpi-tbl td { padding: 6px 8px; }
+.repkpi-tbl th:first-child, .repkpi-tbl td:first-child { min-width: 170px; white-space: normal; overflow-wrap: normal; word-break: keep-all; position: sticky; left: 0; background: var(--panel); z-index: 1; }
+.repkpi-tbl th { white-space: nowrap; }
 .repkpi-in { width: 110px; }
 .rep-cockpit-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
 .rep-cockpit-head h4 { margin: 0; font-size: 15px; }

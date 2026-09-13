@@ -1288,6 +1288,16 @@ export async function ghlUserRows(locationId) {
   const j = await ghlGet(locTok, '/users/', { locationId }).catch(() => ({ users: [] }))
   return (j.users || []).map((u) => ({ account_id: locationId, user_id: u.id || u._id, user_name: u.name || [u.firstName, u.lastName].filter(Boolean).join(' ') || u.email || null }))
 }
+// The reps: only the CRM users who own at least one opportunity (any status),
+// most deals first. Target editors and rep pickers list these, not every login
+// on the account (admins, office staff, integrations).
+export async function ghlRepRows(locationId) {
+  const locTok = await locationTokenOrDemo(locationId)
+  const [rows, snap] = await Promise.all([ghlUserRows(locationId), oppSnapshot(locTok, locationId).catch(() => ({ opps: [] }))])
+  const dealsBy = new Map()
+  for (const o of (snap.opps || [])) if (o.assignedTo) dealsBy.set(o.assignedTo, (dealsBy.get(o.assignedTo) || 0) + 1)
+  return rows.filter((u) => dealsBy.has(u.user_id)).map((u) => ({ ...u, deals: dealsBy.get(u.user_id) })).sort((a, b) => b.deals - a.deals)
+}
 
 // Per-form performance: group leads by the form they filled out (Meta Lead
 // Forms by their real facebookFormName, GHL/website forms by name) and tie each

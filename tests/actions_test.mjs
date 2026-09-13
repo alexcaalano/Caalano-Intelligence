@@ -100,3 +100,11 @@ console.log('actions_test (html) ok')
   assert.equal(convChannels([]).replyType, 'SMS')
   console.log('ok convChannels')
 }
+
+// A close must carry what it needs, whichever screen sent it.
+{
+  await assert.rejects(() => applyAction(DEMO_LOCATION, { op: 'opp', oppId: 'x1', patch: { status: 'won' } }), /needs a value/, 'won without a value is refused')
+  await assert.rejects(() => applyAction(DEMO_LOCATION, { op: 'opp', oppId: 'x1', patch: { status: 'won', monetaryValue: 0 } }), /needs a value/, 'won with zero is refused')
+  await assert.rejects(() => applyAction(DEMO_LOCATION, { op: 'opp', oppId: 'x1', patch: { status: 'lost' } }), /needs a lost reason/, 'lost without a reason is refused')
+  console.log('ok close rules')
+}

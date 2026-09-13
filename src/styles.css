@@ -5138,6 +5138,8 @@ td.lm-ker-n { font-weight: 600; color: var(--muted); font-variant-numeric: tabul
 .act-ctl { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .act-ctl-col { display: flex; flex-direction: column; gap: 8px; }
 .act-btn { padding: 6px 11px; font-size: 12.5px; border-radius: 8px; min-height: 34px; }
+.act-undo { border-color: #d9822b; color: #d9822b; font-variant-numeric: tabular-nums; min-width: 96px; }
+.act-undo:hover { background: color-mix(in srgb, #d9822b 10%, transparent); }
 .act-open { font-size: 12px; font-weight: 700; color: var(--brand); text-decoration: none; white-space: nowrap; }
 .act-open:hover { text-decoration: underline; }
 .act-note { display: flex; flex-direction: column; gap: 6px; flex: 1 1 260px; }
@@ -5363,6 +5365,10 @@ button.act-tier.on { border-color: var(--text); }
 .hub-spot-r { display: flex; justify-content: center; gap: 16px; flex-wrap: wrap; margin-top: 8px; font-size: 13px; color: var(--muted); } .hub-spot-r b { color: var(--text); }
 @keyframes hubSpotIn { from { opacity: 0; transform: translateY(8px) } to { opacity: 1; transform: none } }
 .hub-tv-dials { display: grid; gap: 10px; }
+.hub-tv-brand { position: fixed; right: 22px; bottom: 14px; z-index: 901; display: inline-flex; align-items: baseline; gap: 6px; font-size: 13px; color: var(--muted); background: rgba(19, 23, 38, .85); border: 1px solid var(--border); border-radius: 999px; padding: 5px 12px; letter-spacing: .01em; }
+.hub-tv-brand b { color: #eef1f7; font-weight: 800; letter-spacing: -.01em; }
+.hub-tv-brand b span { color: var(--brand); }
+.hub-tv-brand-p { text-transform: uppercase; font-size: 10.5px; letter-spacing: .12em; font-weight: 700; }
 .hub-tv .hub-dials { grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr)); }
 .hub-tv .hub-dial-pct { font-size: 26px; } .hub-tv .hub-dial-v { font-size: 18px; } .hub-tv .hub-dial-s { font-size: 13px; }
 .hub-tv .hub-board-row { font-size: 15px; } .hub-tv .hub-board-t { font-size: 12.5px; }

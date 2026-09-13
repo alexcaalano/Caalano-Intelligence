@@ -18,6 +18,31 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.586.0 - 2026-09-13 · `PENDING`
+
+**Ten seconds to change your mind** - on Deals & Actions, pressing Save
+on an appointment result, Confirm on an upcoming appointment, Mark won,
+Mark lost, or Save on a missing value or lost reason no longer sends
+straight away. The button turns into "Undo · 10s" and counts down; press
+it and nothing is sent; leave it and the write goes on its own. The row
+stays put while it counts, so the next row can be dealt with straight
+away. Leaving the screen mid-count sends the write rather than losing it.
+
+**A close must carry what it needs** - Mark won needs a deal value and
+Mark lost needs a lost reason, on every screen, with a note under the
+button saying which is missing. The server refuses a won without a value
+or a lost without a reason as well, whatever sent it.
+
+**Highest result rate** - a new board on the Sales Hub and a tile:
+deals decided (won or lost) in the period over those plus what is still
+open now, so moving deals through the pipeline is rewarded, not only
+winning. Reps need three decided deals to rank. Also on the rep detail.
+
+**Small ones** - "Powered by Caalano360" sits on the TV screen; the gong
+test button is for Super Admins only.
+
+---
+
 ## v3.585.0 - 2026-09-13 · `2a5445c`
 
 **The gong within seconds** - a CRM webhook receiver. The marketplace app

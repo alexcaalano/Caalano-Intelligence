@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.585.0'
+const APP_VERSION = '3.586.0'
 // The business clock. Every server window is cut on the client's local day
 // (Caalano Systems location timezone), so any day the app derives on its own -
 // preset ranges, "today", CSV dates - must use the same clock rather than the
@@ -16224,6 +16224,7 @@ function SalesHubView({ clientId, authUser, currency, nonce, pipe: pipeProp, onP
     ['speed', 'Fastest to lead', (r) => (r.speedMeasured >= 3 && r.speedMin != null ? r.speedMin : null), repMin, '', 'asc'],
     ['showed', 'Most meetings held', (r) => r.showed, fmtNumber, 'held'],
     ['won', 'Most deals closed', (r) => r.won, fmtNumber, 'won'],
+    ['resultRate', 'Highest result rate', (r) => (r.decided >= 3 ? r.resultRate : null), (v) => `${v}%`, 'resulted'],
     ['openValue', 'Biggest open pipeline', (r) => r.openValue, money, 'open'],
   ].map(([key, title, get, fmt, unit, dir]) => {
     const rows = reps.filter((r) => r.id !== 'unassigned').map((r) => ({ r, v: get(r) })).filter((x) => x.v != null && (dir === 'asc' || x.v > 0)).sort(dir === 'asc' ? (a, b) => a.v - b.v : (a, b) => b.v - a.v).slice(0, 3)
@@ -16298,7 +16299,7 @@ function SalesHubView({ clientId, authUser, currency, nonce, pipe: pipeProp, onP
       <div className="hub-tools">
         <label className="alloc-check"><input type="checkbox" checked={prefs.confetti} onChange={(e) => { const p = { ...prefs, confetti: e.target.checked }; setPrefs(p); saveHubPrefs(p) }} /> Confetti</label>
         <label className="alloc-check"><input type="checkbox" checked={prefs.sound} onChange={(e) => { const p = { ...prefs, sound: e.target.checked }; setPrefs(p); saveHubPrefs(p) }} /> Gong</label>
-        <button type="button" className="btn-ghost sm" onClick={() => hubStrike({ id: 'test', user: (authUser && authUser.name) || 'Test rep', name: 'Sample deal', value: 12500 })}>Test the gong</button>
+        {authUser && authUser.role === 'superadmin' ? <button type="button" className="btn-ghost sm" onClick={() => hubStrike({ id: 'test', user: authUser.name || 'Test rep', name: 'Sample deal', value: 12500 })}>Test the gong</button> : null}
         <span className={`hub-livechip ${live.latest ? 'on' : ''}`} title="Live events arrive from the CRM webhook the moment a deal changes; the numbers refresh from the five-minute snapshot">{live.latest ? `● Live · last event ${actHrs(Math.round((Date.now() - live.latest) / 3600000))}` : live.ok === false ? '○ Live unavailable' : '○ Live · no events yet'}</span>
         {authUser && authUser.role === 'superadmin' ? <button type="button" className="btn-ghost sm" onClick={() => { if (setup) return setSetup(null); setSetup({ loading: true }); fetch(`/.netlify/functions/windsor?scope=webhookurl&client=${encodeURIComponent(clientId)}`, { credentials: 'same-origin' }).then((r) => r.json().catch(() => ({}))).then((j) => setSetup(j || {})).catch(() => setSetup({ error: 'Could not load.' })) }}>Live setup</button> : null}
       </div>
@@ -16344,6 +16345,7 @@ function SalesHubView({ clientId, authUser, currency, nonce, pipe: pipeProp, onP
       <HubStat label="No-shows" value={fmtNumber(team.noShow || 0)} sub={`${fmtNumber(team.showed || 0)} held`} />
       <HubStat label="Calls" value={fmtNumber(team.calls || 0)} sub={`${fmtNumber(team.minutes || 0)} minutes`} />
       <HubStat label="Open pipeline" value={money(team.openValue)} sub={`${fmtNumber(team.open || 0)} deals · ${fmtNumber(team.stale || 0)} stale`} tone={team.open && team.stale / team.open > 0.4 ? 'warn' : ''} />
+      <HubStat label="Result rate" value={hubPct(team.resultRate)} sub={`${fmtNumber(team.decided || 0)} decided · won or lost, over those plus open`} tone={team.resultRate != null ? (team.resultRate >= 50 ? 'good' : team.resultRate < 20 ? 'warn' : '') : ''} />
     </div>
   )
   // One pipeline at a time: its funnel and its open deals side by side.
@@ -16406,7 +16408,7 @@ function SalesHubView({ clientId, authUser, currency, nonce, pipe: pipeProp, onP
           <div className="hub-tv-ctl">
             <label className="alloc-check"><input type="checkbox" checked={prefs.confetti} onChange={(e) => { const p = { ...prefs, confetti: e.target.checked }; setPrefs(p); saveHubPrefs(p) }} /> Confetti</label>
             <label className="alloc-check"><input type="checkbox" checked={prefs.sound} onChange={(e) => { const p = { ...prefs, sound: e.target.checked }; setPrefs(p); saveHubPrefs(p) }} /> Gong</label>
-            <button type="button" className="btn-ghost sm" onClick={() => hubStrike({ id: 'test', user: (authUser && authUser.name) || 'Test rep', name: 'Sample deal', value: 12500 })}>Test</button>
+            {authUser && authUser.role === 'superadmin' ? <button type="button" className="btn-ghost sm" onClick={() => hubStrike({ id: 'test', user: authUser.name || 'Test rep', name: 'Sample deal', value: 12500 })}>Test</button> : null}
             <button type="button" className="btn-ghost sm" onClick={() => { try { if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen() } catch { /* not allowed */ } }}>Full screen</button>
             <button type="button" className="btn-ghost sm" onClick={() => setTv(false)}>Exit (Esc)</button>
           </div></div>
@@ -16416,6 +16418,7 @@ function SalesHubView({ clientId, authUser, currency, nonce, pipe: pipeProp, onP
           <div className="hub-tv-col">{leaderboard}<div className="card rep-card"><h4>Latest wins</h4>{allWins.length ? winsFeed(6) : <p className="cap">No wins in the last 7 days yet.</p>}</div></div>
           <div className="hub-tv-col">{spotlight}{boardsGrid}{!dialDefs.length && authUser && isAdminishFE(authUser.role) ? <p className="cap">Set Rep KPIs in Settings and the gauges light up here.</p> : null}</div>
         </div>
+        <div className="hub-tv-brand"><span className="hub-tv-brand-p">Powered by</span> <b>Caalano<span>360</span></b></div>
       </div>
     )
   }
@@ -16454,7 +16457,7 @@ function SalesHubView({ clientId, authUser, currency, nonce, pipe: pipeProp, onP
                   {facts('Appointments', [['Booked (assigned)', fmtNumber(r.booked)], ['Set by the rep', fmtNumber(r.set)], ['By customers', fmtNumber(r.byCustomer)], ['Held', fmtNumber(r.showed)], ['No-show', fmtNumber(r.noShow)], ['Still to come', fmtNumber(r.upcoming)], r.unresulted ? ['Unresulted', <span className="act-bad">{fmtNumber(r.unresulted)}</span>] : null])}
                   {facts('Pipeline now', [['Open deals', fmtNumber(r.open)], ['Open value', money(r.openValue)], ['Stale', <span className={r.stale ? 'act-bad' : ''}>{fmtNumber(r.stale)}</span>], ['7+ · 14+ · 21+ · 30+ days', `${r.staleTiers.t7} · ${r.staleTiers.t14} · ${r.staleTiers.t21} · ${r.staleTiers.t30}`], ['Oldest idle', r.oldestIdle ? `${r.oldestIdle} days` : '-']])}
                   {facts('Speed to lead', r.speedMin != null ? [['Median, in hours', repMin(r.speedMin)], ['Leads measured', fmtNumber(r.speedMeasured)], r.within5Pct != null ? ['Under 5 minutes', `${r.within5Pct}%`] : null, ['After hours', fmtNumber(r.speedAfter || 0)]] : [['Median', 'not measured']])}
-                  {facts('Closing', [['Won', fmtNumber(r.won)], ['Lost', fmtNumber(r.lost)], ['Win rate', hubPct(r.winRate)], ['Average deal', r.avgDeal ? money(r.avgDeal) : '-'], ['Days to close', r.avgCloseDays != null ? r.avgCloseDays : '-'], ...((r.lostReasons || []).slice(0, 3).map((x) => [`Lost: ${x.reason}`, fmtNumber(x.count)]))])}
+                  {facts('Closing', [['Won', fmtNumber(r.won)], ['Lost', fmtNumber(r.lost)], ['Win rate', hubPct(r.winRate)], ['Result rate', r.resultRate != null ? `${r.resultRate}% · ${fmtNumber(r.decided)} decided` : '-'], ['Average deal', r.avgDeal ? money(r.avgDeal) : '-'], ['Days to close', r.avgCloseDays != null ? r.avgCloseDays : '-'], ...((r.lostReasons || []).slice(0, 3).map((x) => [`Lost: ${x.reason}`, fmtNumber(x.count)]))])}
                 </div>
                 <div className="hub-detail-funnels">{pipesAll.map((p) => {
                   const reach = (r.reachByPipeline || {})[p.id] || {}; const stages = p.stages || []; const base = stages.length ? (reach[stages[0].name] || 0) : 0
@@ -16473,7 +16476,7 @@ function SalesHubView({ clientId, authUser, currency, nonce, pipe: pipeProp, onP
         {calCard}
         {lostCard}
       </div>
-      <p className="cap act-foot">Everything counts in the period it happened. Leads by the date they came in. Bookings by the date they were booked; held, no-shows and show rate by the appointment's own date. Won and lost by the date the status changed, whatever month the lead came in, so a deal closed today shows today; win rate is won over won plus lost decided in the period. Open and stale are what is on the desk now; the funnel is this period's leads and how far they have got. Each pipeline's funnel and lost reasons are kept apart; a stage is never counted across pipelines. Speed to lead follows the client's business-hours rule and counts the first reply a person sent{team.speedFull ? ', measured on every lead' : ', measured on as many leads as the read allowed'}. Calls come from the CRM's call export. Re-reads every 3 minutes, every minute in TV mode.</p>
+      <p className="cap act-foot">Everything counts in the period it happened. Leads by the date they came in. Bookings by the date they were booked; held, no-shows and show rate by the appointment's own date. Won and lost by the date the status changed, whatever month the lead came in, so a deal closed today shows today; win rate is won over won plus lost decided in the period. Result rate is deals decided in the period over those plus what is still open now: how much of the desk got resulted. Open and stale are what is on the desk now; the funnel is this period's leads and how far they have got. Each pipeline's funnel and lost reasons are kept apart; a stage is never counted across pipelines. Speed to lead follows the client's business-hours rule and counts the first reply a person sent{team.speedFull ? ', measured on every lead' : ', measured on as many leads as the read allowed'}. Calls come from the CRM's call export. Re-reads every 3 minutes, every minute in TV mode.</p>
     </div>
   )
 }
@@ -16510,6 +16513,26 @@ const actTier = (r) => (r.idleDays == null ? null : r.idleDays >= 30 ? 't30' : r
 function ActOpen({ href, label = 'Open in CRM' }) { return href ? <a className="act-open" href={href} target="_blank" rel="noreferrer">{label} ↗</a> : null }
 function ActTierBadge({ r }) { const t = actTier(r); return t ? <span className={`act-tier ${t}`}>{r.idleDays}d idle</span> : null }
 const ActWaiting = ({ r }) => (r && r.unreplied ? <span className="act-wait" title="The contact wrote last and nobody has replied">✉ Message waiting</span> : null)
+// A write with ten seconds to change your mind. Press once and the button
+// becomes "Undo · 9s"; leave it and the write goes on its own; press it again
+// and nothing is sent. Leaving the screen while it counts sends it straight
+// away rather than losing it. The row stays put while it counts, so the next
+// row can be dealt with in the meantime.
+const ACT_UNDO_S = 10
+function ActCommit({ label, onCommit, disabled, className = 'btn-primary act-btn', seconds = ACT_UNDO_S }) {
+  const [left, setLeft] = useState(null)
+  const endAt = useRef(0), timer = useRef(null), armed = useRef(false), commitRef = useRef(onCommit)
+  commitRef.current = onCommit
+  const clear = () => { clearInterval(timer.current); timer.current = null; armed.current = false; setLeft(null) }
+  const fire = () => { const fn = commitRef.current; clear(); fn() }
+  useEffect(() => () => { if (armed.current) { const fn = commitRef.current; clearInterval(timer.current); armed.current = false; fn() } }, [])
+  const arm = () => {
+    endAt.current = Date.now() + seconds * 1000; armed.current = true; setLeft(seconds)
+    timer.current = setInterval(() => { const ms = endAt.current - Date.now(); if (ms <= 0) fire(); else setLeft(Math.ceil(ms / 1000)) }, 250)
+  }
+  if (left != null) return <button type="button" className="btn-ghost act-btn act-undo" onClick={clear} title="Nothing has been sent yet. Press to cancel.">Undo · {left}s</button>
+  return <button type="button" className={className} disabled={disabled} onClick={arm}>{label}</button>
+}
 // The contact's notes: read the past ones, add a new one. Shared by every row.
 function ActNotes({ clientId, contactId, canWrite, write, busy, userName }) {
   const [open, setOpen] = useState(false)
@@ -16585,7 +16608,7 @@ function ActConversation({ clientId, row, data, canWrite, write, busy, loc, user
       {canWrite && row.oppId && !keep ? <div className="act-ctl act-close-lost">
         <span className="cap">Not interested?</span>
         <select className="act-in" value={reason} onChange={(e) => setReason(e.target.value)}><option value="">Lost reason…</option>{(data.lostReasons || []).map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}</select>
-        <button type="button" className="btn-ghost act-btn" disabled={busy || !reason} onClick={async () => { const ok = await write({ op: 'opp', oppId: row.oppId, patch: { status: 'lost', lostReasonId: reason } }, row.oppId); if (ok) await write({ op: 'dismiss', id: row.id }, row.id, null, true) }}>Mark lost</button>
+        <ActCommit label="Mark lost" className="btn-ghost act-btn" disabled={busy || !reason} onCommit={async () => { const ok = await write({ op: 'opp', oppId: row.oppId, patch: { status: 'lost', lostReasonId: reason } }, row.oppId); if (ok) await write({ op: 'dismiss', id: row.id }, row.id, null, true) }} />
       </div> : null}
     </div>
   )
@@ -16613,11 +16636,13 @@ function ActDealControls({ d, data, busy, write, currency }) {
       </label>
       {close === 'won' ? <>
         <input className="act-in" type="number" min="0" step="1" inputMode="decimal" placeholder={`Value (${currency || 'AUD'})`} value={val} onChange={(e) => setVal(e.target.value)} />
-        <button type="button" className="btn-primary act-btn" disabled={busy || !(Number(val) > 0)} onClick={() => write({ op: 'opp', oppId: d.id, patch: { status: 'won', monetaryValue: Number(val) } }, d.id, null, true)}>Mark won</button>
+        <ActCommit label="Mark won" disabled={busy || !(Number(val) > 0)} onCommit={() => write({ op: 'opp', oppId: d.id, patch: { status: 'won', monetaryValue: Number(val) } }, d.id, null, true)} />
+        {!(Number(val) > 0) ? <span className="cap">Enter the deal value first.</span> : null}
       </> : null}
       {close === 'lost' ? <>
         <select className="act-in" value={reason} onChange={(e) => setReason(e.target.value)}><option value="">Lost reason…</option>{(data.lostReasons || []).map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}</select>
-        <button type="button" className="btn-primary act-btn" disabled={busy || !reason} onClick={() => write({ op: 'opp', oppId: d.id, patch: { status: 'lost', lostReasonId: reason } }, d.id, null, true)}>Mark lost</button>
+        <ActCommit label="Mark lost" disabled={busy || !reason} onCommit={() => write({ op: 'opp', oppId: d.id, patch: { status: 'lost', lostReasonId: reason } }, d.id, null, true)} />
+        {!reason ? <span className="cap">Pick a lost reason first.</span> : null}
       </> : null}
     </div>
   )
@@ -17128,7 +17153,7 @@ function DealsActionsView({ clientId, authUser, currency, nonce }) {
               {who(a)}
               <div className="act-meta"><span>{actWhen(a.startMs, tz)} <span className="act-status">{String(a.status || 'new').replace(/_/g, ' ')}</span> <ActWaiting r={a} /></span><span className="cap">{a.calendar}{a.title ? ` · ${a.title}` : ''} · {a.inDays === 0 ? 'today' : a.inDays === 1 ? 'tomorrow' : `in ${a.inDays} days`}{a.by === 'self' ? ' · booked by the customer' : ''}</span></div>
               <div className="act-ctl">
-                {canWrite && /^new$|^booked$|^$/.test(String(a.status || '')) ? <button type="button" className="btn-primary act-btn" disabled={busy[a.id]} onClick={() => write({ op: 'appt', eventId: a.id, status: 'confirmed' }, a.id, { status: 'confirmed' })}>Confirm</button> : null}
+                {canWrite && /^new$|^booked$|^$/.test(String(a.status || '')) ? <ActCommit label="Confirm" disabled={busy[a.id]} onCommit={() => write({ op: 'appt', eventId: a.id, status: 'confirmed' }, a.id, { status: 'confirmed' })} /> : null}
                 <ActConversation clientId={clientId} row={{ id: null, contactId: a.contactId, oppId: a.oppId }} data={data} canWrite={canWrite} write={write} busy={!!busy[a.contactId]} loc={loc} userName={userName} keep label={a.unreplied ? 'Reply' : 'Conversation'} />
                 <ActNotes clientId={clientId} contactId={a.contactId} canWrite={canWrite} write={write} busy={!!busy[a.contactId]} userName={userName} />
                 <ActOpen href={crmLink(loc, a.contactId)} />
@@ -17186,7 +17211,7 @@ function ActApptRow({ a, tz, busy, canWrite, write, loc, who, clientId, userName
       <div className="act-ctl-col">
         {canWrite ? <div className="act-ctl">
           <div className="act-seg">{opts.map(([v, l]) => <button type="button" key={v} className={pick === v ? 'on' : ''} disabled={busy} onClick={() => setPick(pick === v ? '' : v)}>{l}</button>)}</div>
-          {pick ? <button type="button" className="btn-primary act-btn" disabled={busy} onClick={() => write({ op: 'appt', eventId: a.id, status: pick }, a.id, null, true)}>Save {opts.find(([v]) => v === pick)[1].toLowerCase()}</button> : null}
+          {pick ? <ActCommit key={pick} label={`Save ${opts.find(([v]) => v === pick)[1].toLowerCase()}`} disabled={busy} onCommit={() => write({ op: 'appt', eventId: a.id, status: pick }, a.id, null, true)} /> : null}
         </div> : null}
         <div className="act-ctl"><ActNotes clientId={clientId} contactId={a.contactId} canWrite={canWrite} write={write} busy={busy} userName={userName} /><ActOpen href={crmLink(loc, a.contactId)} /></div>
       </div>
@@ -17201,7 +17226,7 @@ function ActValueRow({ d, busy, canWrite, write, currency, loc, who, clientId, u
       <div className="act-meta"><span>Won {actAgo(d.idleDays)}</span><span className="cap">No value recorded</span></div>
       <div className="act-ctl">
         {canWrite ? <><input className="act-in" type="number" min="0" step="1" inputMode="decimal" placeholder={`Value (${currency || 'AUD'})`} value={val} onChange={(e) => setVal(e.target.value)} />
-          <button type="button" className="btn-primary act-btn" disabled={busy || !(Number(val) > 0)} onClick={() => write({ op: 'opp', oppId: d.id, patch: { monetaryValue: Number(val) } }, d.id, null, true)}>Save</button></> : null}
+          <ActCommit label="Save" disabled={busy || !(Number(val) > 0)} onCommit={() => write({ op: 'opp', oppId: d.id, patch: { monetaryValue: Number(val) } }, d.id, null, true)} /></> : null}
         <ActNotes clientId={clientId} contactId={d.contactId} canWrite={canWrite} write={write} busy={busy} userName={userName} />
         <ActOpen href={crmLink(loc, d.contactId)} />
       </div>
@@ -17216,7 +17241,7 @@ function ActReasonRow({ d, data, busy, canWrite, write, loc, who, clientId, user
       <div className="act-meta"><span>Lost {actAgo(d.idleDays)}</span><span className="cap">No lost reason</span></div>
       <div className="act-ctl">
         {canWrite ? <><select className="act-in" value={reason} onChange={(e) => setReason(e.target.value)}><option value="">Lost reason…</option>{(data.lostReasons || []).map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}</select>
-          <button type="button" className="btn-primary act-btn" disabled={busy || !reason} onClick={() => write({ op: 'opp', oppId: d.id, patch: { lostReasonId: reason } }, d.id, null, true)}>Save</button></> : null}
+          <ActCommit label="Save" disabled={busy || !reason} onCommit={() => write({ op: 'opp', oppId: d.id, patch: { lostReasonId: reason } }, d.id, null, true)} /></> : null}
         <ActNotes clientId={clientId} contactId={d.contactId} canWrite={canWrite} write={write} busy={busy} userName={userName} />
         <ActOpen href={crmLink(loc, d.contactId)} />
       </div>

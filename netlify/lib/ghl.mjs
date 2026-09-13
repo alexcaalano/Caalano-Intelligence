@@ -5996,6 +5996,9 @@ export async function applyAction(locationId, act, { onlyUserId = null } = {}) {
     if (p.pipelineId != null) body.pipelineId = String(p.pipelineId)
     if (p.assignedTo !== undefined) body.assignedTo = p.assignedTo ? String(p.assignedTo) : null
     if (!Object.keys(body).length) throw new Error('nothing to change')
+    // The two rules every close must meet, whichever screen sent it.
+    if (body.status === 'won' && !(Number(body.monetaryValue) > 0)) throw new Error('A won deal needs a value')
+    if ((body.status === 'lost' || body.status === 'abandoned') && !body.lostReasonId) throw new Error('A lost deal needs a lost reason')
     if (onlyUserId && !isDemoToken(locTok)) {
       const cur = await ghlGet(locTok, `/opportunities/${encodeURIComponent(id)}`, {}).catch(() => null)
       const o = cur && (cur.opportunity || cur)
@@ -6306,6 +6309,9 @@ export async function buildSalesHub(locationId, { from, to, hours = null, staleD
       calls: c ? (c.outbound || 0) : 0, connected: c ? (c.outboundConnected || 0) : 0, minutes: c ? Math.round(((c.outboundSec || 0) + (c.inboundSec || 0)) / 60) : 0,
       speedMin: sp ? sp.medianMin : null, speedMeasured: sp ? sp.measured : 0, speedAfter: sp ? sp.afterCount : 0, within5Pct: sp ? sp.within5Pct : null,
       cash: cashOf(u.id), open: n.open, openValue: Math.round(n.openValue), stale: n.stale, staleTiers: { t7: n.t7, t14: n.t14, t21: n.t21, t30: n.t30 }, oldestIdle: n.oldest,
+      // Result rate: how much of the rep's desk they resolved - deals decided
+      // (won or lost) in the period over those plus what is still open now.
+      decided: w.won + l.lost, resultRate: (w.won + l.lost + n.open) ? Math.round(((w.won + l.lost) / (w.won + l.lost + n.open)) * 100) : null,
       stages: u.stages, lostReasons: Object.entries(l.reasons).map(([reason, count]) => ({ reason, count })).sort((a, b) => b.count - a.count), byPipeline: u.byPipeline, reachByPipeline: reachRep.get(u.id) || {},
     }
   }).sort((a, b) => (b.revenue - a.revenue) || (b.won - a.won) || (b.booked - a.booked))
@@ -6316,6 +6322,7 @@ export async function buildSalesHub(locationId, { from, to, hours = null, staleD
     reps: reps.length, leads: sum('leads'), booked: sum('booked'), byStaff: sum('byStaff'), byCustomer: sum('byCustomer'), set: sum('set'), showed: sum('showed'), noShow: sum('noShow'),
     showRate: teamShowBase ? Math.round((sum('showed') / teamShowBase) * 100) : null, won: sum('won'), lost: sum('lost'), revenue: sum('revenue'),
     winRate: (sum('won') + sum('lost')) ? Math.round((sum('won') / (sum('won') + sum('lost'))) * 100) : null, cash: cashField ? sum('cash') : null, calls: sum('calls'), minutes: sum('minutes'),
+    decided: sum('won') + sum('lost'), resultRate: (sum('won') + sum('lost') + sum('open')) ? Math.round(((sum('won') + sum('lost')) / (sum('won') + sum('lost') + sum('open'))) * 100) : null,
     open: sum('open'), openValue: sum('openValue'), stale: sum('stale'), speedMin: speed && speed.medianMin != null ? speed.medianMin : (spMed.length ? spMed[Math.floor(spMed.length / 2)] : null),
     speedAfter: speed && speed.after ? speed.after.count : null, speedFull: !!(speed && speed.full),
   }

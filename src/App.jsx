@@ -9,12 +9,20 @@ import {
   fmtCurrency, fmtNumber, fmtCompact, fmtPct, pctChange,
 } from './lib/format.js'
 import { GOAL_METRICS, goalMetric, SPLITS, normGoals, newGoalId, goalShares, validateGoal, goalLevel, repValue, goalActual, repTargetsFromGoals, migrateRepKpis, goalWindow, goalTargetFor, monthKeysFrom, quarterKeysFrom, RATE_METRICS } from './lib/goals.js'
+// Views carved out of this file load on first open (React.lazy), so the first
+// paint carries the shell and the tabs people land on, not every screen.
+const lazyView = (load, name) => {
+  const Inner = React.lazy(() => load().then((m) => ({ default: m[name] })))
+  const View = (props) => <React.Suspense fallback={<div className="view-loading cap">Loading…</div>}><Inner {...props} /></React.Suspense>
+  View.displayName = name
+  return View
+}
 // CHANGELOG.md is loaded on demand (dynamic import) inside the Super-Admin Logs
 // panel - keeping ~200KB of markdown out of the main bundle for every visitor.
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.602.0'
+export const APP_VERSION = '3.603.0'
 // The business clock. Every server window is cut on the client's local day
 // (Caalano Systems location timezone), so any day the app derives on its own -
 // preset ranges, "today", CSV dates - must use the same clock rather than the
@@ -23,7 +31,7 @@ const APP_VERSION = '3.602.0'
 const APP_TZ = 'Australia/Sydney'
 // YYYY-MM-DD of an instant in the business timezone ('' if unparseable).
 const tzDateStr = (v) => { const d = v instanceof Date ? v : new Date(v); return isFinite(d.getTime()) ? d.toLocaleDateString('en-CA', { timeZone: APP_TZ, year: 'numeric', month: '2-digit', day: '2-digit' }) : '' }
-const tzTodayStr = () => tzDateStr(new Date())
+export const tzTodayStr = () => tzDateStr(new Date())
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -32,16 +40,16 @@ function fmtBuildTime(iso) {
   } catch { return iso || 'unknown' }
 }
 const AVATAR = ['#6d5efc', '#12b886', '#4f7cff', '#f5a524', '#ec4899', '#0ea5e9', '#f0435b', '#8b5cf6']
-const acolor = (i) => AVATAR[i % AVATAR.length]
-const initials = (n) => String(n || '').split(' ').filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase()
+export const acolor = (i) => AVATAR[i % AVATAR.length]
+export const initials = (n) => String(n || '').split(' ').filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase()
 // Google's favicon service - a reliable logo source for any domain.
-const FAVICON = (domain, sz = 64) => `https://www.google.com/s2/favicons?domain=${domain}&sz=${sz}`
+export const FAVICON = (domain, sz = 64) => `https://www.google.com/s2/favicons?domain=${domain}&sz=${sz}`
 // Bare hostname (no scheme / www / path) from a possibly-messy website string.
-const domainOf = (url) => { try { return new URL(/^https?:\/\//i.test(url) ? url : 'https://' + url).hostname.replace(/^www\./, '') } catch { return null } }
+export const domainOf = (url) => { try { return new URL(/^https?:\/\//i.test(url) ? url : 'https://' + url).hostname.replace(/^www\./, '') } catch { return null } }
 // Resolve a client's brand-logo image URL, in priority order:
 //   1. manual override (Settings) · 2. GHL uploaded logo · 3. website favicon.
 // Returns null when there's nothing to show, so the avatar falls back to initials.
-function clientLogoSrc(id, sz = 64) {
+export function clientLogoSrc(id, sz = 64) {
   const rec = (id && SETTINGS.logos && SETTINGS.logos[id]) || null
   if (!rec) return null
   if (rec.logo) return rec.logo
@@ -51,7 +59,7 @@ function clientLogoSrc(id, sz = 64) {
 }
 // Shared client avatar: real brand logo when we have one, else coloured initials.
 // `id` drives the logo lookup; `i` the fallback colour; `name` the initials.
-function Avatar({ id, name, i = 0, sm = false, className = '' }) {
+export function Avatar({ id, name, i = 0, sm = false, className = '' }) {
   const [failed, setFailed] = React.useState(false)
   const src = failed ? null : clientLogoSrc(id, sm ? 48 : 64)
   const cls = `avatar${sm ? ' sm' : ''}${className ? ' ' + className : ''}`
@@ -60,8 +68,8 @@ function Avatar({ id, name, i = 0, sm = false, className = '' }) {
 }
 // Logo store helpers (Settings → business logos). Manual override + auto-synced
 // website/logoUrl from Caalano Systems live under SETTINGS.logos[clientId].
-function loadLogo(clientId) { return (SETTINGS.logos && SETTINGS.logos[clientId]) || {} }
-function saveLogo(clientId, patch) {
+export function loadLogo(clientId) { return (SETTINGS.logos && SETTINGS.logos[clientId]) || {} }
+export function saveLogo(clientId, patch) {
   const next = { ...loadLogo(clientId), ...patch }
   SETTINGS.logos = { ...(SETTINGS.logos || {}), [clientId]: next }
   writeLS(LOGOS_KEY, SETTINGS.logos); saveSettingsRemote({ logos: { [clientId]: next } }); bumpSettings()
@@ -84,8 +92,8 @@ const TRACK = {
 const rate = (a, b) => (b ? (a / b) * 100 : 0)
 
 /* Caalano360 outcome join - match an ad-platform entity to CRM outcomes by UTM. */
-const unorm = (s) => String(s ?? '').toLowerCase().replace(/[^a-z0-9]/g, '')
-const mkOutcomeMap = (arr) => { const m = new Map(); for (const e of arr || []) { const k = unorm(e.name); if (k && !m.has(k)) m.set(k, e) } return m }
+export const unorm = (s) => String(s ?? '').toLowerCase().replace(/[^a-z0-9]/g, '')
+export const mkOutcomeMap = (arr) => { const m = new Map(); for (const e of arr || []) { const k = unorm(e.name); if (k && !m.has(k)) m.set(k, e) } return m }
 // Caalano360 outcome columns (UTM-matched CRM results next to each ad row).
 // Green Caalano360 columns. Trailing 'r' marks a narrow rate (%) column.
 // The green Caalano360 block is a set of column GROUPS. With no key events it
@@ -98,7 +106,7 @@ const mkOutcomeMap = (arr) => { const m = new Map(); for (const e of arr || []) 
 // stage fallback) and `names` (id->name for the hover breakdown).
 // A key event whose name reads like the closed-won step counts on the won
 // STATUS (and its revenue), not the pipeline stage reached.
-const WON_RE = /won|sold|closed.?win/i
+export const WON_RE = /won|sold|closed.?win/i
 const LEGACY_DESC = {
   grouped: false,
   groups: [{ label: 'Caalano360', kind: 'brand', span: 11 }],
@@ -116,7 +124,7 @@ const LEGACY_DESC = {
     { key: 'winRate', sub: 'Win %', ty: 'rate', metric: 'rate', num: 'won', den: 'leads', title: 'Won ÷ leads' },
   ],
 }
-function buildO360Cols(keyEvents, stagePos, calNames) {
+export function buildO360Cols(keyEvents, stagePos, calNames) {
   const ke = resolveKeyEvents(keyEvents, stagePos)
   if (!ke.length) return LEGACY_DESC
   const groups = [], cols = []
@@ -154,7 +162,7 @@ function buildO360Cols(keyEvents, stagePos, calNames) {
 // Flatten an outcome `o` into numeric fields (for sorting) keyed by column key,
 // plus breakdown objects at `<key>B` (per-calendar counts + stage fallback) for
 // the hover tooltip. Calendar metrics share one aggregate per group.
-function o360Fields(o, spend, leads, desc) {
+export function o360Fields(o, spend, leads, desc) {
   const D = desc || LEGACY_DESC; const C = D.cols
   if (!o) { const f = { _has360: false }; for (const c of C) f[c.key] = null; return f }
   const L = leads || 0
@@ -198,11 +206,11 @@ function o360Fields(o, spend, leads, desc) {
   return f
 }
 // Banner row: one green banner per column group (event name), spanning its cols.
-function C360GrpRow({ left, cols }) {
+export function C360GrpRow({ left, cols }) {
   const D = cols || LEGACY_DESC
   return <tr className="c360-grp-row"><th className="c360-grp-blank" colSpan={left} aria-hidden="true" />{D.groups.map((g, i) => <th key={i} className={`c360-grp${i > 0 ? ' c360-grp-sep' : ''}`} colSpan={g.span} title={g.label}>{g.label}</th>)}</tr>
 }
-function O360Head({ sort, on, cols }) {
+export function O360Head({ sort, on, cols }) {
   const D = cols || LEGACY_DESC
   return <>{D.cols.map((c, i) => {
     const cn = `c360-col${i === 0 ? ' c360-first' : ''}${c.gfirst && i > 0 ? ' c360-gfirst' : ''}`
@@ -215,8 +223,8 @@ function O360Head({ sort, on, cols }) {
 // every table. The name (first) col gets an EXPLICIT width so it can't collapse
 // under table-layout:fixed. nameW keeps the green block at a constant x.
 const CGM = 96
-function o360ColClass(c) { return c.ty === 'rate' ? 'cg-gr' : c.ty === 'count' ? 'cg-gc' : 'cg-g' }
-function O360ColGroup({ left, green = true, cols }) {
+export function o360ColClass(c) { return c.ty === 'rate' ? 'cg-gr' : c.ty === 'count' ? 'cg-gc' : 'cg-g' }
+export function O360ColGroup({ left, green = true, cols }) {
   const D = cols || LEGACY_DESC
   const nameW = Math.max(150, 190 + (9 - left) * CGM)
   return (
@@ -292,17 +300,17 @@ function useDragScroll() {
 // A scroll container with click-and-drag panning + the chunky scrollbar. Each
 // instance owns its own drag ref, so it works when several are rendered in a loop
 // (e.g. one creative grid per pipeline section) where a shared hook ref couldn't.
-function PanScroll({ children, className = '' }) {
+export function PanScroll({ children, className = '' }) {
   const ref = useDragScroll()
   return <div className={`tbl-scroll pan${className ? ' ' + className : ''}`} ref={ref}>{children}</div>
 }
 /* Sortable tables - click a header to sort; click again to flip direction. */
-function useSort(key0, dir0 = -1) {
+export function useSort(key0, dir0 = -1) {
   const [s, setS] = useState({ key: key0, dir: dir0 })
   const on = (k) => setS((p) => (p.key === k ? { key: k, dir: -p.dir } : { key: k, dir: -1 }))
   return [s, on]
 }
-function sortRows(rows, s) {
+export function sortRows(rows, s) {
   if (!s.key) return rows
   return [...rows].sort((a, b) => {
     const av = a[s.key], bv = b[s.key]
@@ -313,7 +321,7 @@ function sortRows(rows, s) {
     return (av - bv) * s.dir
   })
 }
-function SortTh({ k, sort, on, children, className }) {
+export function SortTh({ k, sort, on, children, className }) {
   return <th className={`sort-th${className ? ' ' + className : ''}`} onClick={() => on(k)}>{children}<span className="sort-ar">{sort.key === k ? (sort.dir < 0 ? ' ↓' : ' ↑') : ''}</span></th>
 }
 // Structured breakdown rows for a calendar Booked / Shown cell (styled popup).
@@ -338,7 +346,7 @@ function KeCellPop({ children, title, total, rows, note }) {
   )
 }
 // Renders the green Caalano360 cells for a row, driven by the column descriptor.
-function o360Cells(r, currency, cols) {
+export function o360Cells(r, currency, cols) {
   const D = cols || LEGACY_DESC; const C = D.cols
   if (!r || !r._has360) return <>{C.map((c, i) => <td key={c.key} className={`c360-col dim${i === 0 ? ' c360-first' : ''}${c.gfirst && i > 0 ? ' c360-gfirst' : ''}`}>-</td>)}</>
   const money = (v) => fmtCurrency(v, currency)
@@ -432,7 +440,7 @@ function apiBeacon(url, error, ms) {
     fetch('/.netlify/functions/windsor?scope=clientlog', { method: 'POST', headers: { 'content-type': 'application/json' }, body, keepalive: true }).catch(() => {})
   } catch { /* never throw from the beacon */ }
 }
-async function apiJson(url, { signal, timeoutMs = 30000, tries = 2 } = {}) {
+export async function apiJson(url, { signal, timeoutMs = 30000, tries = 2 } = {}) {
   const t0 = (typeof performance !== 'undefined' ? performance.now() : 0)
   let lastErr
   for (let attempt = 0; attempt < tries; attempt++) {
@@ -539,7 +547,7 @@ function GlobalLoadIndicator() {
 // Fetch business logos (website + uploaded logo) from Caalano Systems and merge
 // them into Settings. Skipped once cached unless force=true (the Settings sync
 // button). Manual per-client overrides are preserved by mergeLogos.
-function syncLogos({ force = false } = {}) {
+export function syncLogos({ force = false } = {}) {
   if (!force && SETTINGS.logos && Object.keys(SETTINGS.logos).length) return Promise.resolve(false)
   return fetch(`/.netlify/functions/windsor?scope=logos${force ? `&_r=${Date.now()}` : ''}`)
     .then((r) => (r.ok ? r.json() : null))
@@ -588,7 +596,7 @@ function _crmSlot(cid) {
   if (active < CRM_MAX_PER_CLIENT) { _clientActive.set(cid, active + 1); return Promise.resolve(release) }
   return new Promise((res) => { const q = _clientQueue.get(cid) || []; q.push(() => res(release)); _clientQueue.set(cid, q) })
 }
-function dedupeFetch(url, ttl = 45000) {
+export function dedupeFetch(url, ttl = 45000) {
   const now = Date.now()
   const hit = _getInflight.get(url)
   if (hit && (now - hit.at) < ttl) return hit.p.then((r) => r.clone())
@@ -929,8 +937,8 @@ function MiniDelta({ cur, prev, goodWhenDown = false, neutral = false }) {
 // flag any range shorter than that as "still maturing". A manual override (set
 // in Settings) wins over the CRM figure when present.
 function rangeDaysOf(range) { const a = Date.parse(range.from), b = Date.parse(range.to); return (isFinite(a) && isFinite(b)) ? Math.round((b - a) / 86400000) + 1 : null }
-function loadCloseOverride(clientId) { const o = SETTINGS.clients && SETTINGS.clients[clientId]; const v = o && o.closeDays; return (v == null || v === '') ? null : Number(v) }
-function saveCloseOverride(clientId, days) {
+export function loadCloseOverride(clientId) { const o = SETTINGS.clients && SETTINGS.clients[clientId]; const v = o && o.closeDays; return (v == null || v === '') ? null : Number(v) }
+export function saveCloseOverride(clientId, days) {
   const cur = (SETTINGS.clients && SETTINGS.clients[clientId]) || {}
   const next = { ...cur, closeDays: (days == null || days === '') ? null : Number(days) }
   SETTINGS.clients = { ...(SETTINGS.clients || {}), [clientId]: next }
@@ -940,9 +948,9 @@ function saveCloseOverride(clientId, days) {
 // that changes the app: it is what shows the Clinic tab (practitioners,
 // appointment types) in Settings and in the client view. Unset means "work it
 // out" - the server probes for practice-management fields, as it always has.
-const BIZ_TYPES = [['', 'Not set - detect automatically'], ['clinic', 'Clinic / allied health'], ['services', 'Professional services'], ['trades', 'Trades / home services'], ['retail', 'Retail / e-commerce'], ['other', 'Other']]
-function loadBizType(clientId) { const o = SETTINGS.clients && SETTINGS.clients[clientId]; return (o && o.bizType) || '' }
-function saveBizType(clientId, bizType) {
+export const BIZ_TYPES = [['', 'Not set - detect automatically'], ['clinic', 'Clinic / allied health'], ['services', 'Professional services'], ['trades', 'Trades / home services'], ['retail', 'Retail / e-commerce'], ['other', 'Other']]
+export function loadBizType(clientId) { const o = SETTINGS.clients && SETTINGS.clients[clientId]; return (o && o.bizType) || '' }
+export function saveBizType(clientId, bizType) {
   const cur = (SETTINGS.clients && SETTINGS.clients[clientId]) || {}
   const next = { ...cur, bizType: bizType || null }
   SETTINGS.clients = { ...(SETTINGS.clients || {}), [clientId]: next }
@@ -952,8 +960,8 @@ function saveBizType(clientId, bizType) {
 // actually paid on a "Cash Collected" opportunity field in Caalano Systems, this
 // turns on the Cash position row in Caalano360 (cash collected, cash ROAS, paid
 // in full, outstanding). The figures are always read - the switch only shows them.
-function loadCashOn(clientId) { const o = SETTINGS.clients && SETTINGS.clients[clientId]; return !!(o && o.cash && o.cash.enabled) }
-function saveCashOn(clientId, enabled) {
+export function loadCashOn(clientId) { const o = SETTINGS.clients && SETTINGS.clients[clientId]; return !!(o && o.cash && o.cash.enabled) }
+export function saveCashOn(clientId, enabled) {
   const cur = (SETTINGS.clients && SETTINGS.clients[clientId]) || {}
   const next = { ...cur, cash: { ...(cur.cash || {}), enabled: !!enabled } }
   SETTINGS.clients = { ...(SETTINGS.clients || {}), [clientId]: next }
@@ -966,15 +974,15 @@ function closeDaysFor(clientId, crmAvg) { const ov = loadCloseOverride(clientId)
 // (Mon–Fri 9–5), so an after-hours lead answered next morning isn't scored as a
 // 10-hour response. A client can override the hours or turn it off entirely
 // (hoursOff), which is respected.
-const DEFAULT_HOURS = { days: [1, 2, 3, 4, 5], startMin: 540, endMin: 1020 }
+export const DEFAULT_HOURS = { days: [1, 2, 3, 4, 5], startMin: 540, endMin: 1020 }
 const validHours = (h) => !!(h && Array.isArray(h.days) && h.days.length && h.startMin != null && h.endMin != null)
-function loadHours(clientId) {
+export function loadHours(clientId) {
   const o = SETTINGS.clients && SETTINGS.clients[clientId]
   if (o && o.hoursOff) return null           // explicitly turned off for this client
   if (o && validHours(o.hours)) return o.hours // custom saved hours
   return DEFAULT_HOURS                        // default: on, business hours
 }
-function saveHours(clientId, hours) {
+export function saveHours(clientId, hours) {
   const cur = (SETTINGS.clients && SETTINGS.clients[clientId]) || {}
   // Enabling stores the hours and clears the off flag; disabling sets the off
   // flag (keeping the last hours so re-enabling restores them).
@@ -982,12 +990,12 @@ function saveHours(clientId, hours) {
   SETTINGS.clients = { ...(SETTINGS.clients || {}), [clientId]: next }
   writeLS(CLIENTS_KEY, SETTINGS.clients); saveSettingsRemote({ clients: { [clientId]: next } }); bumpSettings()
 }
-const DOW_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
-const hhmm = (m) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`
+export const DOW_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+export const hhmm = (m) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`
 const speedGroupLabel = (d) => (d.hours ? `in-hours leads (${fmtNumber(d.measured)} of ${fmtNumber(d.measuredAll ?? d.measured)})` : 'typical human response')
-function fmtHours(h) { if (!h) return null; const cons = h.days.length > 1 && h.days.every((d, i) => i === 0 || d === h.days[i - 1] + 1); const ds = cons ? `${DOW_LABELS[h.days[0]]}–${DOW_LABELS[h.days[h.days.length - 1]]}` : h.days.map((d) => DOW_LABELS[d]).join(', '); return `${ds} · ${hhmm(h.startMin)}–${hhmm(h.endMin)}` }
-const hoursQuery = (h) => (h ? `&bhDays=${h.days.join(',')}&bhStart=${h.startMin}&bhEnd=${h.endMin}` : '')
-function rangeMaturity(closeDays, range) {
+export function fmtHours(h) { if (!h) return null; const cons = h.days.length > 1 && h.days.every((d, i) => i === 0 || d === h.days[i - 1] + 1); const ds = cons ? `${DOW_LABELS[h.days[0]]}–${DOW_LABELS[h.days[h.days.length - 1]]}` : h.days.map((d) => DOW_LABELS[d]).join(', '); return `${ds} · ${hhmm(h.startMin)}–${hhmm(h.endMin)}` }
+export const hoursQuery = (h) => (h ? `&bhDays=${h.days.join(',')}&bhStart=${h.startMin}&bhEnd=${h.endMin}` : '')
+export function rangeMaturity(closeDays, range) {
   if (closeDays == null || !(closeDays > 0)) return null
   const matureDays = Math.round(closeDays * 1.2)
   const rDays = rangeDaysOf(range); if (rDays == null) return null
@@ -1043,7 +1051,7 @@ function Help({ children, label, title, className = '' }) {
     </HoverPop>
   )
 }
-function HelpNote({ children, label = 'How this works', title }) { return <div className="help-note"><Help label={label} title={title}>{children}</Help></div> }
+export function HelpNote({ children, label = 'How this works', title }) { return <div className="help-note"><Help label={label} title={title}>{children}</Help></div> }
 // A signed % chip for the channel-breakdown popups (cur vs prev).
 function ChanDelta({ cur, prev, goodWhenDown = false }) {
   if (cur == null || prev == null || !prev) return null
@@ -2112,10 +2120,10 @@ function TrendsTab({ rows, currency, nonce, onPick }) {
 // person generates is shared across the team and devices. (Read/written via the
 // shared SETTINGS cache; the functions live here for locality with the tab.)
 const AI_KEY = 'caalano_ai_insights'
-function loadInsights(clientId) { return (SETTINGS.insights && SETTINGS.insights[clientId]) || null }
-function saveInsights(clientId, v) { SETTINGS.insights = { ...(SETTINGS.insights || {}), [clientId]: v }; writeLS(AI_KEY, SETTINGS.insights); saveSettingsRemote({ insights: { [clientId]: v } }); bumpSettings() }
+export function loadInsights(clientId) { return (SETTINGS.insights && SETTINGS.insights[clientId]) || null }
+export function saveInsights(clientId, v) { SETTINGS.insights = { ...(SETTINGS.insights || {}), [clientId]: v }; writeLS(AI_KEY, SETTINGS.insights); saveSettingsRemote({ insights: { [clientId]: v } }); bumpSettings() }
 // Minimal markdown renderer (bold, headings, bullets) for the AI briefing.
-function MdText({ text }) {
+export function MdText({ text }) {
   const bold = (s) => s.split(/(\*\*[^*]+\*\*)/g).map((p, i) => (p.startsWith('**') && p.endsWith('**') ? <strong key={i}>{p.slice(2, -2)}</strong> : p))
   return <div className="ai-md">{String(text || '').split('\n').map((ln, i) => {
     const t = ln.trim()
@@ -2839,7 +2847,7 @@ function sparkRatio(daily, num, den) {
   for (let i = 0; i < rows.length; i++) { let a = 0, b = 0; for (let j = Math.max(0, i - 6); j <= i; j++) { a += rows[j][num] || 0; b += rows[j][den] || 0 } if (b > 0) last = a / b; out.push(last) }
   return out
 }
-function Sc({ label, value, cur, prev, goodWhenDown, kpi, flat, tip, pop, series, days, fmt, roll }) {
+export function Sc({ label, value, cur, prev, goodWhenDown, kpi, flat, tip, pop, series, days, fmt, roll }) {
   const labelEl = (pop && pop.rows && pop.rows.length)
     ? <div className="sc-l"><KeCellPop title={pop.title} total={pop.total} rows={pop.rows}><span className="sc-l-tip">{label}</span></KeCellPop></div>
     : <div className={`sc-l${tip ? ' sc-l-tip' : ''}`} title={tip || undefined}>{label}</div>
@@ -3992,7 +4000,7 @@ function DeepError({ channel, error, range, onRetry }) {
 /* ============ CRM - live from GoHighLevel (Caalano Systems) ============ */
 
 /* ============ UTM attribution (GoHighLevel first-touch) ============ */
-function useAttribution(clientId, range, nonce = 0, wonBasis = 'created') {
+export function useAttribution(clientId, range, nonce = 0, wonBasis = 'created') {
   const [state, setState] = useState({ status: 'loading', data: null })
   const q = `${rangeQuery(range)}&wonBasis=${wonBasis === 'closed' ? 'closed' : 'created'}`
   useEffect(() => {
@@ -4063,7 +4071,7 @@ function pipeOfKeyEvent(e) { if (typeof e === 'string') return null; if (e && (e
 // total - otherwise a bare stage in a per-pipeline funnel/tile/green column
 // leaks the summed count across every pipeline. The 'all' view is left untouched
 // (bare events there correctly read the cross-pipeline total).
-function keyEventsForPipe(list, pipe) {
+export function keyEventsForPipe(list, pipe) {
   if (!pipe || pipe === 'all') return list
   const out = []
   for (const e of (list || [])) {
@@ -4208,8 +4216,8 @@ const KEV_KEY = 'caalano_keyevents'
 const ANNOT_KEY = 'caalano_annot'   // global: show the methodology prose or not
 const FORECAST_KEY = 'caalano_forecasts'   // { [scenarioId]: scenario } - saved Funnel Forecaster scenarios, shared
 const DASH_KEY = 'caalano_dashboards'  // { clientId: { name, chan, modules: [{ type, title? }] } } - Super Admin custom dashboards
-const GOALS_KEY = 'caalano_goals'          // { clientId: { goals: [...] } } business / pipeline / rep goals (see src/lib/goals.js)
-const REPKPI_KEY = 'caalano_repkpis'       // { clientId: { default: {kpi: n}, byUser: { crmUserId: {kpi: n} } } } monthly rep targets
+export const GOALS_KEY = 'caalano_goals'          // { clientId: { goals: [...] } } business / pipeline / rep goals (see src/lib/goals.js)
+export const REPKPI_KEY = 'caalano_repkpis'       // { clientId: { default: {kpi: n}, byUser: { crmUserId: {kpi: n} } } } monthly rep targets
 const GEO_KEY = 'caalano_geo'             // { clientId: { mode, origin, place, radiusKm, byPipeline } }
 const CLINIC_CFG_KEY = 'caalano_clinic'   // { clientId: { cals: { [calendarId]: 'clinical'|'triage' } } }
 const ENABLED_KEY = 'caalano_enabled'
@@ -4230,7 +4238,7 @@ const LOGOS_KEY = 'caalano_logos'                // { clientId: { website, logoU
 // Durable default key events for clients whose config predates server storage,
 // so their Meta/Google funnel + grouped Caalano360 columns render out of the
 // box. Bare strings = pipeline stage names; calendars are linked in Settings.
-const SEED_KEYEVENTS = {
+export const SEED_KEYEVENTS = {
   // Demo account. Seeded rather than configured so the funnel is populated the
   // first time anyone opens it - a demo that needs setup before it demos is no
   // demo at all.
@@ -4257,7 +4265,7 @@ const SEED_OPTLOG = {
 const CURATOR_KEY = 'caalano_curator_board'
 // Creative Curator is hidden for now (not good enough yet). Flip to true to
 // resurface its subtab in the Creative Cockpit.
-const CURATOR_ENABLED = false
+export const CURATOR_ENABLED = false
 const PROFILE_KEY = 'caalano_client_profile'
 const DAILYPERF_KEY = 'caalano_dailyperf'
 const ADNAMES_KEY = 'caalano_adnames'            // { clientId: { adId: friendlyName } } - friendly names for Google Ad IDs
@@ -4265,21 +4273,21 @@ const UI_KEY = 'caalano_ui'                    // { v2Default } - which Overview
 const UI_LAYOUT_KEY = 'caalano_ui_layout'      // 'v1' | 'v2' - this browser's own choice (super admins), never synced
 const PDFDL_KEY = 'caalano_pdfdl'                // { clientId: bool } - per-client "clients may download the report PDF" (admin-toggled)
 const readLS = (k) => { try { return JSON.parse(localStorage.getItem(k) || '{}') } catch { return {} } }
-const writeLS = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)) } catch {} }
-const SETTINGS = { campmap: readLS(CMAP_KEY), kpis: readLS(KPI_KEY), keyevents: readLS(KEV_KEY), annotations: readLS(ANNOT_KEY), enabled: readLS(ENABLED_KEY), restricted: readLS(RESTRICTED_KEY), insights: readLS(AI_KEY), clients: readLS(CLIENTS_KEY), formmeta: readLS(FORMMETA_KEY), metaconv: readLS(METACONV_KEY), creativemeta: readLS(CREATIVEMETA_KEY), creativetax: readLS(CREATIVETAX_KEY), clientctx: readLS(CLIENTCTX_KEY), fatigue: readLS(FATIGUE_KEY), competitors: readLS(COMPETITORS_KEY), socialkpis: readLS(SOCIALKPIS_KEY), optlog: readLS(OPTLOG_KEY), qualstage: readLS(QUALSTAGE_KEY), aliases: readLS(ALIASES_KEY), logos: readLS(LOGOS_KEY), curator: readLS(CURATOR_KEY), profile: readLS(PROFILE_KEY), dailyperf: readLS(DAILYPERF_KEY), adnames: readLS(ADNAMES_KEY), pdfdl: readLS(PDFDL_KEY), clinic: readLS(CLINIC_CFG_KEY), geo: readLS(GEO_KEY), forecasts: readLS(FORECAST_KEY), ui: readLS(UI_KEY), dashboards: readLS(DASH_KEY), repkpis: readLS(REPKPI_KEY), goals: readLS(GOALS_KEY), loaded: false }
+export const writeLS = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)) } catch {} }
+export const SETTINGS = { campmap: readLS(CMAP_KEY), kpis: readLS(KPI_KEY), keyevents: readLS(KEV_KEY), annotations: readLS(ANNOT_KEY), enabled: readLS(ENABLED_KEY), restricted: readLS(RESTRICTED_KEY), insights: readLS(AI_KEY), clients: readLS(CLIENTS_KEY), formmeta: readLS(FORMMETA_KEY), metaconv: readLS(METACONV_KEY), creativemeta: readLS(CREATIVEMETA_KEY), creativetax: readLS(CREATIVETAX_KEY), clientctx: readLS(CLIENTCTX_KEY), fatigue: readLS(FATIGUE_KEY), competitors: readLS(COMPETITORS_KEY), socialkpis: readLS(SOCIALKPIS_KEY), optlog: readLS(OPTLOG_KEY), qualstage: readLS(QUALSTAGE_KEY), aliases: readLS(ALIASES_KEY), logos: readLS(LOGOS_KEY), curator: readLS(CURATOR_KEY), profile: readLS(PROFILE_KEY), dailyperf: readLS(DAILYPERF_KEY), adnames: readLS(ADNAMES_KEY), pdfdl: readLS(PDFDL_KEY), clinic: readLS(CLINIC_CFG_KEY), geo: readLS(GEO_KEY), forecasts: readLS(FORECAST_KEY), ui: readLS(UI_KEY), dashboards: readLS(DASH_KEY), repkpis: readLS(REPKPI_KEY), goals: readLS(GOALS_KEY), loaded: false }
 const settingsSubs = new Set()
-const bumpSettings = () => { for (const fn of settingsSubs) fn() }
+export const bumpSettings = () => { for (const fn of settingsSubs) fn() }
 function onSettings(fn) { settingsSubs.add(fn); return () => settingsSubs.delete(fn) }
 // Fire-and-forget partial save (localStorage is the instant cache; UI never
 // waits on the network).
-function saveSettingsRemote(patch) {
+export function saveSettingsRemote(patch) {
   try { fetch('/.netlify/functions/settings', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(patch) }).catch(() => {}) } catch {}
 }
 // Per-client "clients may download the PDF" allow-list (admin-toggled, server-synced).
 // OFF by default for every client: a viewer/client only gets the download button for
 // a client an admin has switched on - so cutting a client's access also cuts downloads.
-const clientDownloadOn = (id) => !!(id && SETTINGS.pdfdl && SETTINGS.pdfdl[id])
-function setClientDownload(id, v) {
+export const clientDownloadOn = (id) => !!(id && SETTINGS.pdfdl && SETTINGS.pdfdl[id])
+export function setClientDownload(id, v) {
   if (!id) return
   SETTINGS.pdfdl = { ...(SETTINGS.pdfdl || {}), [id]: !!v }
   writeLS(PDFDL_KEY, SETTINGS.pdfdl); saveSettingsRemote({ pdfdl: { [id]: !!v } }); bumpSettings()
@@ -4312,7 +4320,7 @@ async function hydrateSettings() {
 // on its own (no prop) keeps a local filter, so nothing else has to change.
 // `valid` (optional) is the list of ids the tab can actually show - a pipeline
 // the tab has no data for reads as "all" rather than as a blank picker.
-function usePipeState(prop, onChange, valid) {
+export function usePipeState(prop, onChange, valid) {
   const [local, setLocal] = useState('all')
   const raw = prop != null ? prop : local
   const pipe = (raw !== 'all' && valid && valid.length && !valid.some((p) => (p && (p.id != null ? p.id : p)) === raw)) ? 'all' : raw
@@ -4418,17 +4426,17 @@ function lensCc(cc, pid) {
     timeToWon: lrTimeStats(ttWon), timeToLost: lrTimeStats(ttLost),
   }
 }
-function useSettingsSync() {
+export function useSettingsSync() {
   const [, force] = React.useReducer((x) => x + 1, 0)
   useEffect(() => onSettings(force), [])
 }
 
 // --- Creative Cockpit storage: per-creative tags + reusable dropdown values ---
-function loadCreativeMeta(clientId) { return (SETTINGS.creativemeta && SETTINGS.creativemeta[clientId]) || {} }
+export function loadCreativeMeta(clientId) { return (SETTINGS.creativemeta && SETTINGS.creativemeta[clientId]) || {} }
 // Merge a patch onto one creative's tags. Any free-typed persona / angle /
 // destination value is also added to the client's reusable list so it appears
 // in the dropdown next time.
-function saveCreativeMeta(clientId, creativeId, patch) {
+export function saveCreativeMeta(clientId, creativeId, patch) {
   const cur = loadCreativeMeta(clientId)
   const next = { ...cur, [creativeId]: { ...(cur[creativeId] || {}), ...patch } }
   SETTINGS.creativemeta = { ...(SETTINGS.creativemeta || {}), [clientId]: next }
@@ -4446,16 +4454,16 @@ function saveCreativeMeta(clientId, creativeId, patch) {
   if (taxNext) { SETTINGS.creativetax = { ...(SETTINGS.creativetax || {}), [clientId]: taxNext }; writeLS(CREATIVETAX_KEY, SETTINGS.creativetax); remote.creativetax = { [clientId]: taxNext } }
   saveSettingsRemote(remote); bumpSettings()
 }
-function loadCreativeTax(clientId) { return (SETTINGS.creativetax && SETTINGS.creativetax[clientId]) || {} }
+export function loadCreativeTax(clientId) { return (SETTINGS.creativetax && SETTINGS.creativetax[clientId]) || {} }
 // Free-text client context/notes, fed into the client-update prompt as background.
-function loadClientCtx(clientId) { return (SETTINGS.clientctx && SETTINGS.clientctx[clientId]) || '' }
-function saveClientCtx(clientId, text) {
+export function loadClientCtx(clientId) { return (SETTINGS.clientctx && SETTINGS.clientctx[clientId]) || '' }
+export function saveClientCtx(clientId, text) {
   SETTINGS.clientctx = { ...(SETTINGS.clientctx || {}), [clientId]: text }
   writeLS(CLIENTCTX_KEY, SETTINGS.clientctx); saveSettingsRemote({ clientctx: { [clientId]: text } }); bumpSettings()
 }
 // Client Brand Profile - a structured "everything about this brand" file per
 // client that feeds the AI features (Creative Curator, and available for more).
-const PROFILE_FIELDS = [
+export const PROFILE_FIELDS = [
   { k: 'website', label: 'Website', ph: 'https://…', area: false },
   { k: 'oneLiner', label: 'What they do (one line)', ph: 'e.g. Sydney concrete pool builder for premium homes', area: false },
   { k: 'industry', label: 'Industry / vertical', ph: 'e.g. Home improvement - pools', area: false },
@@ -4474,24 +4482,24 @@ const PROFILE_FIELDS = [
 // Profiles come from the settings endpoint (which merges the seeds server-side
 // and withholds the whole section from viewers). They used to be inlined here,
 // which shipped thirteen named clients and our notes on them in the public JS.
-function loadProfile(clientId) { return { ...((SETTINGS.profile && SETTINGS.profile[clientId]) || {}) } }
-function saveProfile(clientId, obj) {
+export function loadProfile(clientId) { return { ...((SETTINGS.profile && SETTINGS.profile[clientId]) || {}) } }
+export function saveProfile(clientId, obj) {
   SETTINGS.profile = { ...(SETTINGS.profile || {}), [clientId]: obj }
   writeLS(PROFILE_KEY, SETTINGS.profile); saveSettingsRemote({ profile: { [clientId]: obj } }); bumpSettings()
 }
 // Serialise a client's profile into a plain-text block for the AI prompt.
-function profileText(clientId) {
+export function profileText(clientId) {
   const p = loadProfile(clientId); if (!p) return ''
   const parts = []
   for (const f of PROFILE_FIELDS) { const v = String(p[f.k] || '').trim(); if (v) parts.push(`${f.label}: ${v}`) }
   return parts.join('\n')
 }
-function profileFilled(clientId) { const p = loadProfile(clientId); return PROFILE_FIELDS.reduce((n, f) => n + (String(p[f.k] || '').trim() ? 1 : 0), 0) }
+export function profileFilled(clientId) { const p = loadProfile(clientId); return PROFILE_FIELDS.reduce((n, f) => n + (String(p[f.k] || '').trim() ? 1 : 0), 0) }
 // Shared creative-fatigue thresholds (one set across all clients). CTR drops are
 // stored as whole percents everywhere; the backend divides by 100 when scoring.
-const FATIGUE_DEFAULTS = { freqMed: 3, freqHigh: 5, ctrDropMed: 15, ctrDropHigh: 35, minImpr: 800 }
-function loadFatigueCfg() { return { ...FATIGUE_DEFAULTS, ...((SETTINGS.fatigue && SETTINGS.fatigue._global) || {}) } }
-function saveFatigueCfg(cfg) {
+export const FATIGUE_DEFAULTS = { freqMed: 3, freqHigh: 5, ctrDropMed: 15, ctrDropHigh: 35, minImpr: 800 }
+export function loadFatigueCfg() { return { ...FATIGUE_DEFAULTS, ...((SETTINGS.fatigue && SETTINGS.fatigue._global) || {}) } }
+export function saveFatigueCfg(cfg) {
   SETTINGS.fatigue = { ...(SETTINGS.fatigue || {}), _global: { ...cfg } }
   writeLS(FATIGUE_KEY, SETTINGS.fatigue); saveSettingsRemote({ fatigue: { _global: { ...cfg } } }); bumpSettings()
 }
@@ -4499,20 +4507,20 @@ function saveFatigueCfg(cfg) {
 // UI-added clients (Settings -> Add client), persisted server-side and merged
 // into the dashboard's client list.
 function customClientList() { return Object.entries(SETTINGS.clients || {}).filter(([, v]) => v && !v._deleted && (v.meta || v.google || v.ghl || v.ga4)).map(([id, v]) => ({ id, name: v.name || id, industry: v.industry || null, meta: v.meta || null, google: v.google || null, ghl: v.ghl || null, ga4: v.ga4 || null, metaName: v.metaName || null, googleName: v.googleName || null, ghlName: v.ghlName || null, custom: true })) }
-function saveCustomClient(id, mapping) { SETTINGS.clients = { ...(SETTINGS.clients || {}), [id]: mapping }; writeLS(CLIENTS_KEY, SETTINGS.clients); saveSettingsRemote({ clients: { [id]: mapping } }); bumpSettings() }
-function removeCustomClient(id) { SETTINGS.clients = { ...(SETTINGS.clients || {}), [id]: null }; writeLS(CLIENTS_KEY, SETTINGS.clients); saveSettingsRemote({ clients: { [id]: null } }); bumpSettings() }
+export function saveCustomClient(id, mapping) { SETTINGS.clients = { ...(SETTINGS.clients || {}), [id]: mapping }; writeLS(CLIENTS_KEY, SETTINGS.clients); saveSettingsRemote({ clients: { [id]: mapping } }); bumpSettings() }
+export function removeCustomClient(id) { SETTINGS.clients = { ...(SETTINGS.clients || {}), [id]: null }; writeLS(CLIENTS_KEY, SETTINGS.clients); saveSettingsRemote({ clients: { [id]: null } }); bumpSettings() }
 // True delete: hide a client from every list (base or UI-added). A soft _deleted
 // flag persists to the server; the backend also drops it from agency aggregates.
-function isClientDeleted(id) { const v = SETTINGS.clients && SETTINGS.clients[id]; return !!(v && v._deleted) }
-function deleteClient(id) { const v = { ...((SETTINGS.clients && SETTINGS.clients[id]) || {}), _deleted: true }; SETTINGS.clients = { ...(SETTINGS.clients || {}), [id]: v }; writeLS(CLIENTS_KEY, SETTINGS.clients); saveSettingsRemote({ clients: { [id]: v } }); bumpSettings() }
-function restoreClient(id) { const cur = (SETTINGS.clients && SETTINGS.clients[id]) || {}; const v = { ...cur }; delete v._deleted; const next = Object.keys(v).length ? v : null; SETTINGS.clients = { ...(SETTINGS.clients || {}), [id]: next }; writeLS(CLIENTS_KEY, SETTINGS.clients); saveSettingsRemote({ clients: { [id]: next } }); bumpSettings() }
+export function isClientDeleted(id) { const v = SETTINGS.clients && SETTINGS.clients[id]; return !!(v && v._deleted) }
+export function deleteClient(id) { const v = { ...((SETTINGS.clients && SETTINGS.clients[id]) || {}), _deleted: true }; SETTINGS.clients = { ...(SETTINGS.clients || {}), [id]: v }; writeLS(CLIENTS_KEY, SETTINGS.clients); saveSettingsRemote({ clients: { [id]: v } }); bumpSettings() }
+export function restoreClient(id) { const cur = (SETTINGS.clients && SETTINGS.clients[id]) || {}; const v = { ...cur }; delete v._deleted; const next = Object.keys(v).length ? v : null; SETTINGS.clients = { ...(SETTINGS.clients || {}), [id]: next }; writeLS(CLIENTS_KEY, SETTINGS.clients); saveSettingsRemote({ clients: { [id]: next } }); bumpSettings() }
 // Shared account-discovery fetch (GHL locations + Windsor Meta/Google accounts),
 // cached for the session so the Settings name lookups and the Add/Edit explorer
 // reuse one call.
 let _discoverPromise = null
 // force=true re-queries the Meta/Google/GHL account list (used by the Settings
 // "Refresh accounts" button after a new ad account is connected).
-function fetchDiscover(force) {
+export function fetchDiscover(force) {
   if (force) _discoverPromise = null
   if (!_discoverPromise) {
     const to = tzTodayStr()
@@ -4526,8 +4534,8 @@ function fetchDiscover(force) {
   return _discoverPromise
 }
 // id -> account name maps (normalised ids) for showing names next to IDs.
-const normId = (s) => String(s ?? '').replace(/[^a-zA-Z0-9]/g, '')
-function useDiscoverNames() {
+export const normId = (s) => String(s ?? '').replace(/[^a-zA-Z0-9]/g, '')
+export function useDiscoverNames() {
   const [d, setD] = useState(null)
   useEffect(() => { let alive = true; fetchDiscover().then((j) => { if (alive) setD(j) }).catch(() => {}); return () => { alive = false } }, [])
   return useMemo(() => {
@@ -4553,30 +4561,30 @@ function kmBetween(a, b) {
   const h = Math.sin(dLat / 2) ** 2 + Math.cos(rad(a[0])) * Math.cos(rad(b[0])) * Math.sin(dLng / 2) ** 2
   return 2 * R * Math.asin(Math.min(1, Math.sqrt(h)))
 }
-function loadCampMap(clientId) { return SETTINGS.campmap[clientId] || {} }
-function saveCampMap(clientId, map) { SETTINGS.campmap = { ...SETTINGS.campmap, [clientId]: map }; writeLS(CMAP_KEY, SETTINGS.campmap); saveSettingsRemote({ campmap: { [clientId]: map } }); bumpSettings() }
+export function loadCampMap(clientId) { return SETTINGS.campmap[clientId] || {} }
+export function saveCampMap(clientId, map) { SETTINGS.campmap = { ...SETTINGS.campmap, [clientId]: map }; writeLS(CMAP_KEY, SETTINGS.campmap); saveSettingsRemote({ campmap: { [clientId]: map } }); bumpSettings() }
 // Daily Performance visibility: which clients (and, for multi-pipeline clients, which
 // pipeline tiles) appear on the Daily Performance tab. Everything defaults ON; the
 // store only records exceptions ({ off: true } for a hidden client, { pipes: { id:
 // false } } for a hidden pipeline tile).
-function dpClientOn(clientId) { const v = SETTINGS.dailyperf && SETTINGS.dailyperf[clientId]; return !(v && v.off) }
-function dpPipeOn(clientId, pipeId) { const v = SETTINGS.dailyperf && SETTINGS.dailyperf[clientId]; return !(v && v.pipes && v.pipes[pipeId] === false) }
+export function dpClientOn(clientId) { const v = SETTINGS.dailyperf && SETTINGS.dailyperf[clientId]; return !(v && v.off) }
+export function dpPipeOn(clientId, pipeId) { const v = SETTINGS.dailyperf && SETTINGS.dailyperf[clientId]; return !(v && v.pipes && v.pipes[pipeId] === false) }
 function saveDp(clientId, entry) { SETTINGS.dailyperf = { ...(SETTINGS.dailyperf || {}), [clientId]: entry }; writeLS(DAILYPERF_KEY, SETTINGS.dailyperf); saveSettingsRemote({ dailyperf: { [clientId]: entry } }); bumpSettings() }
-function setDpClient(clientId, on) { const e = { ...((SETTINGS.dailyperf || {})[clientId] || {}) }; if (on) delete e.off; else e.off = true; saveDp(clientId, e) }
-function setDpPipe(clientId, pipeId, on) { const e = { ...((SETTINGS.dailyperf || {})[clientId] || {}) }; const pipes = { ...(e.pipes || {}) }; if (on) delete pipes[pipeId]; else pipes[pipeId] = false; if (Object.keys(pipes).length) e.pipes = pipes; else delete e.pipes; saveDp(clientId, e) }
+export function setDpClient(clientId, on) { const e = { ...((SETTINGS.dailyperf || {})[clientId] || {}) }; if (on) delete e.off; else e.off = true; saveDp(clientId, e) }
+export function setDpPipe(clientId, pipeId, on) { const e = { ...((SETTINGS.dailyperf || {})[clientId] || {}) }; const pipes = { ...(e.pipes || {}) }; if (on) delete pipes[pipeId]; else pipes[pipeId] = false; if (Object.keys(pipes).length) e.pipes = pipes; else delete e.pipes; saveDp(clientId, e) }
 // Per-client Optimisation Log Google Sheet URL.
 function loadOptLog(clientId) { return SETTINGS.optlog[clientId] || SEED_OPTLOG[clientId] || '' }
 function saveOptLog(clientId, url) { SETTINGS.optlog = { ...SETTINGS.optlog, [clientId]: url }; writeLS(OPTLOG_KEY, SETTINGS.optlog); saveSettingsRemote({ optlog: { [clientId]: url } }); bumpSettings() }
 // Per-pipeline "qualified lead" stage: { [pipelineId]: stageName }. A lead is
 // qualified once it reaches that stage or beyond (won deals reach every stage, so
 // they always count). Empty = qualified is not defined for the client → hidden.
-function loadQualStage(clientId) { return (SETTINGS.qualstage && SETTINGS.qualstage[clientId]) || {} }
-function saveQualStage(clientId, map) { SETTINGS.qualstage = { ...SETTINGS.qualstage, [clientId]: map }; writeLS(QUALSTAGE_KEY, SETTINGS.qualstage); saveSettingsRemote({ qualstage: { [clientId]: map } }); bumpSettings() }
+export function loadQualStage(clientId) { return (SETTINGS.qualstage && SETTINGS.qualstage[clientId]) || {} }
+export function saveQualStage(clientId, map) { SETTINGS.qualstage = { ...SETTINGS.qualstage, [clientId]: map }; writeLS(QUALSTAGE_KEY, SETTINGS.qualstage); saveSettingsRemote({ qualstage: { [clientId]: map } }); bumpSettings() }
 // UTM aliases: old-UTM value → current entity name, per level. Handles renamed
 // campaigns / ad sets / creatives whose historical CRM leads were stamped with the
 // old name - so old + new outcomes aggregate under the current name.
 const ALIAS_LEVELS = ['campaign', 'medium', 'content']
-function loadAliases(clientId) { const a = (SETTINGS.aliases && SETTINGS.aliases[clientId]) || {}; return { campaign: a.campaign || {}, medium: a.medium || {}, content: a.content || {} } }
+export function loadAliases(clientId) { const a = (SETTINGS.aliases && SETTINGS.aliases[clientId]) || {}; return { campaign: a.campaign || {}, medium: a.medium || {}, content: a.content || {} } }
 function saveAliases(clientId, level, map) {
   // Preserve any sibling keys (other levels + the _keep dismissals) - build from
   // the raw stored object, not loadAliases which only returns the fold maps.
@@ -4595,7 +4603,7 @@ function setAdName(clientId, adId, name) {
   SETTINGS.adnames = { ...(SETTINGS.adnames || {}), [clientId]: cur }
   writeLS(ADNAMES_KEY, SETTINGS.adnames); saveSettingsRemote({ adnames: { [clientId]: cur } }); bumpSettings()
 }
-function setAlias(clientId, level, oldName, currentName) {
+export function setAlias(clientId, level, oldName, currentName) {
   const cur = loadAliases(clientId); const m = { ...(cur[level] || {}) }
   if (currentName) m[oldName] = currentName; else delete m[oldName]
   saveAliases(clientId, level, m)
@@ -4604,8 +4612,8 @@ function setAlias(clientId, level, oldName, currentName) {
 // paused/other campaign, NOT a rename). It's hidden from the unmatched list and
 // its data stays under its own name - nothing is merged. Stored alongside the
 // fold maps under a reserved _keep key so applyAliases never touches it.
-function loadKeep(clientId) { const k = ((SETTINGS.aliases && SETTINGS.aliases[clientId]) || {})._keep || {}; return { campaign: k.campaign || {}, medium: k.medium || {}, content: k.content || {} } }
-function setKeep(clientId, level, name, on) {
+export function loadKeep(clientId) { const k = ((SETTINGS.aliases && SETTINGS.aliases[clientId]) || {})._keep || {}; return { campaign: k.campaign || {}, medium: k.medium || {}, content: k.content || {} } }
+export function setKeep(clientId, level, name, on) {
   const raw = (SETTINGS.aliases && SETTINGS.aliases[clientId]) || {}
   const keep = loadKeep(clientId); const lvlMap = { ...keep[level] }
   if (on) lvlMap[name] = 1; else delete lvlMap[name]
@@ -4618,7 +4626,7 @@ function setKeep(clientId, level, name, on) {
 // Spelling variants (case, punctuation) of one name are folded together even
 // with no aliases set - the first entry seen keeps its spelling, and the lists
 // arrive most-leads-first, so that is the spelling most leads carry.
-function applyAliases(arr, aliasMap) {
+export function applyAliases(arr, aliasMap) {
   if (!Array.isArray(arr) || !arr.length) return arr || []
   const norm = new Map(); if (aliasMap) for (const k in aliasMap) if (aliasMap[k]) norm.set(unorm(k), aliasMap[k])
   const MAPS = ['stages', 'cals', 'calsShown', 'calsOccurred']
@@ -4641,7 +4649,7 @@ function applyAliases(arr, aliasMap) {
 // BEFORE the manual aliases (manual wins on conflict) - used to resolve numeric
 // Google/Meta campaign IDs in utm_campaign to their live campaign name, from
 // Windsor's campaign_id↔name pairing, so the Caalano360 outcome columns match.
-function aliasedOutcomeMap(clientId, level, arr, autoMap) {
+export function aliasedOutcomeMap(clientId, level, arr, autoMap) {
   const manual = loadAliases(clientId)[level] || {}
   const merged = autoMap && Object.keys(autoMap).length ? { ...autoMap, ...manual } : manual
   return mkOutcomeMap(applyAliases(arr, merged))
@@ -4665,18 +4673,18 @@ function saveFormMeta(clientId, formLabel, meta) {
 }
 // How many of a client's forms have been reviewed (saved, even if left blank),
 // for the Settings card health icon. Only counts real per-form entries.
-function formsDoneCount(clientId) { const fm = SETTINGS.formmeta && SETTINGS.formmeta[clientId]; return fm ? Object.values(fm).filter((v) => v && typeof v === 'object' && v.done).length : 0 }
+export function formsDoneCount(clientId) { const fm = SETTINGS.formmeta && SETTINGS.formmeta[clientId]; return fm ? Object.values(fm).filter((v) => v && typeof v === 'object' && v.done).length : 0 }
 
 // Per-client Meta conversion selection: which Meta conversion event is this
 // client's PRIMARY reported result, plus optional SECONDARY events to show.
 // Primary is a list (an account can optimise to / report several conversions summed).
 // Legacy single-string values are normalised to a one-item array on read.
-function loadMetaConv(clientId) {
+export function loadMetaConv(clientId) {
   const v = (SETTINGS.metaconv && SETTINGS.metaconv[clientId]) || {}
   const primary = Array.isArray(v.primary) ? v.primary.filter(Boolean) : (v.primary ? [v.primary] : [])
   return { primary, secondary: (Array.isArray(v.secondary) ? v.secondary : []).filter((s) => !primary.includes(s)) }
 }
-function saveMetaConv(clientId, obj) {
+export function saveMetaConv(clientId, obj) {
   const primary = Array.isArray(obj.primary) ? obj.primary.filter(Boolean) : (obj.primary ? [obj.primary] : [])
   const next = { primary, secondary: (Array.isArray(obj.secondary) ? obj.secondary : []).filter((s) => !primary.includes(s)) }
   SETTINGS.metaconv = { ...(SETTINGS.metaconv || {}), [clientId]: next }
@@ -4685,7 +4693,7 @@ function saveMetaConv(clientId, obj) {
 // Suggest a pipeline for a form: the only pipeline for single-pipeline clients,
 // else the best name-token overlap between the form label and a pipeline name
 // (incl. a bracketed [TAG] abbreviation). '' when nothing matches.
-function suggestPipeline(formName, pipes) {
+export function suggestPipeline(formName, pipes) {
   if (!pipes || !pipes.length) return ''
   if (pipes.length === 1) return pipes[0].id
   const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
@@ -4705,7 +4713,7 @@ function suggestPipeline(formName, pipes) {
 // Resolve which pipeline a campaign belongs to: an explicit Settings link wins;
 // "all" / unmatched fall back to a name-token match (same matcher forms use).
 // null = belongs to no specific pipeline.
-function pipeOfCampaign(clientId, campName, pipes) {
+export function pipeOfCampaign(clientId, campName, pipes) {
   if (campName == null) return null
   const t = loadCampMap(clientId)[campName]
   if (t === 'all') return null
@@ -4761,7 +4769,7 @@ function scopeGoogleToPipe(g, keep) {
    pipeline under byPipeline[pipelineId]; loadKpis(id, pid) reads that pipeline's
    set. Without a pid it returns the client-level set, falling back to the first
    pipeline's targets so account-level scorecards still show a target. */
-function loadKpis(clientId, pipelineId) {
+export function loadKpis(clientId, pipelineId) {
   const all = SETTINGS.kpis[clientId] || {}
   if (pipelineId) return (all.byPipeline && all.byPipeline[pipelineId]) || {}
   const { byPipeline, ...client } = all
@@ -4769,7 +4777,7 @@ function loadKpis(clientId, pipelineId) {
   if (byPipeline) { const first = Object.values(byPipeline).find((v) => v && Object.keys(v).length); if (first) return first }
   return {}
 }
-function saveKpis(clientId, k, pipelineId) {
+export function saveKpis(clientId, k, pipelineId) {
   const cur = SETTINGS.kpis[clientId] || {}
   const next = pipelineId ? { ...cur, byPipeline: { ...(cur.byPipeline || {}), [pipelineId]: k } } : { ...k, ...(cur.byPipeline ? { byPipeline: cur.byPipeline } : {}) }
   SETTINGS.kpis = { ...SETTINGS.kpis, [clientId]: next }; writeLS(KPI_KEY, SETTINGS.kpis); saveSettingsRemote({ kpis: { [clientId]: next } }); bumpSettings()
@@ -4782,13 +4790,13 @@ function kpiClass(actual, target, goodWhenUnder) { if (target == null || target 
    to the pipeline stage it represents so it sits in the right funnel order. They
    drive the Caalano360 / Meta / Google cost-per-event funnel and green columns.
    Unset = seeded defaults where known, else leads→booked→shown→won. */
-function loadKeyEventsRaw(clientId) { const v = SETTINGS.keyevents[clientId]; if (v !== undefined) return v; return SEED_KEYEVENTS[clientId] || [] }
+export function loadKeyEventsRaw(clientId) { const v = SETTINGS.keyevents[clientId]; if (v !== undefined) return v; return SEED_KEYEVENTS[clientId] || [] }
 // Key events for RENDERING (funnels, green columns, reach) = the configured key
 // events PLUS a synthetic "Qualified" stage event for every pipeline that has a
 // qualified stage set (Settings → Qualified lead). It slots into the funnel at its
 // stage position and behaves like any other key event. The editor + config checks
 // use loadKeyEventsRaw so the synthetic event never round-trips into storage.
-function loadKeyEvents(clientId) {
+export function loadKeyEvents(clientId) {
   const base = loadKeyEventsRaw(clientId)
   const qm = (SETTINGS.qualstage && SETTINGS.qualstage[clientId]) || null
   if (!qm || !Object.keys(qm).length) return base
@@ -4807,18 +4815,18 @@ function loadKeyEvents(clientId) {
 // now, to see. Every module is an existing component reading the existing
 // figures, never a variant, so what the custom view shows reconciles with the
 // tabs to the number.
-function loadDashboard(clientId) { const d = SETTINGS.dashboards && SETTINGS.dashboards[clientId]; return d && Array.isArray(d.modules) && d.modules.length ? d : null }
+export function loadDashboard(clientId) { const d = SETTINGS.dashboards && SETTINGS.dashboards[clientId]; return d && Array.isArray(d.modules) && d.modules.length ? d : null }
 // Who a custom dashboard is open to: a tier, and everyone above it sees it too.
 // 'viewer' still needs the viewer's Custom dashboard box ticked in Permissions;
 // staff roles see it as soon as their tier is reached. Older saves stored
 // 'viewers' - read as 'viewer'.
-const DASH_AUD = ['super', 'admin', 'user', 'viewer']
+export const DASH_AUD = ['super', 'admin', 'user', 'viewer']
 const DASH_AUD_LABEL = { super: 'Super Admins only', admin: 'Admins and above', user: 'Users and above', viewer: 'Account Admins (ticked in Permissions) and all staff' }
 const DASH_ROLE_RANK = { superadmin: 0, admin: 1, user: 2, viewer: 3, account_admin: 3, account_user: 4 }
-const dashAudience = (d) => { const a = d && d.audience; return a === 'viewers' ? 'viewer' : (DASH_AUD.includes(a) ? a : 'super') }
+export const dashAudience = (d) => { const a = d && d.audience; return a === 'viewers' ? 'viewer' : (DASH_AUD.includes(a) ? a : 'super') }
 const dashOpenToViewers = (d) => dashAudience(d) === 'viewer'
 function dashVisibleTo(role, d) { if (!d) return false; const r = DASH_ROLE_RANK[role]; return r != null && r <= DASH_AUD.indexOf(dashAudience(d)) }
-function saveDashboard(clientId, d) { SETTINGS.dashboards = { ...(SETTINGS.dashboards || {}), [clientId]: d }; writeLS(DASH_KEY, SETTINGS.dashboards); saveSettingsRemote({ dashboards: { [clientId]: d } }); bumpSettings() }
+export function saveDashboard(clientId, d) { SETTINGS.dashboards = { ...(SETTINGS.dashboards || {}), [clientId]: d }; writeLS(DASH_KEY, SETTINGS.dashboards); saveSettingsRemote({ dashboards: { [clientId]: d } }); bumpSettings() }
 // `sec:` modules are the Caalano360 sections by id; the plain ones are that
 // tab's other blocks; `tab:` modules embed a whole tab. `needs` gates a module
 // on what the client has linked.
@@ -4830,7 +4838,7 @@ function saveDashboard(clientId, d) { SETTINGS.dashboards = { ...(SETTINGS.dashb
 // renders as it always has.
 const DashPick = React.createContext(null)
 function Blk({ id, children }) { const pick = React.useContext(DashPick); if (pick && !pick.has(id)) return null; return <>{children}</> }
-const DASH_MODULES = [
+export const DASH_MODULES = [
   // A titled divider. May appear any number of times; its title is the heading.
   { type: 'heading', label: 'Section heading', group: 'Layout', hint: 'A titled divider that groups the modules below it', multi: true },
   { type: 'tiles', label: 'Headline tiles', group: 'Caalano360', hint: 'Ad spend, opportunities, won, revenue, ROAS, blended CAC' },
@@ -4944,24 +4952,24 @@ const DASH_MODULES = [
   { type: 'location:outcomes', label: 'Key events by location', group: 'Location', needs: 'ghl' },
   { type: 'location:list', label: 'Every location', group: 'Location', needs: 'ghl' },
 ]
-const dashModuleFits = (m, c) => !m.needs || (m.needs === 'ghl' ? !!c.ghl : m.needs === 'meta' ? !!c.meta : m.needs === 'google' ? !!c.google : m.needs === 'ga4' ? !!c.ga4 : true)
-const DASH_PRESETS = [
+export const dashModuleFits = (m, c) => !m.needs || (m.needs === 'ghl' ? !!c.ghl : m.needs === 'meta' ? !!c.meta : m.needs === 'google' ? !!c.google : m.needs === 'ga4' ? !!c.ga4 : true)
+export const DASH_PRESETS = [
   { key: 'exec', label: 'Executive summary', types: ['tiles', 'story', 'reach', 'eff', 'sec:channels', 'sec:pipelines', 'sec:actions'] },
   { key: 'sales', label: 'Sales team', types: ['tiles', 'reach', 'sec:bottleneck', 'sec:team', 'tab:users', 'sec:lostreasons', 'sec:atrisk', 'sec:speed'] },
   { key: 'full', label: 'Full Caalano360', types: DASH_MODULES.filter((m) => m.group === 'Caalano360').map((m) => m.type) },
 ]
-function saveKeyEvents(clientId, arr) { SETTINGS.keyevents = { ...SETTINGS.keyevents, [clientId]: arr }; writeLS(KEV_KEY, SETTINGS.keyevents); saveSettingsRemote({ keyevents: { [clientId]: arr } }); bumpSettings() }
+export function saveKeyEvents(clientId, arr) { SETTINGS.keyevents = { ...SETTINGS.keyevents, [clientId]: arr }; writeLS(KEV_KEY, SETTINGS.keyevents); saveSettingsRemote({ keyevents: { [clientId]: arr } }); bumpSettings() }
 // Organic-social competitors assigned to a client (name + IG/FB handle). Handles
 // are stored bare (no @, no URL); the tab derives profile links + Windsor lookups.
 function loadCompetitors(clientId) { return (SETTINGS.competitors && SETTINGS.competitors[clientId]) || [] }
 function saveCompetitors(clientId, arr) { SETTINGS.competitors = { ...(SETTINGS.competitors || {}), [clientId]: arr }; writeLS(COMPETITORS_KEY, SETTINGS.competitors); saveSettingsRemote({ competitors: { [clientId]: arr } }); bumpSettings() }
 // Monthly organic-social KPI targets, per client.
-function loadSocialKpis(clientId) { return (SETTINGS.socialkpis && SETTINGS.socialkpis[clientId]) || {} }
-function saveSocialKpis(clientId, obj) { SETTINGS.socialkpis = { ...(SETTINGS.socialkpis || {}), [clientId]: obj }; writeLS(SOCIALKPIS_KEY, SETTINGS.socialkpis); saveSettingsRemote({ socialkpis: { [clientId]: obj } }); bumpSettings() }
+export function loadSocialKpis(clientId) { return (SETTINGS.socialkpis && SETTINGS.socialkpis[clientId]) || {} }
+export function saveSocialKpis(clientId, obj) { SETTINGS.socialkpis = { ...(SETTINGS.socialkpis || {}), [clientId]: obj }; writeLS(SOCIALKPIS_KEY, SETTINGS.socialkpis); saveSettingsRemote({ socialkpis: { [clientId]: obj } }); bumpSettings() }
 const cleanHandle = (s) => String(s || '').trim().replace(/^@/, '').replace(/^https?:\/\/(www\.)?(instagram|facebook)\.com\//i, '').replace(/\/.*$/, '').trim()
 // reached-per-stage across a set of pipelines: cumulative from the last stage
 // (an opp at a stage passed through every earlier stage), summed by stage name.
-function reachedByStage(pipelines) {
+export function reachedByStage(pipelines) {
   const m = new Map(); let total = 0
   for (const p of pipelines) {
     const sts = (p.stages || []).slice().sort((a, b) => a.pos - b.pos)
@@ -4982,7 +4990,7 @@ function reachedByStage(pipelines) {
 // A key event is either a pipeline stage (legacy: a bare stage-name string) or a
 // booked calendar (new: { cal: '<calId>', label }). Normalise both to a common
 // shape so the same funnel can mix "reached this stage" with "booked this call".
-function normKeyEvents(arr) {
+export function normKeyEvents(arr) {
   return (arr || []).map((e) => {
     if (typeof e === 'string') return { kind: 'stage', ref: e, label: e, pipeline: null }
     // A calendar entry may be linked to a pipeline stage so we know where it
@@ -4995,14 +5003,14 @@ function normKeyEvents(arr) {
 }
 // Look up a stage's reached count honouring the linked pipeline: pipeline-scoped
 // key (pipelineId::name) first, else the cross-pipeline name total.
-function stageReachOf(rmap, pipeline, name) {
+export function stageReachOf(rmap, pipeline, name) {
   if (!rmap || !rmap.m) return 0
   if (pipeline && rmap.m.has(pipeline + '::' + name)) return rmap.m.get(pipeline + '::' + name) || 0
   return rmap.m.get(name) || 0
 }
 // Stage name -> earliest pipeline position, across a set of pipelines. Lets us
 // order key events by where they actually sit in the funnel.
-function stagePosMap(pipelines) {
+export function stagePosMap(pipelines) {
   const m = new Map()
   for (const p of pipelines || []) for (const s of (p.stages || [])) {
     const pos = s.pos == null ? 999 : s.pos
@@ -5046,7 +5054,7 @@ function orderKeyEvents(list, stagePos) {
 // ids; a merged group is relabelled to its stage name. Unlinked calendars stay
 // on their own.
 const nzStage = (s) => String(s || '').trim().toLowerCase()
-function mergeCalKeyEvents(list) {
+export function mergeCalKeyEvents(list) {
   // Normalise stage/label strings for matching: lower-case + trim AND strip any
   // leading 📅 / [PIPE] tag, so a calendar's linked stage ("[FIN] Booked Discovery
   // Call") still dedupes against the real "Booked Discovery Call" pipeline stage.
@@ -5102,7 +5110,7 @@ function mergeCalKeyEvents(list) {
   })
 }
 // Normalise -> merge same-stage calendars -> order by funnel position.
-function resolveKeyEvents(keyEvents, stagePos) {
+export function resolveKeyEvents(keyEvents, stagePos) {
   const merged = orderKeyEvents(mergeCalKeyEvents(normKeyEvents(keyEvents)), stagePos)
   // Drop stale / renamed key events: a configured pipeline-stage event whose name
   // no longer matches any CURRENT pipeline stage (so it can't resolve a position
@@ -5122,7 +5130,7 @@ function resolveKeyEvents(keyEvents, stagePos) {
 }
 // Per-calendar booked / shown for a channel ('all' | 'meta' | 'google'), keyed
 // by calendar id, from the attribution feed's appointments.byCalendar.
-function calCountMap(attribData, chan) {
+export function calCountMap(attribData, chan) {
   const m = new Map()
   const list = attribData && attribData.appointments && attribData.appointments.byCalendar
   if (Array.isArray(list)) {
@@ -5137,7 +5145,7 @@ function calCountMap(attribData, chan) {
 // events read their reached count from rmap; calendar events read booked/shown
 // from calMap. Returns [] when nothing configured resolves (caller shows a
 // default funnel).
-function keyEventRows(keyEvents, rmap, calMap, stagePos, wonTotal) {
+export function keyEventRows(keyEvents, rmap, calMap, stagePos, wonTotal) {
   const rows = []
   for (const k of resolveKeyEvents(keyEvents, stagePos)) {
     if (k.kind === 'calendar') {
@@ -5242,7 +5250,7 @@ function KeyPersonRow({ p, clientId, money, showCal = false }) {
 }
 // Click-through list of the people that make up ONE key event, channel-scoped.
 const KP_STATUSES = [['open', 'Open'], ['won', 'Won'], ['lost', 'Lost'], ['abandoned', 'Abandoned'], ['all', 'All']]
-function KeyPeopleModal({ event, clientId, channel, ad, range, currency, onClose, wonBasis = 'created' }) {
+export function KeyPeopleModal({ event, clientId, channel, ad, range, currency, onClose, wonBasis = 'created' }) {
   const [st, setSt] = useState({ status: 'loading', data: null })
   const [filter, setFilter] = useState('open')
   const money = (v) => fmtCurrency(v, currency)
@@ -5306,7 +5314,7 @@ function KeyPeopleModal({ event, clientId, channel, ad, range, currency, onClose
 // everywhere. A leading "Leads" row anchors the funnel so the first key event
 // gets a meaningful next-step conversion. Pass `drill={{clientId,channel,range}}`
 // to make each step click through to the people behind it.
-function KeyEventsFunnel({ rows, total, spend, currency, title, sub, caveat, style, className = '', headerRight, drill }) {
+export function KeyEventsFunnel({ rows, total, spend, currency, title, sub, caveat, style, className = '', headerRight, drill }) {
   const [drillEvent, setDrillEvent] = useState(null)
   if (!rows || !rows.length) return null
   const money = (v) => fmtCurrency(v, currency)
@@ -7409,7 +7417,7 @@ function PipelinePerformance({ cc, pcc, clientId, currency, spend }) {
   )
 }
 
-const CC_CHANS = [['all', 'All'], ['paid', 'Paid'], ['nonpaid', 'Non-paid'], ['google', 'Google'], ['meta', 'Meta']]
+export const CC_CHANS = [['all', 'All'], ['paid', 'Paid'], ['nonpaid', 'Non-paid'], ['google', 'Google'], ['meta', 'Meta']]
 
 /* ============ Caalano360 intelligence ============
    Deterministic reads of the figures already on screen: the key-event reach
@@ -9021,7 +9029,7 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
 }
 
 
-const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+export const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 const PRESETS = [
   { id: 'today', label: 'Today' },
   { id: 'yesterday', label: 'Yesterday' },
@@ -9039,7 +9047,7 @@ const PRESETS = [
   { id: 'last_12m', label: 'Last 12 months' },
   { id: 'max', label: 'Maximum' },
 ]
-function presetRange(id) {
+export function presetRange(id) {
   // Anchor on today's date in the business timezone (noon, so DST edges and the
   // viewer's own offset can't move it), then do plain calendar arithmetic.
   const now = (() => { const [y, m, d] = tzTodayStr().split('-').map(Number); return new Date(y, m - 1, d, 12, 0, 0, 0) })()
@@ -9066,11 +9074,11 @@ function presetRange(id) {
     default: return mk(shift(30), shift(1))
   }
 }
-const rangeQuery = (r) => `from=${r.from}&to=${r.to}`
+export const rangeQuery = (r) => `from=${r.from}&to=${r.to}`
 // Dates are shown DD/MM/YYYY throughout. Accepts YYYY-MM-DD or an ISO
 // datetime (shown on the business-timezone day, matching the server's counting
 // windows); anything else passes through.
-function fmtDMY(v) {
+export function fmtDMY(v) {
   if (v == null || v === '') return ''
   const s = String(v)
   const m = s.match(/^([0-9]{4})-([0-9]{2})-([0-9]{2})(?:$|T)/)
@@ -9078,7 +9086,7 @@ function fmtDMY(v) {
   const when = new Date(s)
   return isFinite(when.getTime()) ? when.toLocaleDateString('en-AU', { timeZone: APP_TZ, day: '2-digit', month: '2-digit', year: 'numeric' }) : s
 }
-const rangeLabel = (r) => r.label || `${fmtDMY(r.from)} → ${fmtDMY(r.to)}`
+export const rangeLabel = (r) => r.label || `${fmtDMY(r.from)} → ${fmtDMY(r.to)}`
 // The equal-length period immediately BEFORE this range, for period-over-period
 // comparisons (e.g. leaderboard rank movement). from/to are inclusive YYYY-MM-DD.
 const prevRange = (r) => {
@@ -9395,7 +9403,7 @@ function ConnectMark() {
     </svg>
   )
 }
-function Spinner({ label, big }) {
+export function Spinner({ label, big }) {
   const tab = React.useContext(LoadCtx)
   const pool = useMemo(() => loadPoolFor(tab, label), [tab, label])
   const [shown, line] = useLoadReveal(pool, !!big)
@@ -10309,7 +10317,7 @@ function RegionPicker({ regions, onAdd, existing, ownZone, setOwnZone, zoneName 
   )
 }
 
-function GeoSettings({ clientId }) {
+export function GeoSettings({ clientId }) {
   useSettingsSync()
   const [g, setG] = useState(() => loadGeo(clientId))
   const [biz, setBiz] = useState({ status: 'loading' })
@@ -10672,7 +10680,7 @@ function GeoSettings({ clientId }) {
   )
 }
 
-function ClinicSettings({ clientId, nonce }) {
+export function ClinicSettings({ clientId, nonce }) {
   const cals = useCalendars(clientId, nonce)
   const [, bump] = useState(0)
   useEffect(() => onSettings(() => bump((n) => n + 1)), [])
@@ -11467,7 +11475,7 @@ function parseFormDate(raw) {
   if (month < 1 || month > 12 || day < 1 || day > 31 || year < 2000 || year > 2100) return null
   return { iso: `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`, display: `${day} ${MONTH_ABBR[month - 1]} ${year}` }
 }
-function groupAnswers(answers) {
+export function groupAnswers(answers) {
   const groups = new Map()
   for (const a of answers) {
     const v = String(a.value)
@@ -11491,7 +11499,7 @@ function groupAnswers(answers) {
 // `reached(person, keyEvent)` test built from the person's stagePos / pipelineId /
 // booked / status - so counting who reached each event never reinvents the
 // key-event resolution.
-function formKeyEvents(clientId, pipe, pipes) {
+export function formKeyEvents(clientId, pipe, pipes) {
   const stagePos = stagePosMap(pipes || [])
   const kePipe = pipe && !String(pipe).startsWith('link:') ? pipe : 'all'
   const events = resolveKeyEvents(keyEventsForPipe(loadKeyEvents(clientId), kePipe), stagePos)
@@ -11892,7 +11900,7 @@ function FormSettingsModal({ clientId, form, pipes, onClose }) {
 // match. Suggestions never overwrite a saved link - they're just the default in
 // the dropdown until confirmed. Saving (even with no pipeline) marks a form
 // reviewed, which drives the card's Forms health icon.
-function FormsSettingsTab({ clientId }) {
+export function FormsSettingsTab({ clientId }) {
   const st = useForms(clientId, presetRange('last_30d'), 0)
   const [editForm, setEditForm] = useState(null)
   const [, force] = useState(0)
@@ -11974,7 +11982,7 @@ const LEAD_MAP_COLOR = [['volume', 'Volume'], ['book', 'Booked %'], ['win', 'Won
 // list merge + the map), so it's fetched at most once.
 let _auDbPromise = null
 function loadAuDb() { if (!_auDbPromise) _auDbPromise = import('./data/aupostcodes.json').then((m) => m.default || m); return _auDbPromise }
-function useAuDb() {
+export function useAuDb() {
   const [db, setDb] = useState(undefined)
   useEffect(() => { let a = true; loadAuDb().then((d) => { if (a) setDb(d) }).catch(() => { if (a) setDb(null) }); return () => { a = false } }, [])
   return db
@@ -11984,7 +11992,7 @@ const isPostcodeVal = (v) => /^\d{3,4}$/.test(String(v).trim())
 // (2110) and its suburb name (Hunters Hill) - into one entry, summing outcomes
 // and labelling it "Suburb (postcode)". Carries lat/lng so the map plots it
 // directly. Unresolvable junk answers are kept as-is.
-function mergeLocations(locs, db) {
+export function mergeLocations(locs, db) {
   if (!db) return locs
   const tally = {}
   for (const l of locs) {
@@ -15637,7 +15645,7 @@ function UsersView({ clientId, range, nonce, currency, wonBasis = 'closed', pipe
   )
 }
 // Settings pane: paste a client's Optimisation Log Google Sheet link + test it.
-function OptLogSettings({ clientId }) {
+export function OptLogSettings({ clientId }) {
   useSettingsSync()
   const [url, setUrl] = useState(() => loadOptLog(clientId))
   const [preview, setPreview] = useState({ status: 'idle' })
@@ -15996,1615 +16004,9 @@ function OptimisationLog({ clientId, sheet, embedded = false }) {
     </div>
   )
 }
-// ---- Sales Hub: the manager's view --------------------------------------------
-// One tab for whoever runs the team: the month against the summed rep targets,
-// the rep board with attainment and a status chip, the leaderboard and the wins
-// feed (with a celebration when a new one lands), the pipeline by stage and who
-// is sitting on stuck deals, appointments per calendar per rep, speed to lead
-// per rep, lost reasons per rep, and coaching flags that say who needs help and
-// on what. TV mode is the same data full screen for a wall. Reads one scope,
-// built from the same code as Users, Timing, Appointments and Call Reporting.
-const HUB_PERIODS = [['this_month', 'This month'], ['last_month', 'Last month'], ['last_7d', 'Last 7 days'], ['last_30d', 'Last 30 days'], ['last_90d', 'Last 90 days']]
-const HUB_PREFS_KEY = 'caalano_hub_prefs'
-// Sounds each have their own switch (gong on a win, lead, booking); the win
-// animation itself always plays. An older single 'activity' switch carries
-// over to both the lead and booking sounds.
-const HUB_PREFS_DEFAULT = { confetti: true, sound: true, leadSound: true, bookSound: true }
-function hubPrefs() {
-  try { const v = JSON.parse(localStorage.getItem(HUB_PREFS_KEY) || '{}'); const p = { ...HUB_PREFS_DEFAULT, ...v }; if (v.activity === false) { if (v.leadSound == null) p.leadSound = false; if (v.bookSound == null) p.bookSound = false } delete p.activity; return p } catch { return { ...HUB_PREFS_DEFAULT } }
-}
-function saveHubPrefs(p) { try { localStorage.setItem(HUB_PREFS_KEY, JSON.stringify(p)) } catch { /* private mode */ } }
-// A short rising chime from the browser's own synth: no file, no download.
-// The gong. A real recording wins if the site ships one at /gong.mp3 (drop
-// it in public/); otherwise the crash is synthesised: broadband noise through
-// a bank of resonant filters for the wash, forty detuned inharmonic partials
-// that bloom just after the hit for the metal, and a low thump for the mallet.
-let hubGongFile = null // null = not checked yet, true = plays, false = missing
-let hubGongAudio = null
-// Fetch the recording once when the hub opens so the first strike is not late.
-function hubGongPreload() {
-  if (hubGongAudio || hubGongFile === false) return
-  try { hubGongAudio = new Audio('/gong.mp3'); hubGongAudio.preload = 'auto'; hubGongAudio.load() } catch { hubGongFile = false }
-}
-function hubChime() {
-  if (hubGongFile === false) return hubGongSynth()
-  try {
-    hubGongPreload(); const a = hubGongAudio; a.currentTime = 0; a.volume = 1
-    a.play().then(() => { hubGongFile = true }).catch(() => { hubGongFile = false; hubGongSynth() })
-  } catch { hubGongFile = false; hubGongSynth() }
-}
-function hubGongSynth() {
-  try {
-    const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return
-    const ac = new AC(); const t0 = ac.currentTime
-    const master = ac.createGain(); master.gain.value = 0.4
-    const comp = ac.createDynamicsCompressor(); comp.threshold.value = -12; comp.ratio.value = 3; comp.attack.value = 0.01; comp.release.value = 0.4
-    master.connect(comp); comp.connect(ac.destination)
-    // 1. The crash: noise through resonant bands. Hits hard, dips, swells back
-    //    (the gong's "waaah") and washes out over three seconds.
-    const N = 3.6
-    const nb = ac.createBuffer(1, Math.floor(ac.sampleRate * N), ac.sampleRate); const nd = nb.getChannelData(0)
-    for (let i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1
-    const src = ac.createBufferSource(); src.buffer = nb
-    const wash = ac.createGain()
-    wash.gain.setValueAtTime(0.0001, t0); wash.gain.exponentialRampToValueAtTime(1, t0 + 0.012); wash.gain.exponentialRampToValueAtTime(0.45, t0 + 0.14); wash.gain.exponentialRampToValueAtTime(0.75, t0 + 0.4); wash.gain.exponentialRampToValueAtTime(0.0001, t0 + 3.4)
-    for (const [f, q, g] of [[600, 2, 0.5], [1300, 2.5, 0.6], [2400, 3, 0.6], [3900, 3, 0.5], [6200, 2.5, 0.35], [9000, 2, 0.2]]) {
-      const bp = ac.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = f; bp.Q.value = q
-      const gg = ac.createGain(); gg.gain.value = g; src.connect(bp); bp.connect(gg); gg.connect(wash)
-    }
-    wash.connect(master); src.start(t0); src.stop(t0 + N)
-    // 2. The metal: inharmonic partials in detuned pairs so they beat and
-    //    shimmer. The lows ring longest; the highs bloom in after the hit.
-    const base = 130; let seed = 7; const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647 }
-    for (let i = 0; i < 40; i++) {
-      const r = 1 + i * 0.42 + rnd() * 0.35; const f = base * r; if (f > 9000) break
-      const lvl = (0.32 / Math.pow(r, 0.55)) * (0.7 + rnd() * 0.6)
-      const dec = Math.max(1.2, 6.5 / Math.pow(r, 0.45))
-      const bloom = i > 4 ? 0.05 + rnd() * 0.3 : 0.006
-      for (const det of [-4, 4]) {
-        const o = ac.createOscillator(); o.type = 'sine'; o.frequency.value = f; o.detune.value = det + (rnd() - 0.5) * 6
-        const g = ac.createGain(); g.gain.setValueAtTime(0.0001, t0); g.gain.exponentialRampToValueAtTime(lvl, t0 + bloom); g.gain.exponentialRampToValueAtTime(0.0001, t0 + dec)
-        o.connect(g); g.connect(master); o.start(t0); o.stop(t0 + dec + 0.1)
-      }
-    }
-    // 3. The body: the mallet's thump, a short low sweep.
-    const th = ac.createOscillator(); th.type = 'sine'; th.frequency.setValueAtTime(140, t0); th.frequency.exponentialRampToValueAtTime(55, t0 + 0.25)
-    const tg = ac.createGain(); tg.gain.setValueAtTime(0.0001, t0); tg.gain.exponentialRampToValueAtTime(0.9, t0 + 0.006); tg.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.4)
-    th.connect(tg); tg.connect(master); th.start(t0); th.stop(t0 + 0.45)
-    setTimeout(() => { try { ac.close() } catch { /* ignore */ } }, 7500)
-  } catch { /* no audio */ }
-}
-// Activity cues for the TV: short synthesised sounds, well under the gong,
-// for a new lead (a bright two-note ding) and a booked appointment (a rising
-// three-note chime). Nothing takes over the screen; a small chip in the corner
-// says what happened and fades. One shared audio context, resumed on use.
-let _hubAC = null
-function hubAC() {
-  const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return null
-  if (!_hubAC || _hubAC.state === 'closed') _hubAC = new AC()
-  if (_hubAC.state === 'suspended') _hubAC.resume().catch(() => {})
-  return _hubAC
-}
-function hubPing(kind) {
-  try {
-    const ac = hubAC(); if (!ac) return
-    const t0 = ac.currentTime + 0.02
-    const master = ac.createGain(); master.gain.value = 0.22; master.connect(ac.destination)
-    const notes = kind === 'booked' ? [[523.25, 0], [659.25, 0.11], [783.99, 0.22]] : [[880, 0], [1318.5, 0.09]]
-    const tail = kind === 'booked' ? 0.5 : 0.7
-    for (const [f, dt] of notes) {
-      for (const [type, mul, lvl] of [['sine', 1, 1], ['triangle', 2, 0.25]]) {
-        const o = ac.createOscillator(); o.type = type; o.frequency.value = f * mul
-        const g = ac.createGain(); const t = t0 + dt
-        g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(lvl, t + 0.008); g.gain.exponentialRampToValueAtTime(0.0001, t + tail)
-        o.connect(g); g.connect(master); o.start(t); o.stop(t + tail + 0.1)
-      }
-    }
-  } catch { /* no audio */ }
-}
-// The gong strike on screen: mallet swings in, the gong shudders and rings
-// out in shock waves, then the rep's name and the deal value land.
-const HUB_GONG_HIT_MS = 450
-function HubGong({ win, currency, onDone }) {
-  if (!win) return null
-  return (
-    <div className="hub-gong" role="status" onClick={onDone}>
-      <div className="hub-gong-stage">
-        <svg className="hub-gong-svg" viewBox="0 0 400 400" aria-hidden="true">
-          <defs>
-            <radialGradient id="hubGongFace" cx="42%" cy="38%" r="65%"><stop offset="0" stopColor="#ffe9a3" /><stop offset="0.35" stopColor="#e6b84a" /><stop offset="0.75" stopColor="#a8741c" /><stop offset="1" stopColor="#6b4610" /></radialGradient>
-            <radialGradient id="hubGongBoss" cx="40%" cy="35%" r="70%"><stop offset="0" stopColor="#fff4c8" /><stop offset="0.6" stopColor="#d9a63a" /><stop offset="1" stopColor="#8a5d16" /></radialGradient>
-            <radialGradient id="hubGongGlow" cx="50%" cy="50%" r="50%"><stop offset="0" stopColor="#fff8dc" stopOpacity="1" /><stop offset="0.45" stopColor="#ffe08a" stopOpacity="0.55" /><stop offset="1" stopColor="#ffd166" stopOpacity="0" /></radialGradient>
-          </defs>
-          <g className="hub-gong-frame"><rect x="40" y="22" width="320" height="10" rx="5" fill="#3a2a12" /><rect x="52" y="22" width="10" height="360" rx="5" fill="#3a2a12" /><rect x="338" y="22" width="10" height="360" rx="5" fill="#3a2a12" /><line x1="150" y1="32" x2="165" y2="78" stroke="#8b6a2c" strokeWidth="3" /><line x1="250" y1="32" x2="235" y2="78" stroke="#8b6a2c" strokeWidth="3" /></g>
-          <g className="hub-gong-rings"><circle className="hub-gong-ring" cx="200" cy="215" r="130" /><circle className="hub-gong-ring r2" cx="200" cy="215" r="130" /><circle className="hub-gong-ring r3" cx="200" cy="215" r="130" /><circle className="hub-gong-ring r4" cx="200" cy="215" r="130" /></g>
-          <circle className="hub-gong-flash" cx="200" cy="215" r="170" fill="url(#hubGongGlow)" />
-          <g className="hub-gong-disc">
-            <circle cx="200" cy="215" r="132" fill="url(#hubGongFace)" stroke="#5a3b0c" strokeWidth="4" />
-            <circle cx="200" cy="215" r="112" fill="none" stroke="#7d5717" strokeWidth="2" opacity="0.6" />
-            <circle cx="200" cy="215" r="86" fill="none" stroke="#7d5717" strokeWidth="2" opacity="0.5" />
-            <circle cx="200" cy="215" r="60" fill="none" stroke="#7d5717" strokeWidth="2" opacity="0.4" />
-            <circle cx="200" cy="215" r="30" fill="url(#hubGongBoss)" stroke="#6b4610" strokeWidth="3" />
-          </g>
-          <g className="hub-gong-mallet"><line x1="330" y1="330" x2="205" y2="222" stroke="#5a3b0c" strokeWidth="9" strokeLinecap="round" /><circle cx="205" cy="222" r="22" fill="#2b1d0b" stroke="#141414" strokeWidth="3" /></g>
-        </svg>
-        <div className="hub-gong-text">
-          <div className="hub-gong-kicker">Deal closed</div>
-          <div className="hub-gong-rep">{win.user || 'Someone'}</div>
-          {win.value ? <div className="hub-gong-value">{fmtCurrency(win.value, currency)}</div> : null}
-          <div className="hub-gong-deal">{win.name}</div>
-        </div>
-      </div>
-    </div>
-  )
-}
-// Confetti on a canvas over the page, two seconds, then gone.
-function hubConfetti() {
-  try {
-    const c = document.createElement('canvas'); c.className = 'hub-confetti'; c.width = window.innerWidth; c.height = window.innerHeight; document.body.appendChild(c)
-    const ctx = c.getContext('2d'); const cols = ['#6c5ce7', '#17b26a', '#f0435b', '#d4a017', '#1f4fbf', '#ff8c42']
-    const bits = Array.from({ length: 160 }, () => ({ x: Math.random() * c.width, y: -20 - Math.random() * c.height * 0.4, w: 6 + Math.random() * 6, h: 8 + Math.random() * 8, vx: (Math.random() - 0.5) * 3, vy: 2 + Math.random() * 4, r: Math.random() * Math.PI, vr: (Math.random() - 0.5) * 0.3, col: cols[Math.floor(Math.random() * cols.length)] }))
-    const t0 = performance.now()
-    const tick = (t) => {
-      ctx.clearRect(0, 0, c.width, c.height)
-      for (const b of bits) { b.x += b.vx; b.y += b.vy; b.r += b.vr; ctx.save(); ctx.translate(b.x, b.y); ctx.rotate(b.r); ctx.fillStyle = b.col; ctx.fillRect(-b.w / 2, -b.h / 2, b.w, b.h); ctx.restore() }
-      if (t - t0 < 2600) requestAnimationFrame(tick); else c.remove()
-    }
-    requestAnimationFrame(tick)
-  } catch { /* ignore */ }
-}
-const hubPct = (v) => (v == null ? '-' : `${v}%`)
-function HubStat({ label, value, sub, tone, big }) {
-  return <div className={`hub-stat ${tone || ''} ${big ? 'big' : ''}`}><div className="hub-stat-l">{label}</div><div className="hub-stat-v">{value}</div>{sub ? <div className="hub-stat-s">{sub}</div> : null}</div>
-}
-// Attainment against the summed rep targets for the month.
-// A half-circle dial: the arc fills with attainment, a tick marks where pace
-// says it should be today, the number in the middle is the percentage.
-function HubDial({ label, sub, actual, target, fmt, kind = 'count', elapsed, monthly, onClick, open, paced = true }) {
-  const a = actual || 0
-  const lower = kind === 'lower', rate = kind === 'pct', level = !paced && !rate && !lower // an average: judged against the target itself, never on pace
-  const ratio = lower ? (actual == null ? 0 : Math.min(1, target / Math.max(a, 0.01))) : Math.min(1, a / target)
-  const need = (rate || lower || level) ? target : target * (monthly ? elapsed : 1)
-  const tone = actual == null && (rate || lower || level) ? '' : lower ? (a <= target ? 'good' : a <= target * 1.5 ? 'warn' : 'bad') : a >= need ? 'good' : a >= need * 0.8 ? 'warn' : 'bad'
-  const toGo = lower ? (actual == null ? 'not measured yet' : a <= target ? 'Inside target 🎯' : `${repMin(a - target)} over`) : level ? (actual == null ? 'nothing won yet' : a >= target ? 'On target 🎯' : `${fmt(target - a)} under`) : rate ? (actual == null ? 'nothing to rate yet' : a >= target ? 'On target 🎯' : `${Math.round(target - a)} points short`) : (a >= target ? 'Target hit 🎯' : `${fmt(target - a)} to go`)
-  const R = 54, C = Math.PI * R, cx = 64, cy = 70
-  const th = Math.PI * (1 - (monthly ? elapsed : 1)); const px = cx + Math.cos(th), py = cy - Math.sin(th)
-  const p1 = [cx + (R - 9) * Math.cos(th), cy - (R - 9) * Math.sin(th)], p2 = [cx + (R + 9) * Math.cos(th), cy - (R + 9) * Math.sin(th)]
-  void px; void py
-  return (
-    <button type="button" className={`hub-dial ${tone} ${open ? 'open' : ''}`} onClick={onClick} title="Tap for the split by rep">
-      <svg viewBox="0 0 128 82" aria-hidden="true">
-        <path className="hub-dial-bg" d={`M ${cx - R} ${cy} A ${R} ${R} 0 0 1 ${cx + R} ${cy}`} />
-        <path className="hub-dial-fg" d={`M ${cx - R} ${cy} A ${R} ${R} 0 0 1 ${cx + R} ${cy}`} style={{ strokeDasharray: C, strokeDashoffset: C * (1 - ratio) }} />
-        {monthly && !rate && !lower && !level ? <line className="hub-dial-pace" x1={p1[0]} y1={p1[1]} x2={p2[0]} y2={p2[1]} /> : null}
-        <text className="hub-dial-pct" x={cx} y={cy - 4}>{Math.round(ratio * 100)}%</text>
-      </svg>
-      <div className="hub-dial-l">{label}{sub ? <span className="hub-dial-sub">{sub}</span> : null}</div>
-      <div className="hub-dial-v">{actual == null ? '-' : fmt(a)} <small>/ {fmt(target)}</small></div>
-      <div className="hub-dial-s">{toGo}</div>
-    </button>
-  )
-}
-// The hub's funnels chart the client's key-event stages (Settings -> Key
-// events), the same forward steps the Caalano360 tab uses, so side branches
-// such as "No show" or "Disqualified" are not read as steps everyone passed
-// through. Stage order follows the pipeline; the won stage is left out. A
-// client with no key events set gets every stage, as before.
-function hubFunnelStages(clientId, p) {
-  const all = (p && p.stages) || []
-  const ke = normKeyEvents(loadKeyEvents(clientId)).filter((e) => e.kind === 'stage' && !WON_RE.test(e.label || '') && (!e.pipeline || e.pipeline === p.id))
-  const wanted = new Map(ke.map((e) => [e.ref, e.label || e.ref]))
-  const picked = all.filter((st) => wanted.has(st.name)).map((st) => ({ ...st, label: wanted.get(st.name) }))
-  return { stages: picked.length ? picked : all.map((st) => ({ ...st, label: st.name })), keyed: picked.length > 0 }
-}
-// Month by month: every goal against what happened, past months and the
-// current one, with the coming months' targets typed in place (the budget).
-// Filter by pipeline to see that pipeline's goals; filter by rep to see each
-// goal as that rep's share (an even split of $30,000 between two reps reads
-// as $15,000 each) against their own figure. With no filter, an Overall
-// business group adds the pipeline goals together per metric. Quarterly goals
-// get a quarter grid; custom-dates goals a row each.
-// Progress for a set of goals, each in its own current window: one request per
-// distinct window (this month, this quarter, each range goal), through the
-// same goalhistory route the Month by month board uses, so a window is one
-// server-side hub build shared with the hub itself. Two requests in flight at
-// a time; each answer fills in as it lands. `refresh` re-reads when it changes.
-function useGoalProgress(clientId, goals, refresh) {
-  const [prog, setProg] = useState({})
-  useEffect(() => {
-    if (!goals.length) { setProg({}); return }
-    let dead = false
-    const today = tzTodayStr()
-    const byKey = new Map()
-    for (const g of goals) { const w = goalWindow(g, today); const key = g.period === 'range' ? `range:${g.id}` : w.key; if (!byKey.has(key)) byKey.set(key, []); byKey.get(key).push(g) }
-    const queue = [...byKey.keys()]
-    const worker = async () => {
-      while (queue.length && !dead) {
-        const key = queue.shift(); const list = byKey.get(key)
-        let j = null
-        try {
-          const r = await fetch(`/.netlify/functions/windsor?scope=goalhistory&client=${encodeURIComponent(clientId)}${hoursQuery(loadHours(clientId))}`, { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ goals: list, key }) })
-          j = await r.json().catch(() => ({ error: `server ${r.status}` }))
-        } catch (e) { j = { error: String((e && e.message) || e) } }
-        if (dead) return
-        setProg((p) => { const n = { ...p }; for (const g of list) { const w = goalWindow(g, today); const c = j && j.cells ? j.cells[g.id] : null; n[g.id] = { id: g.id, window: w, target: c ? c.target : goalTargetFor(g, w.key), actual: c ? c.actual : null, byRep: c ? c.byRep : [], notYet: !!(w.notYet || (j && j.notYet)), error: j && j.error ? j.error : null } } return n })
-      }
-    }
-    worker(); worker()
-    return () => { dead = true }
-  }, [clientId, goals, refresh]) // eslint-disable-line
-  return prog
-}
-function HubPlanBoard({ clientId, goals, currency, canEdit, today, pipelines, reps }) {
-  const [draft, setDraft] = useState(goals)
-  const [dirty, setDirty] = useState(false)
-  const [back, setBack] = useState(6)
-  const [drill, setDrill] = useState(null)
-  const [pipeF, setPipeF] = useState('all')
-  const [repF, setRepF] = useState('all')
-  useEffect(() => { setDraft(goals); setDirty(false) }, [goals])
-  const pastMonths = useMemo(() => { const y = +today.slice(0, 4), m = +today.slice(5, 7); return Array.from({ length: back }, (_, i) => { const mm = m - 1 - (back - 1 - i); const yy = y + Math.floor(mm / 12); return `${yy}-${String(((mm % 12) + 12) % 12 + 1).padStart(2, '0')}` }) }, [today, back])
-  const pastQuarters = useMemo(() => { if (!goals.some((g) => g.period === 'quarter')) return []; const n = back > 6 ? 5 : 3; const y = +today.slice(0, 4), q = Math.floor((+today.slice(5, 7) - 1) / 3); return Array.from({ length: n }, (_, i) => { const qq = q - (n - 1 - i); return `${y + Math.floor(qq / 4)}-Q${((qq % 4) + 4) % 4 + 1}` }) }, [goals, today, back])
-  const [hist, setHist] = useState({ cells: {}, pending: 0, error: null })
-  useEffect(() => {
-    if (!goals.length) { setHist({ cells: {}, pending: 0, error: null }); return }
-    let dead = false
-    const keys = [...pastMonths.slice().reverse(), ...pastQuarters.slice().reverse(), ...goals.filter((g) => g.period === 'range').map((g) => `range:${g.id}`)]
-    setHist({ cells: {}, pending: keys.length, error: null })
-    const queue = keys.slice()
-    const worker = async () => {
-      while (queue.length && !dead) {
-        const key = queue.shift()
-        try {
-          const r = await fetch(`/.netlify/functions/windsor?scope=goalhistory&client=${encodeURIComponent(clientId)}${hoursQuery(loadHours(clientId))}`, { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ goals, key }) })
-          const j = await r.json().catch(() => ({ error: `server ${r.status}` }))
-          if (dead) return
-          setHist((h) => ({ cells: { ...h.cells, [key]: (j && j.cells) || {} }, pending: h.pending - 1, error: j && j.error ? j.error : h.error }))
-        } catch (e) { if (!dead) setHist((h) => ({ ...h, pending: h.pending - 1, error: String((e && e.message) || e) })) }
-      }
-    }
-    worker(); worker()
-    return () => { dead = true }
-  }, [clientId, goals, pastMonths, pastQuarters]) // eslint-disable-line
-  // Names for the row labels and the filter chips: the hub's pipelines and
-  // reps plus anything a goal refers to that is not in the current period.
-  const pipeName = (id) => ((pipelines || []).find((p) => p.id === id) || {}).name || 'Pipeline'
-  const repName = (id) => ((reps || []).find((r) => r.id === id) || {}).name || 'Former rep'
-  const pipeIds = useMemo(() => { const ids = (pipelines || []).map((p) => p.id); for (const g of goals) for (const pid of (g.pipelines || [])) if (!ids.includes(pid)) ids.push(pid); return ids }, [pipelines, goals])
-  const repIds = useMemo(() => { const ids = (reps || []).filter((r) => r.id !== 'unassigned').map((r) => r.id); for (const g of goals) for (const uid of (g.reps || [])) if (!ids.includes(uid)) ids.push(uid); return ids }, [reps, goals])
-  const rawCell = (id, key) => { const per = hist.cells[key] || hist.cells[`range:${id}`]; return per ? per[id] || null : null }
-  // The cell for a goal in a period under the current filter: the rep's own
-  // share and figure when a rep is chosen, else the goal's total.
-  const cellOf = (g, key) => {
-    const c = rawCell(g.id, key)
-    if (!c) return null
-    if (repF === 'all') return c
-    const b = (c.byRep || []).find((x) => x.id === repF)
-    return b && b.share != null ? { target: b.share, actual: b.actual, byRep: [b] } : null
-  }
-  const fmtFor = (g) => { const m = goalMetric(g.metric) || []; return (v) => (v == null ? '-' : m[2] === 'money' ? fmtCurrency(v, currency) : m[2] === 'pct' ? `${Math.round(v)}%` : m[2] === 'lower' ? repMin(v) : fmtNumber(v)) }
-  const kindOf = (g) => (goalMetric(g.metric) || [])[2]
-  const curM = today.slice(0, 7); const curQ = goalWindow({ period: 'quarter' }, today).key
-  const tone = (g, cell, key, isCurrent) => {
-    if (!cell || cell.actual == null || !cell.target) return ''
-    const k = kindOf(g)
-    if (k === 'lower') return cell.actual <= cell.target ? 'good' : cell.actual <= cell.target * 1.5 ? 'warn' : 'bad'
-    const pct = cell.actual / cell.target; const need = isCurrent && k !== 'pct' && !RATE_METRICS.has(g.metric) ? goalWindow(g, today).elapsed : 1
-    return pct >= need ? 'good' : pct >= need * 0.8 ? 'warn' : 'bad'
-  }
-  const setTarget = (g, map, key, val) => {
-    setDirty(true)
-    setDraft((cur) => cur.map((x) => { if (x.id !== g.id) return x; const next = { ...(x[map] || {}) }; const n = Number(val); if (!val || !(n > 0) || n === x.target) delete next[key]; else next[key] = n; return { ...x, [map]: next } }))
-  }
-  // Which goals the filters keep. A rep filter keeps goals the rep has a
-  // slice of; a pipeline filter keeps goals scoped to that pipeline.
-  const goalShareOk = (g) => repF === 'all' || ((!g.reps || g.reps.includes(repF)) && (g.split !== 'shared' || (g.reps && g.reps.length === 1) || RATE_METRICS.has(g.metric)))
-  const visible = draft.filter((g) => (pipeF === 'all' || (g.pipelines || []).includes(pipeF)) && goalShareOk(g))
-  // Overall business: with no filters, the pipeline goals added up per metric
-  // (money and counts only; a rate cannot be added).
-  const overall = (pipeF === 'all' && repF === 'all') ? (() => {
-    const byMetric = new Map()
-    for (const g of visible) if (g.pipelines && g.period === 'month' && ['money', 'count'].includes(kindOf(g)) && !RATE_METRICS.has(g.metric)) { if (!byMetric.has(g.metric)) byMetric.set(g.metric, []); byMetric.get(g.metric).push(g) }
-    return [...byMetric.entries()].filter(([, list]) => list.length >= 1).map(([metric, list]) => ({ id: `sum:${metric}`, synthetic: true, list, metric, name: `${(goalMetric(metric) || [])[1]} · all pipelines`, period: 'month', target: list.reduce((a, g) => a + g.target, 0), pipelines: null, reps: null, split: 'shared', byMonth: {}, byQuarter: {} }))
-  })() : []
-  const sumCell = (row, key) => { let t = 0, a = 0, n = 0; for (const g of row.list) { const c = rawCell(g.id, key); t += goalTargetFor(g, key); if (c && c.actual != null) { a += c.actual; n++ } } return { target: t, actual: n ? a : null } }
-  const futureM = monthKeysFrom(today, 4).slice(1), futureQ = quarterKeysFrom(today, 2).slice(1)
-  const monthCols = [...pastMonths, ...futureM], quarterCols = [...pastQuarters, ...futureQ]
-  const mLabel = (k) => new Date(+k.slice(0, 4), +k.slice(5, 7) - 1, 1).toLocaleString('en-AU', { month: 'short', year: '2-digit' })
-  const scopeLine = (g) => {
-    if (g.synthetic) return `${g.list.length} pipeline goal${g.list.length > 1 ? 's' : ''} added up: ${g.list.map((x) => (x.pipelines || []).map(pipeName).join(', ')).join(' + ')}`
-    const m = goalMetric(g.metric) || []
-    const split = (g.reps && g.reps.length === 1) || ['pct', 'lower'].includes(m[2]) || RATE_METRICS.has(g.metric) ? '' : (SPLITS.find(([k]) => k === g.split) || [])[1] || ''
-    return [m[1], g.pipelines ? g.pipelines.map(pipeName).join(', ') : 'All pipelines', g.reps ? g.reps.map(repName).join(', ') : 'All reps', split.toLowerCase()].filter(Boolean).join(' · ')
-  }
-  const groups = [['overall', 'Overall business', 'Pipeline goals added together per metric.'], ['business', 'Business and team', ''], ['pipeline', 'Pipeline', ''], ['rep', 'Rep', '']]
-  const grid = (period, cols, map, isCur, label) => {
-    const rows = [...(period === 'month' ? overall : []), ...visible.filter((g) => g.period === period)]
-    if (!rows.length) return null
-    return (
-      <div className="card plan-card">
-        <div className="rep-lb-head"><h4>{period === 'quarter' ? 'Quarter by quarter' : 'Month by month'}{repF !== 'all' ? <span className="cap"> · {repName(repF)}'s share of each goal</span> : pipeF !== 'all' ? <span className="cap"> · {pipeName(pipeF)}</span> : null}</h4><span className="cap">target on top, what happened underneath · green hit, amber close, red missed · the current period is judged on pace · tap a cell for the split by rep</span>{period === 'month' ? <label className="act-sel">Back<select value={back} onChange={(e) => setBack(Number(e.target.value))}><option value={6}>6 months</option><option value={12}>12 months</option></select></label> : null}</div>
-        <div className="table-wrap"><table className="mini-tbl plan-tbl">
-          <thead><tr><th className="lft">Goal</th>{cols.map((k) => <th key={k} className={k === isCur ? 'cur' : k > isCur ? 'fut' : ''}>{label(k)}</th>)}<th>Hit</th></tr></thead>
-          <tbody>{groups.map(([lvl, title, hint]) => { const list = rows.filter((g) => (lvl === 'overall' ? g.synthetic : !g.synthetic && goalLevel(g) === lvl)); return list.length ? [<tr key={lvl + '-h'} className="plan-grp"><td colSpan={cols.length + 2}>{title}{hint ? <span className="cap"> · {hint}</span> : null}</td></tr>, ...list.map((g) => { const f = fmtFor(g); const editable = canEdit && !g.synthetic && repF === 'all'; let hit = 0, n = 0; return (
-            <tr key={g.id}><td className="lft"><b>{g.name || (goalMetric(g.metric) || [])[1]}</b><div className="cap">{scopeLine(g)}</div></td>
-              {cols.map((k) => { const cell = g.synthetic ? sumCell(g, k) : cellOf(g, k); const target = g.synthetic ? cell.target : repF !== 'all' ? (cell ? cell.target : null) : goalTargetFor(g, k); const t = k < isCur && cell && cell.actual != null ? tone(g, cell, k, false) : k === isCur ? tone(g, cell, k, true) : ''; if (k < isCur && cell && cell.actual != null) { n++; if (t === 'good') hit++ } const planned = !g.synthetic && (g[map] || {})[k] != null; return (
-                <td key={k} className={`plan-cell ${t} ${k === isCur ? 'cur' : k > isCur ? 'fut' : ''}`}>
-                  {editable ? <input type="number" min="0" className={`plan-in ${planned ? 'planned' : ''}`} value={planned ? g[map][k] : ''} placeholder={String(g.target)} onChange={(e) => setTarget(g, map, k, e.target.value)} title={planned ? 'Planned for this period' : 'Default target; type to plan this period'} /> : <div className="plan-t">{target == null ? (k > isCur ? f(goalTargetFor(g, k)) : '-') : f(target)}</div>}
-                  {k <= isCur ? <button type="button" className={`plan-a plan-drill ${drill && drill.id === g.id && drill.key === k ? 'on' : ''}`} disabled={!cell || g.synthetic} onClick={() => setDrill(drill && drill.id === g.id && drill.key === k ? null : { id: g.id, key: k })}>{cell ? f(cell.actual) : hist.pending > 0 ? '…' : '-'}{cell && cell.actual != null && target && kindOf(g) !== 'lower' ? <small> {Math.round((cell.actual / target) * 100)}%</small> : null}</button> : <div className="plan-a cap">planned</div>}
-                </td>) })}
-              <td className="plan-hit">{n ? `${hit} / ${n}` : '-'}</td>
-            </tr>) })] : null })}</tbody>
-        </table></div>
-      </div>
-    )
-  }
-  const ranges = visible.filter((g) => g.period === 'range')
-  const drillPanel = (() => {
-    if (!drill) return null
-    const g = draft.find((x) => x.id === drill.id); const cell = g ? rawCell(g.id, drill.key) : null
-    if (!g || !cell) return null
-    const f = fmtFor(g); const k = kindOf(g); const label = /Q/.test(drill.key) ? drill.key.replace('-', ' ') : /^\d{4}-\d{2}$/.test(drill.key) ? mLabel(drill.key) : goalWindow(g, today).label
-    const rows = (cell.byRep || []).map((b) => ({ ...b, v: b.actual == null ? 0 : b.actual })).sort((a, b) => (k === 'lower' ? a.v - b.v : b.v - a.v))
-    const max = Math.max(1, ...rows.map((r) => Math.max(r.v, r.share || 0)))
-    const isCurrent = drill.key === curM || drill.key === curQ; const need = isCurrent && k !== 'pct' && k !== 'lower' && !RATE_METRICS.has(g.metric) ? goalWindow(g, today).elapsed : 1
-    const toneOf = (r) => (!r.share ? '' : k === 'lower' ? (r.v <= r.share ? 'good' : 'bad') : r.v >= r.share * need ? 'good' : r.v >= r.share * need * 0.8 ? 'warn' : 'bad')
-    return <div className="card plan-card"><div className="rep-lb-head"><h4>{g.name || (goalMetric(g.metric) || [])[1]} · {label}</h4><span className="cap">{f(cell.actual)} of {f(cell.target)}{g.split === 'shared' && !(g.reps && g.reps.length === 1) && k !== 'pct' && k !== 'lower' ? ' · shared team number, no slices' : ''}</span><button type="button" className="btn-ghost sm" onClick={() => setDrill(null)}>Close</button></div>
-      {rows.length ? rows.map((r) => <RepBar key={r.id} label={r.name} value={r.v} max={max} text={r.share ? `${f(r.v)} / ${f(r.share)} · ${Math.round((r.v / r.share) * 100)}%` : f(r.v)} tone={toneOf(r)} />) : <p className="cap">No rep had anything in this period.</p>}
-    </div>
-  })()
-  return (
-    <div className="plan-board">
-      <div className="plan-filters">
-        <div className="hub-chips"><span className="cap plan-fl">Pipeline</span><button type="button" className={`goal-chip ${pipeF === 'all' ? 'on' : ''}`} onClick={() => setPipeF('all')}>All</button>{pipeIds.map((id) => <button type="button" key={id} className={`goal-chip ${pipeF === id ? 'on' : ''}`} onClick={() => setPipeF(pipeF === id ? 'all' : id)}>{pipeName(id)}</button>)}</div>
-        <div className="hub-chips"><span className="cap plan-fl">Rep</span><button type="button" className={`goal-chip ${repF === 'all' ? 'on' : ''}`} onClick={() => setRepF('all')}>All</button>{repIds.map((id) => <button type="button" key={id} className={`goal-chip ${repF === id ? 'on' : ''}`} onClick={() => setRepF(repF === id ? 'all' : id)}>{repName(id)}</button>)}</div>
-      </div>
-      {hist.error ? <p className="cap act-bad">Some periods could not be read: {hist.error}</p> : null}
-      {hist.pending > 0 ? <p className="cap">Reading {hist.pending} more period{hist.pending === 1 ? '' : 's'}…</p> : null}
-      {canEdit && repF === 'all' ? <div className="act-note-btns plan-save"><button type="button" className="btn-primary act-btn" disabled={!dirty} onClick={() => { saveGoals(clientId, draft); setDirty(false) }}>Save targets</button>{dirty ? <span className="cap">Unsaved changes to the plan.</span> : <span className="cap">Type in a cell to plan that period; blank means the default target.</span>}</div> : repF !== 'all' ? <p className="cap">Showing {repName(repF)}'s share of each goal they are attached to, against their own figures. Shared team numbers with no slices are left out. Targets are edited with the rep filter off.</p> : null}
-      {drillPanel}
-      {grid('month', monthCols, 'byMonth', curM, mLabel)}
-      {grid('quarter', quarterCols, 'byQuarter', curQ, (k) => k.replace('-', ' '))}
-      {ranges.length ? <div className="card plan-card"><div className="rep-lb-head"><h4>Custom dates</h4></div>{ranges.map((g) => { const w = goalWindow(g, today); const cell = cellOf(g, w.key); const f = fmtFor(g); const t = cell ? tone(g, cell, w.key, w.active) : ''; return <div className="hub-win" key={g.id}><div><b>{g.name || (goalMetric(g.metric) || [])[1]}</b> <span className="cap">{w.label}{w.notYet ? ' · not started' : w.ended ? ' · ended' : ''} · {scopeLine(g)}</span></div><span className={`plan-range ${t}`}>{cell ? `${f(cell.actual)} of ${f(cell.target)}` : `target ${f(g.target)}`}</span></div> })}</div> : null}
-      {!visible.length && !overall.length ? <div className="card rep-cockpit-empty"><b>{draft.length ? 'No goals match this filter.' : 'No goals yet.'}</b> <span className="cap">{draft.length ? 'Clear the pipeline or rep filter above.' : 'Add them in Settings → this client → Goals, then plan them here month by month.'}</span></div> : null}
-    </div>
-  )
-}
-function SalesHubView({ clientId, authUser, currency, nonce, pipe: pipeProp, onPipe, pipes: pipesProp }) {
-  // Follows the workspace's pipeline picker like every other tab: one
-  // pipeline recalculates everything within it; "All" keeps each pipeline's
-  // funnel and lost reasons apart.
-  const [pipeSel, setPipeSel] = usePipeState(pipeProp, onPipe, pipesProp)
-  const [period, setPeriod] = useState('this_month')
-  const [stale, setStale] = useState(7)
-  const [tick, setTick] = useState(0)
-  const [st, setSt] = useState({ status: 'loading', data: null })
-  const [tv, setTv] = useState(false)
-  const [prefs, setPrefs] = useState(hubPrefs)
-  const [sortKey, setSortKey] = useState('revenue')
-  const [openRep, setOpenRep] = useState(null)
-  const [openGauge, setOpenGauge] = useState(null)
-  const [screen, setScreen] = useState('live')
-  const [spot, setSpot] = useState(0)
-  const [live, setLive] = useState({ ok: null, latest: 0, wins: [] })
-  const [setup, setSetup] = useState(null)
-  const liveSeen = useRef(null), liveQueue = useRef([]), celebrated = useRef(new Set()), dRef = useRef({})
-  const seenWins = useRef(null)
-  const [celebrate, setCelebrate] = useState(null)
-  const strikeT = useRef(null)
-  // Activity chips for the TV (new leads, bookings), and refs so the live
-  // poll always reads the current TV state and preferences.
-  const [activity, setActivity] = useState([])
-  const tvRef = useRef(tv), prefsRef = useRef(prefs)
-  useEffect(() => { tvRef.current = tv }, [tv])
-  useEffect(() => { prefsRef.current = prefs }, [prefs])
-  useEffect(() => { if (!activity.length) return; const iv = setInterval(() => setActivity((a) => a.filter((x) => Date.now() - x.at < 12000)), 1000); return () => clearInterval(iv) }, [activity.length])
-  const hubTestActivity = (kind) => { hubPing(kind); setActivity((a) => [{ id: `test:${Date.now()}`, kind, at: Date.now(), text: kind === 'lead' ? 'New lead · test' : 'Appointment booked · test' }, ...a].slice(0, 6)) }
-  // One win at a time: the gong overlay, then confetti and the sound timed to
-  // the mallet hitting, then everything clears after ten seconds.
-  const hubStrike = (win) => {
-    if (win.id && win.id !== 'test') { if (celebrated.current.has(win.id)) return; celebrated.current.add(win.id) }
-    clearTimeout(strikeT.current); setCelebrate({ ...win, key: Date.now() })
-    setTimeout(() => { if (prefsRef.current.confetti) hubConfetti(); if (prefsRef.current.sound) hubChime() }, HUB_GONG_HIT_MS)
-    strikeT.current = setTimeout(() => setCelebrate(null), 10000)
-  }
-  useSettingsSync()
-  useEffect(() => { if (prefs.sound) hubGongPreload() }, [prefs.sound])
-  useEffect(() => {
-    let dead = false
-    setSt((s) => ({ status: s.data ? 'refreshing' : 'loading', data: s.data }))
-    const r = presetRange(period)
-    fetch(`/.netlify/functions/windsor?scope=saleshub&client=${encodeURIComponent(clientId)}&${rangeQuery(r)}&preset=${period}&stale=${stale}${pipeSel && pipeSel !== 'all' ? `&pipeline=${encodeURIComponent(pipeSel)}` : ''}${hoursQuery(loadHours(clientId))}${tick || nonce ? `&_r=${tick}.${nonce || 0}` : ''}`, { credentials: 'same-origin' })
-      .then((x) => x.json().catch(() => ({ error: `server ${x.status}` })))
-      .then((j) => {
-        if (dead) return
-        setSt({ status: j && j.error && !j.team ? 'err' : 'ok', data: j })
-        // A win that was not on the last read is worth a party.
-        const ids = new Set(((j && j.wins) || []).map((w) => w.id))
-        if (seenWins.current) { const fresh = ((j && j.wins) || []).filter((w) => !seenWins.current.has(w.id)); if (fresh.length) hubStrike(fresh[0]) }
-        seenWins.current = ids
-      })
-      .catch((e) => { if (!dead) setSt({ status: 'err', data: { error: String((e && e.message) || e) } }) })
-    return () => { dead = true }
-  }, [clientId, period, stale, pipeSel, tick, nonce]) // eslint-disable-line
-  useEffect(() => { const iv = setInterval(() => { if (document.visibilityState === 'visible') setTick((t) => t + 1) }, tv ? 60000 : 180000); return () => clearInterval(iv) }, [tv])
-  useEffect(() => { if (tv && period !== 'this_month') setPeriod('this_month') }, [tv]) // eslint-disable-line
-  useEffect(() => { if (!tv) return; const onKey = (e) => { if (e.key === 'Escape') setTv(false) }; window.addEventListener('keydown', onKey); document.body.classList.add('hub-tv-on'); return () => { window.removeEventListener('keydown', onKey); document.body.classList.remove('hub-tv-on'); try { if (document.fullscreenElement) document.exitFullscreen() } catch { /* ignore */ } } }, [tv])
-  const d = st.data || {}
-  const team = d.team || {}
-  const reps = d.reps || []
-  const money = (v) => fmtCurrency(v || 0, currency)
-  const cashOn = !!(d.cashField && loadCashOn(clientId))
-  const goalsAll = useMemo(() => loadGoals(clientId), [clientId, SETTINGS.goals, SETTINGS.repkpis]) // eslint-disable-line
-  const repIdsAll = useMemo(() => reps.map((r) => r.id), [reps])
-  const today = tzTodayStr()
-  // Goals on the hub: business and pipeline goals (a single rep's goal lives
-  // on My results), each measured by the server in its own window - this
-  // month, this quarter, or its dates - whatever period the hub is showing.
-  const hubGoalList = useMemo(() => goalsAll.filter((g) => !(g.reps && g.reps.length === 1) && !goalWindow(g, today).ended), [goalsAll, today])
-  // Progress re-reads at most every four minutes (the server keeps a live
-  // window for three), not on every poll of the board.
-  const [progTick, setProgTick] = useState(0)
-  const progAt = useRef(0)
-  useEffect(() => { if (st.status === 'loading') return; if (Date.now() - progAt.current >= 4 * 60000) { progAt.current = Date.now(); setProgTick((t) => t + 1) } }, [tick, st.status])
-  const prog = useGoalProgress(clientId, hubGoalList, progTick)
-  const hubGoals = useMemo(() => hubGoalList.map((g) => {
-    const m = goalMetric(g.metric) || []; const w = goalWindow(g, today); const p = prog[g.id]
-    const scope = [g.pipelines ? g.pipelines.map((pid) => ((d.pipelines || []).find((x) => x.id === pid) || {}).name || 'Pipeline').join(', ') : null, g.reps ? `${g.reps.length} reps` : null].filter(Boolean).join(' · ')
-    const fallback = g.period === 'month' && !p ? goalActual({ ...g, target: goalTargetFor(g, w.key) }, reps) : null
-    return { goal: g, key: g.id, label: g.name || m[1], sub: [w.label, scope].filter(Boolean).join(' · '), kind: m[2], fmt: m[2] === 'money' ? money : m[2] === 'pct' ? (v) => `${Math.round(v)}%` : m[2] === 'lower' ? repMin : fmtNumber, actual: p ? p.actual : fallback, target: p ? p.target : goalTargetFor(g, w.key), elapsed: w.elapsed, pace: w.active && !w.notYet, byRep: p ? p.byRep : null, notYet: !!w.notYet }
-  }), [hubGoalList, prog, reps, d.pipelines, today]) // eslint-disable-line
-  const bizRevenue = goalsAll.find((g) => g.metric === 'revenue' && !g.pipelines && !g.reps)
-  const targets = { revenue: bizRevenue ? bizRevenue.target : 0 }
-  const now = new Date(); const dim = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate(); const day = now.getDate(); const elapsed = Math.min(1, Math.max(0.03, day / dim))
-  const monthly = period === 'this_month'
-  const dialDefs = hubGoals.filter((x) => x.kind !== 'money' || x.goal.metric !== 'cash' || cashOn)
-  // Mini leaderboards: who leads on each thing a sales floor competes on.
-  const boards = [
-    ['set', 'Top appointment setter', (r) => r.set, fmtNumber, 'set'],
-    ['booked', 'Most appointments', (r) => r.booked, fmtNumber, 'booked'],
-    ['showRate', 'Best show rate', (r) => ((r.showed + r.noShow) >= 3 ? r.showRate : null), (v) => `${v}%`, ''],
-    ['minutes', 'Most on the phone', (r) => r.minutes, fmtNumber, 'min'],
-    ['calls', 'Most calls', (r) => r.calls, fmtNumber, 'calls'],
-    ['speed', 'Fastest to lead', (r) => (r.speedMeasured >= 3 && r.speedMin != null ? r.speedMin : null), repMin, '', 'asc'],
-    ['showed', 'Most meetings held', (r) => r.showed, fmtNumber, 'held'],
-    ['won', 'Most deals closed', (r) => r.won, fmtNumber, 'won'],
-    ['avgDeal', 'Biggest average deal', (r) => (r.won >= 2 ? r.avgDeal : null), money, 'per deal'],
-    ['resultRate', 'Highest result rate', (r) => (r.decided >= 3 ? r.resultRate : null), (v) => `${v}%`, 'resulted'],
-    ['openValue', 'Biggest open pipeline', (r) => r.openValue, money, 'open'],
-    ...(cashOn ? [['cash', 'Most cash collected', (r) => r.cash, money, 'collected']] : []),
-  ].map(([key, title, get, fmt, unit, dir]) => {
-    const rows = reps.filter((r) => r.id !== 'unassigned').map((r) => ({ r, v: get(r) })).filter((x) => x.v != null && (dir === 'asc' || x.v > 0)).sort(dir === 'asc' ? (a, b) => a.v - b.v : (a, b) => b.v - a.v).slice(0, 3)
-    return rows.length ? { key, title, rows, fmt, unit } : null
-  }).filter(Boolean)
-  // Attainment per rep: revenue target first, then deals, then bookings.
-  const attain = (r) => { const t = repTargetsFromGoals(goalsAll, r.id, repIdsAll, today); const key = t.revenue > 0 ? 'revenue' : t.won > 0 ? 'won' : t.booked > 0 ? 'booked' : null; if (!key) return null; const a = key === 'revenue' ? r.revenue : key === 'won' ? r.won : r.booked; return { key, pct: Math.round(((a || 0) / t[key]) * 100), need: monthly ? elapsed * 100 : 100 } }
-  const status = (r) => { const a = attain(r); if (!a) return null; return a.pct >= a.need ? ['On pace', 'good'] : a.pct >= a.need * 0.8 ? ['At risk', 'warn'] : ['Behind', 'bad'] }
-  const sorters = { revenue: (a, b) => b.revenue - a.revenue, won: (a, b) => b.won - a.won, booked: (a, b) => b.booked - a.booked, showed: (a, b) => b.showed - a.showed, showRate: (a, b) => (b.showRate ?? -1) - (a.showRate ?? -1), winRate: (a, b) => (b.winRate ?? -1) - (a.winRate ?? -1), calls: (a, b) => b.calls - a.calls, speed: (a, b) => (a.speedMin ?? 1e9) - (b.speedMin ?? 1e9), stale: (a, b) => b.stale - a.stale, attain: (a, b) => ((attain(b) || {}).pct ?? -1) - ((attain(a) || {}).pct ?? -1), leads: (a, b) => b.leads - a.leads }
-  const board = [...reps].sort(sorters[sortKey] || sorters.revenue)
-  // Coaching flags: specific, and each one points at a rep.
-  const flags = useMemo(() => {
-    const out = []
-    const teamSpeed = team.speedMin
-    for (const r of reps) {
-      if (r.speedMin != null && teamSpeed != null && r.speedMeasured >= 3 && r.speedMin > Math.max(teamSpeed * 2, teamSpeed + 30)) out.push({ rep: r, tone: 'bad', text: `Speed to lead ${repMin(r.speedMin)} against the team's ${repMin(teamSpeed)}` })
-      if (r.staleTiers && r.staleTiers.t30 >= 3) out.push({ rep: r, tone: 'bad', text: `${r.staleTiers.t30} deals untouched for 30+ days` })
-      else if (r.stale >= 8) out.push({ rep: r, tone: 'warn', text: `${r.stale} stale deals` })
-      if (r.showRate != null && team.showRate != null && (r.showed + r.noShow) >= 5 && r.showRate < team.showRate - 15) out.push({ rep: r, tone: 'warn', text: `Show rate ${r.showRate}% against the team's ${team.showRate}%` })
-      if (r.unresulted >= 3) out.push({ rep: r, tone: 'warn', text: `${r.unresulted} appointments past their time with no result` })
-      if (r.leads >= 8 && r.booked === 0 && r.byStaff === 0) out.push({ rep: r, tone: 'warn', text: `${r.leads} leads and no appointment booked` })
-      const s = status(r); if (s && s[1] === 'bad') out.push({ rep: r, tone: 'bad', text: `Behind pace on ${(attain(r) || {}).key === 'revenue' ? 'revenue' : (attain(r) || {}).key === 'won' ? 'deals' : 'bookings'}: ${(attain(r) || {}).pct}% of target with ${Math.round(elapsed * 100)}% of the month gone` })
-    }
-    return out.sort((a, b) => (a.tone === 'bad' ? 0 : 1) - (b.tone === 'bad' ? 0 : 1)).slice(0, 12)
-  }, [reps, team]) // eslint-disable-line
-  useEffect(() => { if (!tv || boards.length < 2) return; const iv = setInterval(() => setSpot((x) => x + 1), 9000); return () => clearInterval(iv) }, [tv, boards.length])
-  // Live events from the CRM webhook: polled every 15 s on a TV, 30 s on the
-  // tab. The first read only marks what is already there; after that a new
-  // win rings the gong (one per poll at most, so a bulk update is not thirty
-  // gongs) and joins the wins feed before the snapshot catches up.
-  useEffect(() => {
-    let dead = false
-    const poll = () => {
-      if (document.visibilityState !== 'visible') return
-      fetch(`/.netlify/functions/windsor?scope=hublive&client=${encodeURIComponent(clientId)}`, { credentials: 'same-origin' })
-        .then((r) => r.json().catch(() => null))
-        .then((j) => {
-          if (dead || !j) return
-          if (j.error) { setLive((l) => ({ ...l, ok: false })); return }
-          const evs = j.events || []; const latest = evs.reduce((m, e) => Math.max(m, e.at || 0), 0)
-          if (!liveSeen.current) { liveSeen.current = new Set(evs.map((e) => e.id)); setLive({ ok: true, latest, wins: evs.filter((e) => e.kind === 'won').slice(-10).reverse() }); return }
-          const fresh = evs.filter((e) => !liveSeen.current.has(e.id)); for (const e of fresh) liveSeen.current.add(e.id)
-          liveQueue.current.push(...fresh.filter((e) => e.kind === 'won' && j.now - (e.at || 0) < 10 * 60000))
-          setLive((l) => ({ ok: true, latest, wins: [...fresh.filter((e) => e.kind === 'won').reverse(), ...l.wins].slice(0, 10) }))
-          strikeNext()
-          hubActivity(fresh, j.now)
-        })
-        .catch(() => { if (!dead) setLive((l) => ({ ...l, ok: false })) })
-      strikeNext()
-    }
-    // New leads and bookings: a sound and a corner chip, only on a TV (the
-    // tab stays quiet), only for events from the last ten minutes, and one
-    // cue per kind per poll so a bulk import is not thirty dings.
-    const hubActivity = (fresh, nowMs) => {
-      if (dead || !tvRef.current) return
-      const recent = fresh.filter((e) => (e.kind === 'lead' || e.kind === 'booked') && nowMs - (e.at || 0) < 10 * 60000)
-      if (!recent.length) return
-      const pf = prefsRef.current
-      const kinds = [...new Set(recent.map((e) => e.kind))].filter((k) => (k === 'lead' ? pf.leadSound : pf.bookSound))
-      kinds.forEach((k, i) => setTimeout(() => { if (!dead) hubPing(k) }, i * 650))
-      const dd = dRef.current || {}
-      const who = (e) => (dd.users || {})[e.userId] || ((dd.reps || []).find((r) => r.id === e.userId) || {}).name || null
-      setActivity((a) => [...recent.slice(-6).reverse().map((e) => ({ id: e.id, kind: e.kind, at: nowMs, text: e.kind === 'lead' ? `New lead${who(e) ? ` · ${who(e)}` : ''}` : `Appointment booked${who(e) ? ` · ${who(e)}` : ''}` })), ...a].slice(0, 6))
-    }
-    // One gong per poll at most: the first new win rings now, the rest queue.
-    const strikeNext = () => {
-      if (dead) return
-      const next = liveQueue.current.shift(); if (!next) return
-      const dd = dRef.current || {}
-      hubStrike({ id: next.oppId, user: (dd.users || {})[next.userId] || ((dd.reps || []).find((r) => r.id === next.userId) || {}).name || null, name: next.name || 'Deal', value: next.value })
-    }
-    poll(); const iv = setInterval(poll, tv ? 15000 : 30000)
-    return () => { dead = true; clearInterval(iv) }
-  }, [clientId, tv]) // eslint-disable-line
-  const pipesAll = d.pipelines || []
-  const multi = (pipesProp && pipesProp.length > 1) || pipesAll.length > 1
-  const focus = d.pipelineId ? (pipesAll.find((p) => p.id === d.pipelineId) || null) : null
-  // A pipeline just chosen (Focus, or the picker) while the hub rebuilds: the
-  // old numbers stay but dim, and a bar says what is loading, so the click is
-  // plainly doing something during the few seconds a build takes.
-  const busy = st.status === 'refreshing'
-  const pendingPipe = busy && (pipeSel || 'all') !== (d.pipelineId || 'all') ? (pipeSel && pipeSel !== 'all' ? ((pipesAll.find((p) => p.id === pipeSel) || (pipesProp || []).find((p) => p.id === pipeSel) || {}).name || 'that pipeline') : 'all pipelines') : null
-  const periodLabel = ((HUB_PERIODS.find(([id]) => id === period) || [])[1] || '').toLowerCase()
-  const head = (
-    <div className="act-bar hub-bar">
-      <div className="act-filters">
-        <div className="act-seg hub-screens"><button type="button" className={screen === 'live' ? 'on' : ''} onClick={() => setScreen('live')}>Live board</button><button type="button" className={screen === 'plan' ? 'on' : ''} onClick={() => setScreen('plan')}>Month by month</button></div>
-        <label className="act-sel"><select value={period} onChange={(e) => setPeriod(e.target.value)}>{HUB_PERIODS.map(([id, l]) => <option key={id} value={id}>{l}</option>)}</select></label>
-        <label className="act-sel"><select value={stale} onChange={(e) => setStale(Number(e.target.value))}><option value={7}>Stale after 7 days</option><option value={14}>Stale after 14 days</option><option value={30}>Stale after 30 days</option></select></label>
-        <button type="button" className="btn-ghost sm" disabled={st.status === 'refreshing'} onClick={() => setTick((t) => t + 1)}>{st.status === 'refreshing' ? 'Refreshing…' : 'Refresh'}</button>
-        <button type="button" className="btn-primary act-btn" onClick={() => setTv(true)}>📺 TV mode</button>
-      </div>
-      <div className="hub-tools">
-        <label className="alloc-check"><input type="checkbox" checked={prefs.confetti} onChange={(e) => { const p = { ...prefs, confetti: e.target.checked }; setPrefs(p); saveHubPrefs(p) }} /> Confetti</label>
-        <label className="alloc-check" title="The gong on a won deal; the animation always plays"><input type="checkbox" checked={prefs.sound} onChange={(e) => { const p = { ...prefs, sound: e.target.checked }; setPrefs(p); saveHubPrefs(p) }} /> Gong sound</label>
-        <label className="alloc-check" title="On the TV only: a short ding for each new lead"><input type="checkbox" checked={prefs.leadSound} onChange={(e) => { const p = { ...prefs, leadSound: e.target.checked }; setPrefs(p); saveHubPrefs(p) }} /> Lead sound</label>
-        <label className="alloc-check" title="On the TV only: a short chime for each booked appointment"><input type="checkbox" checked={prefs.bookSound} onChange={(e) => { const p = { ...prefs, bookSound: e.target.checked }; setPrefs(p); saveHubPrefs(p) }} /> Booking sound</label>
-        {authUser && authUser.role === 'superadmin' ? <><button type="button" className="btn-ghost sm" onClick={() => hubStrike({ id: 'test', user: authUser.name || 'Test rep', name: 'Sample deal', value: 12500 })}>Test the gong</button><button type="button" className="btn-ghost sm" onClick={() => hubTestActivity('lead')}>Test lead sound</button><button type="button" className="btn-ghost sm" onClick={() => hubTestActivity('booked')}>Test booking sound</button></> : null}
-        <span className={`hub-livechip ${live.latest ? 'on' : ''}`} title="Live events arrive from the CRM webhook the moment a deal changes; the numbers refresh from the five-minute snapshot">{live.latest ? `● Live · last event ${actHrs(Math.round((Date.now() - live.latest) / 3600000))}` : live.ok === false ? '○ Live unavailable' : '○ Live · no events yet'}</span>
-        {authUser && authUser.role === 'superadmin' ? <button type="button" className="btn-ghost sm" onClick={() => { if (setup) return setSetup(null); setSetup({ loading: true }); fetch(`/.netlify/functions/windsor?scope=webhookurl&client=${encodeURIComponent(clientId)}`, { credentials: 'same-origin' }).then((r) => r.json().catch(() => ({}))).then((j) => setSetup(j || {})).catch(() => setSetup({ error: 'Could not load.' })) }}>Live setup</button> : null}
-      </div>
-    </div>
-  )
-  const setupPanel = setup ? <div className="card hub-setup">
-    <div className="rep-lb-head"><h4>Live setup: the CRM webhook</h4><button type="button" className="btn-ghost sm" onClick={() => setSetup(null)}>Close</button></div>
-    {setup.loading ? <p className="cap">Loading…</p> : setup.error ? <p className="cap act-bad">{setup.error}</p> : !setup.url ? <p className="cap">No site secret is set, so no webhook token can be made.</p> : <>
-      <p className="cap">In the marketplace app's settings, paste this URL as the webhook URL and tick these events: {(setup.events || []).join(', ')}. One URL serves every connected account; each event names its own location. {setup.signed ? 'Deliveries are signature-checked.' : 'Set GHL_WEBHOOK_PUBLIC_KEY in the site environment to signature-check every delivery as well.'}</p>
-      <div className="act-note-btns"><input className="act-in hub-setup-url" type="text" readOnly value={setup.url} onFocus={(e) => e.target.select()} /><button type="button" className="btn-primary act-btn" onClick={() => { try { navigator.clipboard.writeText(setup.url) } catch { /* select and copy by hand */ } }}>Copy</button></div>
-    </>}
-  </div> : null
-  if (st.status === 'loading') return <div className="act-wrap">{head}<div className="card"><Spinner label="Adding up the team…" /></div></div>
-  if (st.status === 'err') return <div className="act-wrap">{head}<div className="card"><p className="cap act-bad" style={{ margin: 0 }}>{d.error || 'Could not load.'}</p></div></div>
-  if (d.ghl === false) return <div className="card"><p className="cap">{d.error || 'This account has no Caalano Systems connection.'}</p></div>
-  const lbTop = [...reps].sort((a, b) => b.revenue - a.revenue || b.won - a.won).slice(0, 3)
-  const medal = ['🥇', '🥈', '🥉']
-  dRef.current = d
-  const liveFeed = (live.wins || []).map((e) => ({ id: e.oppId, name: e.name || 'Deal', value: e.value, user: (d.users || {})[e.userId] || null, at: e.at, pipeline: null, live: true }))
-  const allWins = [...liveFeed, ...(d.wins || [])].filter((w, i, arr) => arr.findIndex((x) => x.id === w.id) === i).sort((a, b) => (b.at || 0) - (a.at || 0))
-  const winsFeed = (limit) => allWins.slice(0, limit).map((w) => <div className="hub-win" key={w.id}><span className="hub-win-m">🎉</span><div><b>{w.user || 'Someone'}</b> closed <b>{w.name}</b>{w.value ? ` for ${money(w.value)}` : ''}{cashOn && w.cash ? ` · ${money(w.cash)} collected` : ''}{multi && w.pipeline ? <span className="cap"> · {w.pipeline}</span> : null}</div><span className="cap">{actHrs(Math.round((Date.now() - w.at) / 3600000))}</span></div>)
-  const leaderboard = (
-    <div className="card rep-card hub-lb">
-      <div className="rep-lb-head"><h4>Leaderboard</h4><span className="cap">by revenue{periodLabel ? ` · ${periodLabel}` : ''}{focus ? ` · ${focus.name}` : ''}</span></div>
-      <div className="rep-podium">{lbTop.map((r, i) => <div key={r.id} className={`rep-pod p${i + 1}`}><div className="rep-pod-m">{medal[i]}</div><b>{r.name}</b><div className="rep-pod-v">{money(r.revenue)}</div><div className="cap">{r.won} won · {r.booked} booked</div></div>)}</div>
-      <div className="rep-lb-rows">{[...reps].sort((a, b) => b.revenue - a.revenue || b.won - a.won).map((r, i) => <div key={r.id} className="rep-lb-row hub-lb-row"><span>{i + 1}</span><span className="rep-lb-name">{r.name}</span><span>{money(r.revenue)}</span><span>{r.won} won</span><span>{r.booked} booked</span><span>{r.showed} held</span></div>)}</div>
-    </div>
-  )
-  // The four numbers a sales manager asks for first, then the supporting ones.
-  const primary = (
-    <div className="hub-stats hub-primary">
-      <HubStat label="Revenue" value={money(team.revenue)} sub={targets.revenue ? `of ${money(targets.revenue)} team target` : `${fmtNumber(team.won || 0)} deals`} tone={targets.revenue ? ((team.revenue || 0) >= targets.revenue * (monthly ? elapsed : 1) ? 'good' : 'warn') : ''} big />
-      {cashOn ? <HubStat label="Cash collected" value={money(team.cash)} sub={team.revenue ? `${Math.round(((team.cash || 0) / team.revenue) * 100)}% of won value` : null} big /> : null}
-      <HubStat label="Deals closed" value={fmtNumber(team.won || 0)} sub={`${fmtNumber(team.lost || 0)} lost · ${hubPct(team.winRate)} win rate of decided`} big />
-      <HubStat label="Meetings held" value={fmtNumber(team.showed || 0)} sub={`${fmtNumber(team.booked || 0)} booked · ${fmtNumber(team.noShow || 0)} no-shows · ${hubPct(team.showRate)} show rate`} tone={team.showRate != null ? (team.showRate >= 80 ? 'good' : team.showRate >= 65 ? '' : 'warn') : ''} big />
-      <HubStat label="Speed to lead" value={team.speedMin != null ? repMin(team.speedMin) : '-'} sub={`team median, in hours${team.speedAfter ? ` · ${team.speedAfter} after hours` : ''}`} tone={team.speedMin != null ? (team.speedMin <= 15 ? 'good' : team.speedMin <= 60 ? '' : 'warn') : ''} big />
-    </div>
-  )
-  const secondary = (
-    <div className="hub-stats hub-secondary">
-      <HubStat label="Leads" value={fmtNumber(team.leads || 0)} sub={`${team.reps} reps`} />
-      <HubStat label="Booked" value={fmtNumber(team.booked || 0)} sub={`${fmtNumber(team.set || 0)} set by reps · ${fmtNumber(team.byCustomer || 0)} by customers`} />
-      <HubStat label="Calls" value={fmtNumber(team.calls || 0)} sub={`${fmtNumber(team.minutes || 0)} minutes`} />
-      <HubStat label="Average deal" value={team.avgDeal != null ? money(team.avgDeal) : '-'} sub={team.won ? `per won deal · ${fmtNumber(team.won)} won` : 'nothing won yet'} />
-      <HubStat label="Open pipeline" value={money(team.openValue)} sub={`${fmtNumber(team.open || 0)} deals · ${fmtNumber(team.stale || 0)} stale`} tone={team.open && team.stale / team.open > 0.4 ? 'warn' : ''} />
-      <HubStat label="Result rate" value={hubPct(team.resultRate)} sub={`${fmtNumber(team.decided || 0)} decided · won or lost, over those plus open`} tone={team.resultRate != null ? (team.resultRate >= 50 ? 'good' : team.resultRate < 20 ? 'warn' : '') : ''} />
-    </div>
-  )
-  // One pipeline at a time: its funnel and its open deals side by side.
-  const pipeCard = (p) => {
-    const first = (p.stages || [])[0]; const base = first ? first.reached : 0
-    const fun = hubFunnelStages(clientId, p)
-    const open = (d.stageOpen || []).filter((so) => so.pipelineId === p.id)
-    const order = new Map((p.stages || []).map((sdef, i) => [sdef.name, i]))
-    open.sort((a, b) => (order.get(a.stage) ?? 99) - (order.get(b.stage) ?? 99))
-    const openMax = Math.max(1, ...open.map((so) => so.open))
-    return (
-      <div className="card hub-pipecard" key={p.id}>
-        <div className="rep-lb-head"><h4>{multi ? p.name : 'The pipeline'}</h4><span className="cap">{fmtNumber(p.leads)} leads · {fmtNumber(p.won)} won · {money(p.revenue)} · {hubPct(p.winRate)} win rate</span></div>
-        <div className="hub-pipe-cols">
-          <div><div className="hub-sub">How this period's leads are progressing <span className="cap">· {fmtNumber(base)} leads{fun.keyed ? ' · key events' : ''}</span></div>{base ? fun.stages.map((sdef, i) => <RepBar key={sdef.name} label={sdef.label} value={sdef.reached} max={base} text={`${fmtNumber(sdef.reached)} · ${Math.round((sdef.reached / base) * 100)}%${i ? ` · ${fun.stages[i - 1].reached ? Math.round((sdef.reached / fun.stages[i - 1].reached) * 100) : 0}% of previous` : ''}`} />) : <p className="cap">No leads in this period.</p>}</div>
-          <div><div className="hub-sub">Open deals by stage <span className="cap">· {fmtNumber(p.open)} worth {money(p.openValue)}{p.stale ? ` · ${p.stale} stale` : ''}</span></div>{open.length ? open.map((so) => <RepBar key={so.stageId} label={so.stage} value={so.open} max={openMax} text={`${fmtNumber(so.open)} · ${money(so.value)}${so.stale ? ` · ${so.stale} stale` : ''}`} tone={so.stale && so.stale / so.open > 0.5 ? 'warn' : ''} />) : <p className="cap">No open deals.</p>}</div>
-        </div>
-      </div>
-    )
-  }
-  const lostCard = (
-    <div className="card rep-card"><h4>Lost reasons</h4>
-      {pipesAll.length > 1 ? pipesAll.map((p) => <div className="hub-lost-grp" key={p.id}><div className="hub-sub">{p.name}</div>{(p.lostReasons || []).length ? p.lostReasons.slice(0, 6).map((x) => <RepBar key={x.reason} label={x.reason} value={x.count} max={p.lostReasons[0].count} tone="bad" />) : <p className="cap">Nothing lost.</p>}</div>)
-        : (d.lostByReason || []).length ? d.lostByReason.slice(0, 8).map((x) => <RepBar key={x.reason} label={x.reason} value={x.count} max={d.lostByReason[0].count} tone="bad" text={`${fmtNumber(x.count)} · ${reps.filter((r) => (r.lostReasons || []).some((y) => y.reason === x.reason)).sort((a, b) => ((b.lostReasons.find((y) => y.reason === x.reason) || {}).count || 0) - ((a.lostReasons.find((y) => y.reason === x.reason) || {}).count || 0)).slice(0, 2).map((r) => `${r.name} ${(r.lostReasons.find((y) => y.reason === x.reason) || {}).count}`).join(', ')}`} />) : <p className="cap">Nothing lost in this period.</p>}
-    </div>
-  )
-  const calCard = (
-    <div className="card rep-card"><h4>Appointments by calendar</h4>
-      {(d.calendars || []).length ? d.calendars.map((c) => {
-        const tot = Object.values(c.byRep).reduce((a, b) => ({ booked: a.booked + b.booked, showed: a.showed + b.showed, noShow: a.noShow + b.noShow }), { booked: 0, showed: 0, noShow: 0 })
-        const sr = (tot.showed + tot.noShow) ? Math.round((tot.showed / (tot.showed + tot.noShow)) * 100) : null
-        return <div className="hub-cal" key={c.id}>
-          <div className="hub-cal-h"><b>{c.name}</b><span className="hub-cal-n"><span><b>{tot.booked}</b> booked</span><span><b>{tot.showed}</b> held</span><span className={sr != null && sr < 65 ? 'act-bad' : ''}><b>{hubPct(sr)}</b> show</span></span></div>
-          <div className="hub-chips">{Object.entries(c.byRep).sort((x, y) => y[1].booked - x[1].booked).slice(0, 8).map(([uid, b]) => { const rr = reps.find((x) => x.id === uid); const s2 = (b.showed + b.noShow) ? Math.round((b.showed / (b.showed + b.noShow)) * 100) : null; return <span className="hub-chip-rep" key={uid}>{rr ? rr.name : 'Unassigned'} <b>{b.booked}</b>{s2 != null ? <i>{s2}%</i> : null}</span> })}</div>
-        </div>
-      }) : <p className="cap">No appointments in this period.</p>}
-    </div>
-  )
-  const flagsByRep = []
-  for (const f of flags) { let g = flagsByRep.find((x) => x.rep.id === f.rep.id); if (!g) { g = { rep: f.rep, tone: f.tone, items: [] }; flagsByRep.push(g) } g.items.push(f.text); if (f.tone === 'bad') g.tone = 'bad' }
-  const dials = dialDefs.length ? <div className="hub-dials">{dialDefs.map((x) => <HubDial key={x.key} label={x.label} sub={x.sub} actual={x.actual} target={x.target} fmt={x.fmt} kind={x.kind} elapsed={x.elapsed} monthly={x.pace} paced={!RATE_METRICS.has(x.goal.metric)} open={openGauge === x.key} onClick={() => setOpenGauge(openGauge === x.key ? null : x.key)} />)}</div> : null
-  const gaugeDetail = (() => {
-    const x = openGauge ? dialDefs.find((y) => y.key === openGauge) : null
-    if (!x) return null
-    const g = x.goal; const fmt = x.fmt; const share = x.pace && x.kind !== 'pct' && x.kind !== 'lower' ? x.elapsed : 1
-    const rows = (x.byRep ? x.byRep.map((b) => ({ r: { id: b.id, name: b.name }, v: b.actual == null ? 0 : b.actual, t: b.share })) : (() => { const shares = goalShares({ ...g, target: x.target }, repIdsAll); return reps.filter((r) => r.id !== 'unassigned' && (r.id in shares)).map((r) => { const v = repValue(r, g.metric, g.pipelines); return { r, v: v == null ? 0 : v, t: shares[r.id] } }) })()).map((y) => ({ ...y, pct: y.t ? Math.round((y.v / y.t) * 100) : null })).sort((a, b) => (x.kind === 'lower' ? a.v - b.v : b.v - a.v))
-    const max = Math.max(1, ...rows.map((y) => Math.max(y.v, y.t || 0)))
-    const toneOf = (y) => (!y.t ? '' : x.kind === 'lower' ? (y.v <= y.t ? 'good' : 'bad') : y.v >= y.t * share ? 'good' : y.v >= y.t * share * 0.8 ? 'warn' : 'bad')
-    return <div className="hub-gauge-detail"><div className="rep-lb-head"><h4>{x.label} by rep</h4><span className="cap">{x.sub}{g.split === 'shared' && !(g.reps && g.reps.length === 1) && x.kind !== 'pct' && x.kind !== 'lower' ? ' · shared team number, no slices' : x.pace ? ` · ${Math.round(x.elapsed * 100)}% of the window gone` : ''}</span><button type="button" className="btn-ghost sm" onClick={() => setOpenGauge(null)}>Close</button></div>
-      {rows.map((y) => <RepBar key={y.r.id} label={y.r.name} value={y.v} max={max} text={y.t ? `${fmt(y.v)} / ${fmt(y.t)} · ${y.pct}%` : fmt(y.v)} tone={toneOf(y)} />)}</div>
-  })()
-  const gaugeCard = dialDefs.length ? <div className="card rep-cockpit"><div className="rep-cockpit-head"><h4>Goals</h4><span className="cap">Each goal in its own window · day {day} of {dim} · tap a dial for the split by rep</span></div>{dials}{gaugeDetail}</div>
-    : (authUser && isAdminishFE(authUser.role) ? <div className="card rep-cockpit-empty"><b>No goals yet.</b> <span className="cap">Set them in Settings → this client → Goals and the gauges light up here.</span></div> : null)
-  const boardsGrid = boards.length ? <div className="hub-boards">{boards.map((b) => <div className="card hub-board-card" key={b.key}><div className="hub-board-t">{b.title}</div>{b.rows.map((x, i) => <div className="hub-board-row" key={x.r.id}><span>{medal[i]}</span><span className="hub-board-n">{x.r.name}</span><b>{b.fmt(x.v)}{b.unit ? <small> {b.unit}</small> : null}</b></div>)}</div>)}</div> : null
-  const sp = boards.length ? boards[spot % boards.length] : null
-  const spotlight = sp ? <div className="card hub-spot" key={sp.key}><div className="hub-spot-k">{sp.title}</div><div className="hub-spot-n">{sp.rows[0].r.name}</div><div className="hub-spot-v">{sp.fmt(sp.rows[0].v)}{sp.unit ? <small> {sp.unit}</small> : null}</div>{sp.rows.length > 1 ? <div className="hub-spot-r">{sp.rows.slice(1).map((x, i) => <span key={x.r.id}>{medal[i + 1]} {x.r.name} <b>{sp.fmt(x.v)}</b></span>)}</div> : null}</div> : null
-  const facts = (title, rows) => <div className="hub-facts"><b>{title}</b><dl>{rows.filter((r) => r).map(([k, v]) => <React.Fragment key={k}><dt>{k}</dt><dd>{v == null || v === '' ? '-' : v}</dd></React.Fragment>)}</dl></div>
-  if (tv) {
-    return (
-      <div className="hub-tv">
-        <div className="hub-tv-head"><div><b>{new Date().toLocaleString('en-AU', { month: 'long', year: 'numeric' })}</b> <span>Sales Hub · month to date{focus ? ` · ${focus.name}` : ''} · day {day} of {dim}</span></div>
-          <div className="hub-tv-ctl">
-            <label className="alloc-check"><input type="checkbox" checked={prefs.confetti} onChange={(e) => { const p = { ...prefs, confetti: e.target.checked }; setPrefs(p); saveHubPrefs(p) }} /> Confetti</label>
-            <label className="alloc-check" title="The gong on a won deal; the animation always plays"><input type="checkbox" checked={prefs.sound} onChange={(e) => { const p = { ...prefs, sound: e.target.checked }; setPrefs(p); saveHubPrefs(p) }} /> Gong</label>
-            <label className="alloc-check"><input type="checkbox" checked={prefs.leadSound} onChange={(e) => { const p = { ...prefs, leadSound: e.target.checked }; setPrefs(p); saveHubPrefs(p) }} /> Lead</label>
-            <label className="alloc-check"><input type="checkbox" checked={prefs.bookSound} onChange={(e) => { const p = { ...prefs, bookSound: e.target.checked }; setPrefs(p); saveHubPrefs(p) }} /> Booking</label>
-            {authUser && authUser.role === 'superadmin' ? <><button type="button" className="btn-ghost sm" onClick={() => hubStrike({ id: 'test', user: authUser.name || 'Test rep', name: 'Sample deal', value: 12500 })}>Test gong</button><button type="button" className="btn-ghost sm" onClick={() => hubTestActivity('lead')}>Test lead</button><button type="button" className="btn-ghost sm" onClick={() => hubTestActivity('booked')}>Test booking</button></> : null}
-            <button type="button" className="btn-ghost sm" onClick={() => { try { if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen() } catch { /* not allowed */ } }}>Full screen</button>
-            <button type="button" className="btn-ghost sm" onClick={() => setTv(false)}>Exit (Esc)</button>
-          </div></div>
-        {celebrate ? <HubGong key={celebrate.key} win={celebrate} currency={currency} onDone={() => { clearTimeout(strikeT.current); setCelebrate(null) }} /> : null}
-        {dialDefs.length ? <div className="hub-tv-dials">{dials}{gaugeDetail}</div> : primary}
-        <div className="hub-tv-grid">
-          <div className="hub-tv-col">{leaderboard}<div className="card rep-card"><h4>Latest wins</h4>{allWins.length ? winsFeed(6) : <p className="cap">No wins in the last 7 days yet.</p>}</div></div>
-          <div className="hub-tv-col">{spotlight}{boardsGrid}{!dialDefs.length && authUser && isAdminishFE(authUser.role) ? <p className="cap">Set goals in Settings and the gauges light up here.</p> : null}</div>
-        </div>
-        {activity.length ? <div className="hub-tv-activity" role="status" aria-live="polite">{activity.map((x) => <div className={`hub-tv-act ${x.kind}`} key={x.id}>{x.text}</div>)}</div> : null}
-        <div className="hub-tv-brand"><span className="hub-tv-brand-p">Powered by</span> <b>Caalano<span>360</span></b></div>
-      </div>
-    )
-  }
-  if (screen === 'plan') {
-    return (
-      <div className="act-wrap hub-wrap">
-        {head}
-        {celebrate ? <HubGong key={celebrate.key} win={celebrate} currency={currency} onDone={() => { clearTimeout(strikeT.current); setCelebrate(null) }} /> : null}
-        <HubPlanBoard clientId={clientId} goals={goalsAll} currency={currency} canEdit={!!(authUser && isAdminishFE(authUser.role))} today={today} pipelines={d.pipelines || []} reps={reps} />
-        <p className="cap act-foot">Each period is measured on the same basis as the live board: won, lost and cash by close date, bookings by booking date, held and show rate by appointment date, leads by the date they came in. A blank cell uses the goal's default target; a typed number plans that period.</p>
-      </div>
-    )
-  }
-  return (
-    <div className={`act-wrap hub-wrap ${busy ? 'hub-busy' : ''}`}>
-      {head}
-      {busy ? <div className="hub-loading" role="status" aria-live="polite"><span className="hub-loading-bar" /><span>{pendingPipe ? `Loading ${pendingPipe}…` : 'Refreshing the board…'}</span></div> : null}
-      {setupPanel}
-      {celebrate ? <HubGong key={celebrate.key} win={celebrate} currency={currency} onDone={() => { clearTimeout(strikeT.current); setCelebrate(null) }} /> : null}
-      {primary}
-      {secondary}
-      {d.reach && d.reach.truncated && d.reach.since ? <p className="cap hub-reach">Closed deals are counted from leads created since {fmtDMY(d.reach.since)}: the CRM read holds the newest {fmtNumber(d.reach.opps)} opportunities, so a win on a lead older than that is not in these numbers.</p> : null}
-      {multi && !focus && pipesAll.length > 1 ? <div className="hub-pipes">{pipesAll.map((p) => <button type="button" className="hub-pipe" key={p.id} disabled={busy} onClick={() => setPipeSel(p.id)} title="Show this pipeline only">
-        <span className="hub-pipe-n">{p.name}</span>
-        <span className="hub-pipe-row"><span><b>{money(p.revenue)}</b> revenue</span><span><b>{fmtNumber(p.won)}</b> won</span><span><b>{p.avgDeal != null ? money(p.avgDeal) : '-'}</b> avg deal</span><span><b>{fmtNumber(p.leads)}</b> leads</span><span><b>{hubPct(p.winRate)}</b> win rate</span><span><b>{fmtNumber(p.open)}</b> open{p.stale ? ` · ${p.stale} stale` : ''}</span></span>
-        <span className="hub-pipe-go">{pendingPipe && pipeSel === p.id ? 'Loading…' : 'Focus ›'}</span>
-      </button>)}</div> : null}
-      {focus ? <div className="hub-focus"><span>Showing <b>{focus.name}</b> only. Leads, deals, speed to lead and stages are within it; appointments and calls are per rep across the account.</span><button type="button" className="btn-ghost sm" disabled={busy} onClick={() => setPipeSel('all')}>All pipelines</button></div> : null}
-      {gaugeCard}
-      {boardsGrid}
-      <div className="hub-band">
-        {flagsByRep.length ? <div className="card hub-flags"><div className="rep-lb-head"><h4>Coaching flags</h4><span className="cap">{flags.length} to talk about</span></div>{flagsByRep.map((g) => <button type="button" className={`hub-flag ${g.tone}`} key={g.rep.id} onClick={() => setOpenRep(openRep === g.rep.id ? null : g.rep.id)}><b>{g.rep.name}</b><ul>{g.items.map((t, i) => <li key={i}>{t}</li>)}</ul></button>)}</div> : null}
-        {leaderboard}
-      </div>
-      <div className="card hub-board">
-        <div className="rep-lb-head"><h4>Rep board</h4><span className="cap">tap a rep for the detail</span><label className="act-sel">Sort<select value={sortKey} onChange={(e) => setSortKey(e.target.value)}><option value="revenue">Revenue</option><option value="attain">Attainment</option><option value="won">Won</option><option value="booked">Booked</option><option value="showed">Held</option><option value="showRate">Show rate</option><option value="winRate">Win rate</option><option value="calls">Calls</option><option value="speed">Speed to lead</option><option value="stale">Stale</option><option value="leads">Leads</option></select></label></div>
-        <div className="hub-board-rows">
-          <div className="hub-row head"><span>Rep</span><span>Leads</span><span>Booked</span><span>Held</span><span>Show</span><span>Won</span><span>Revenue</span>{cashOn ? <span>Cash</span> : null}<span>Win</span><span>Calls</span><span>Min</span><span>Speed</span><span>Open</span><span>Stale</span><span>Target</span></div>
-          {board.map((r) => { const a = attain(r); const s = status(r); return (
-            <React.Fragment key={r.id}>
-              <button type="button" className={`hub-row ${openRep === r.id ? 'open' : ''}`} onClick={() => setOpenRep(openRep === r.id ? null : r.id)}>
-                <span className="hub-row-name"><b>{r.name}</b>{s ? <em className={`hub-chip ${s[1]}`}>{s[0]}</em> : null}</span>
-                <span>{fmtNumber(r.leads)}</span><span>{fmtNumber(r.booked)}</span><span>{fmtNumber(r.showed)}</span><span>{hubPct(r.showRate)}</span><span>{fmtNumber(r.won)}</span><span>{money(r.revenue)}</span>{cashOn ? <span>{r.cash == null ? '-' : money(r.cash)}</span> : null}<span>{hubPct(r.winRate)}</span><span>{fmtNumber(r.calls)}</span><span>{fmtNumber(r.minutes)}</span><span>{r.speedMin != null ? repMin(r.speedMin) : '-'}</span><span>{fmtNumber(r.open)}</span><span className={r.staleTiers && r.staleTiers.t30 ? 'act-bad' : ''}>{fmtNumber(r.stale)}</span>
-                <span>{a ? <span className="hub-attain"><i style={{ width: `${Math.min(100, a.pct)}%` }} className={s ? s[1] : ''} />{a.pct}%</span> : <span className="cap">-</span>}</span>
-              </button>
-              {openRep === r.id ? <div className="hub-row-detail">
-                <div className="hub-detail-grid">
-                  {facts('Appointments', [['Booked (assigned)', fmtNumber(r.booked)], ['Set by the rep', fmtNumber(r.set)], ['By customers', fmtNumber(r.byCustomer)], ['Held', fmtNumber(r.showed)], ['No-show', fmtNumber(r.noShow)], ['Still to come', fmtNumber(r.upcoming)], r.unresulted ? ['Unresulted', <span className="act-bad">{fmtNumber(r.unresulted)}</span>] : null])}
-                  {facts('Pipeline now', [['Open deals', fmtNumber(r.open)], ['Open value', money(r.openValue)], ['Stale', <span className={r.stale ? 'act-bad' : ''}>{fmtNumber(r.stale)}</span>], ['7+ · 14+ · 21+ · 30+ days', `${r.staleTiers.t7} · ${r.staleTiers.t14} · ${r.staleTiers.t21} · ${r.staleTiers.t30}`], ['Oldest idle', r.oldestIdle ? `${r.oldestIdle} days` : '-']])}
-                  {facts('Speed to lead', r.speedMin != null ? [['Median, in hours', repMin(r.speedMin)], ['Leads measured', fmtNumber(r.speedMeasured)], r.within5Pct != null ? ['Under 5 minutes', `${r.within5Pct}%`] : null, ['After hours', fmtNumber(r.speedAfter || 0)]] : [['Median', 'not measured']])}
-                  {facts('Closing', [['Won', fmtNumber(r.won)], ['Lost', fmtNumber(r.lost)], ['Win rate', hubPct(r.winRate)], ['Result rate', r.resultRate != null ? `${r.resultRate}% · ${fmtNumber(r.decided)} decided` : '-'], ['Average deal', r.avgDeal ? money(r.avgDeal) : '-'], ['Days to close', r.avgCloseDays != null ? r.avgCloseDays : '-'], ...((r.lostReasons || []).slice(0, 3).map((x) => [`Lost: ${x.reason}`, fmtNumber(x.count)]))])}
-                </div>
-                <div className="hub-detail-funnels">{pipesAll.map((p) => {
-                  const reach = (r.reachByPipeline || {})[p.id] || {}; const all = p.stages || []; const base = all.length ? (reach[all[0].name] || 0) : 0
-                  if (!base) return null
-                  const fun = hubFunnelStages(clientId, p); const stages = fun.stages
-                  let last = 0; stages.forEach((sdef, i) => { if (reach[sdef.name]) last = i })
-                  return <div className="hub-mini-funnel" key={p.id}><div className="hub-sub">{multi ? p.name : 'How this period\'s leads are progressing'} <span className="cap">· {fmtNumber(base)} leads this period{fun.keyed ? ' · key events' : ''}</span></div>{stages.slice(0, fun.keyed ? stages.length : Math.max(last + 1, Math.min(3, stages.length))).map((sdef) => <RepBar key={sdef.name} label={sdef.label} value={reach[sdef.name] || 0} max={base} text={`${fmtNumber(reach[sdef.name] || 0)} · ${Math.round(((reach[sdef.name] || 0) / base) * 100)}%`} />)}</div>
-                })}</div>
-              </div> : null}
-            </React.Fragment>
-          ) })}
-        </div>
-      </div>
-      <div className={`hub-pipecards ${pipesAll.length > 1 ? 'many' : ''}`}>{pipesAll.map(pipeCard)}</div>
-      <div className="rep-grid hub-bottom">
-        <div className="card rep-card"><h4>Latest wins</h4>{allWins.length ? winsFeed(10) : <p className="cap">No wins in the last 7 days yet.</p>}</div>
-        {calCard}
-        {lostCard}
-      </div>
-      <p className="cap act-foot">Everything counts in the period it happened. Leads by the date they came in. Bookings by the date they were booked; held, no-shows and show rate by the appointment's own date. Won and lost by the date the status changed, whatever month the lead came in, so a deal closed today shows today; win rate is won over won plus lost decided in the period. Result rate is deals decided in the period over those plus what is still open now: how much of the desk got resulted. Open and stale are what is on the desk now. The funnels follow this period's leads through the client's key-event stages (set under Settings, Key events), so they show how new leads are progressing, not this month's wins; a lead counts at a stage if it reached that stage or any later one. Each pipeline's funnel and lost reasons are kept apart; a stage is never counted across pipelines. Speed to lead follows the client's business-hours rule and counts the first reply a person sent{team.speedFull ? ', measured on every lead' : ', measured on as many leads as the read allowed'}. Calls come from the CRM's call export. Re-reads every 3 minutes, every minute in TV mode.</p>
-    </div>
-  )
-}
-
-// ---- Deals & Actions ---------------------------------------------------------
-// The rep's own app: three screens, swapped with one tap. "My results" is the
-// scorecard and the leaderboard and is the home screen for anyone the CRM
-// knows. "Live deals" is every open deal by pipeline stage, movable from here,
-// with the contact's notes a tap away. "Action list" is what is wrong or
-// unfinished: appointments past their time with no result, wins with no
-// value, losses with no reason, enquiries nobody has answered (with a one-tap
-// reply on the same channel), stale deals in urgency tiers, deals nobody owns.
-// Writes go through the server, which limits an Account User to their own
-// records and logs every change. Cards, not tables, so a phone shows it whole.
-const ACT_SECTIONS = {
-  upcoming: ['Upcoming appointments', 'What is coming up, soonest first. Confirm, read the notes, or check the conversation before the call.'],
-  appts: ['Appointments to result', 'New or confirmed appointments whose time has passed with no result yet. Pick one, then Save.'],
-  wonNoValue: ['Won without a value', 'Marked won with no deal value, so revenue is understated.'],
-  lostNoReason: ['Lost without a reason', 'Marked lost with no lost reason, so nothing can be learned from it.'],
-  inbound: ['Messages with no reply', 'The contact wrote last and no person has replied since (an automation does not count).'],
-  staleOpen: ['Stale deals', 'Open deals nobody has touched. The longer they sit, the redder they get.'],
-  unassigned: ['No rep assigned', 'Open deals with nobody responsible for them.'],
-}
-const ACT_TIERS = [[30, '30+ days', 't30'], [21, '21+ days', 't21'], [14, '14+ days', 't14'], [7, '7+ days', 't7']]
-const crmLink = (loc, contactId) => (loc && contactId ? `https://app.gohighlevel.com/v2/location/${encodeURIComponent(loc)}/contacts/detail/${encodeURIComponent(contactId)}` : null)
-const crmConvLink = (loc, convId) => (loc && convId ? `https://app.gohighlevel.com/v2/location/${encodeURIComponent(loc)}/conversations/conversations/${encodeURIComponent(convId)}` : null)
-function actWhen(ms, tz) {
-  if (!ms) return '-'
-  try { return new Date(ms).toLocaleString('en-AU', { timeZone: tz || undefined, weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }) } catch { return new Date(ms).toLocaleString() }
-}
-const actAgo = (d) => (d == null ? '' : d === 0 ? 'today' : d === 1 ? 'yesterday' : `${d} days ago`)
-const actHrs = (h) => (h == null ? '' : h < 1 ? 'just now' : h < 48 ? `${h} h ago` : `${Math.round(h / 24)} days ago`)
-const actTier = (r) => (r.idleDays == null ? null : r.idleDays >= 30 ? 't30' : r.idleDays >= 21 ? 't21' : r.idleDays >= 14 ? 't14' : r.idleDays >= 7 ? 't7' : null)
-function ActOpen({ href, label = 'Open in CRM' }) { return href ? <a className="act-open" href={href} target="_blank" rel="noreferrer">{label} ↗</a> : null }
-function ActTierBadge({ r }) { const t = actTier(r); return t ? <span className={`act-tier ${t}`}>{r.idleDays}d idle</span> : null }
-const ActWaiting = ({ r }) => (r && r.unreplied ? <span className="act-wait" title="The contact wrote last and nobody has replied">✉ Message waiting</span> : null)
-// A write with ten seconds to change your mind. Press once and the button
-// becomes "Undo · 9s"; leave it and the write goes on its own; press it again
-// and nothing is sent. Leaving the screen while it counts sends it straight
-// away rather than losing it. The row stays put while it counts, so the next
-// row can be dealt with in the meantime.
-const ACT_UNDO_S = 10
-function ActCommit({ label, onCommit, disabled, className = 'btn-primary act-btn', seconds = ACT_UNDO_S }) {
-  const [left, setLeft] = useState(null)
-  const endAt = useRef(0), timer = useRef(null), armed = useRef(false), commitRef = useRef(onCommit)
-  commitRef.current = onCommit
-  const clear = () => { clearInterval(timer.current); timer.current = null; armed.current = false; setLeft(null) }
-  const fire = () => { const fn = commitRef.current; clear(); fn() }
-  useEffect(() => () => { if (armed.current) { const fn = commitRef.current; clearInterval(timer.current); armed.current = false; fn() } }, [])
-  const arm = () => {
-    endAt.current = Date.now() + seconds * 1000; armed.current = true; setLeft(seconds)
-    timer.current = setInterval(() => { const ms = endAt.current - Date.now(); if (ms <= 0) fire(); else setLeft(Math.ceil(ms / 1000)) }, 250)
-  }
-  if (left != null) return <button type="button" className="btn-ghost act-btn act-undo" onClick={clear} title="Nothing has been sent yet. Press to cancel.">Undo · {left}s</button>
-  return <button type="button" className={className} disabled={disabled} onClick={arm}>{label}</button>
-}
-// The contact's notes: read the past ones, add a new one. Shared by every row.
-function ActNotes({ clientId, contactId, canWrite, write, busy, userName }) {
-  const [open, setOpen] = useState(false)
-  const [st, setSt] = useState({ status: 'idle', notes: [] })
-  const [text, setText] = useState('')
-  const load = () => {
-    setSt((s) => ({ ...s, status: 'loading' }))
-    fetch(`/.netlify/functions/windsor?scope=actions&client=${encodeURIComponent(clientId)}&notes=${encodeURIComponent(contactId)}`, { credentials: 'same-origin' })
-      .then((r) => r.json().catch(() => ({ error: `server ${r.status}` })))
-      .then((j) => setSt({ status: j && j.error ? 'err' : 'ok', notes: (j && j.notes) || [], error: j && j.error }))
-      .catch((e) => setSt({ status: 'err', notes: [], error: String((e && e.message) || e) }))
-  }
-  if (!contactId) return null
-  if (!open) return <button type="button" className="btn-ghost sm" onClick={() => { setOpen(true); load() }}>Notes</button>
-  return (
-    <div className="act-panel">
-      <div className="act-panel-head"><b>Notes</b><button type="button" className="btn-ghost sm" onClick={() => setOpen(false)}>Close</button></div>
-      {st.status === 'loading' ? <p className="cap">Loading notes…</p> : st.status === 'err' ? <p className="cap act-bad">{st.error}</p> : !st.notes.length ? <p className="cap">No notes yet.</p> : (
-        <div className="act-notes">{st.notes.map((n) => <div className="act-note-row" key={n.id}><div className="cap">{n.at ? new Date(n.at).toLocaleString('en-AU', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }) : ''}{n.userId && userName && userName[n.userId] ? ` · ${userName[n.userId]}` : ''}</div><div className="act-note-body">{n.body}</div></div>)}</div>
-      )}
-      {canWrite ? <div className="act-note">
-        <textarea value={text} onChange={(e) => setText(e.target.value)} placeholder="Add a note…" rows={2} />
-        <div className="act-note-btns"><button type="button" className="btn-primary act-btn" disabled={busy || !text.trim()} onClick={async () => { const ok = await write({ op: 'note', contactId, body: text.trim() }, contactId); if (ok) { setText(''); load() } }}>Save note</button></div>
-      </div> : null}
-    </div>
-  )
-}
-// The contact's conversation: the last messages, a reply on the same channel
-// (which marks the row handled), and the close-as-lost that an "I'm not
-// interested" message usually deserves.
-const ACT_CHANNELS = { SMS: 'SMS', Email: 'Email', WhatsApp: 'WhatsApp', FB: 'Facebook', IG: 'Instagram', Live_Chat: 'Live chat' }
-function ActConversation({ clientId, row, data, canWrite, write, busy, loc, userName, keep = false, label = 'Open & reply' }) {
-  const [open, setOpen] = useState(false)
-  const [st, setSt] = useState({ status: 'idle', conv: null })
-  const [text, setText] = useState('')
-  const [subject, setSubject] = useState('')
-  const [channel, setChannel] = useState('')
-  const [reason, setReason] = useState('')
-  const load = () => {
-    setSt((s) => ({ ...s, status: 'loading' }))
-    const q = row.id ? `&convId=${encodeURIComponent(row.id)}` : `&conv=${encodeURIComponent(row.contactId || '')}`
-    fetch(`/.netlify/functions/windsor?scope=actions&client=${encodeURIComponent(clientId)}${q}`, { credentials: 'same-origin' })
-      .then((r) => r.json().catch(() => ({ error: `server ${r.status}` })))
-      .then((j) => setSt({ status: j && j.error ? 'err' : 'ok', conv: (j && j.conversation) || null, error: j && j.error }))
-      .catch((e) => setSt({ status: 'err', conv: null, error: String((e && e.message) || e) }))
-  }
-  if (!open) return <button type="button" className={`${keep ? 'btn-ghost' : 'btn-primary'} act-btn`} onClick={() => { setOpen(true); load() }}>{label}</button>
-  const conv = st.conv || {}
-  // Reply channel: defaults to the one the contact last wrote on (an inbound
-  // SMS gets an SMS back); the picker offers every channel seen in the thread
-  // plus SMS / e-mail when the contact has a number / address on file.
-  const channels = Array.from(new Set([...(conv.channels || []), ...(row.phone ? ['SMS'] : []), ...(row.email ? ['Email'] : [])])).filter((c) => ACT_CHANNELS[c])
-  const replyType = channel && channels.includes(channel) ? channel : (conv.replyType || channels[0] || 'SMS')
-  const canReply = canWrite && !!ACT_CHANNELS[replyType]
-  return (
-    <div className="act-panel act-conv">
-      <div className="act-panel-head"><b>Conversation</b>
-        {channels.length > 1 ? <label className="act-chan cap">Reply by
-          <select value={replyType} onChange={(e) => setChannel(e.target.value)}>{channels.map((c) => <option key={c} value={c}>{ACT_CHANNELS[c]}</option>)}</select>
-        </label> : <span className="cap">{ACT_CHANNELS[replyType] || replyType}</span>}
-        <button type="button" className="btn-ghost sm" onClick={() => setOpen(false)}>Close</button></div>
-      {st.status === 'loading' ? <p className="cap">Loading messages…</p> : st.status === 'err' ? <p className="cap act-bad">{st.error}</p> : !(conv.messages || []).length ? <p className="cap">No messages found.</p> : (
-        <div className="act-msgs">{conv.messages.map((m) => <div key={m.id} className={`act-msg-b ${m.direction === 'inbound' ? 'in' : 'out'}`}><div>{m.body || <i className="cap">({String(m.type || 'message').replace(/^TYPE_/, '').toLowerCase()})</i>}</div><div className="cap">{m.at ? new Date(m.at).toLocaleString('en-AU', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }) : ''}{m.direction === 'outbound' ? (m.userId ? ` · ${(userName && userName[m.userId]) || 'staff'}` : ' · automation') : ''}</div></div>)}</div>
-      )}
-      {canReply ? <div className="act-note">
-        {replyType === 'Email' ? <input className="act-in" type="text" value={subject} onChange={(e) => setSubject(e.target.value)} placeholder="Subject (optional)" maxLength={200} /> : null}
-        <textarea value={text} onChange={(e) => setText(e.target.value)} placeholder={`Reply by ${ACT_CHANNELS[replyType] || replyType}…`} rows={2} />
-        <div className="act-note-btns">
-          <button type="button" className="btn-primary act-btn" disabled={busy || !text.trim()} onClick={async () => { const ok = await write({ op: 'reply', contactId: row.contactId, conversationId: conv.id || row.id, type: replyType, body: text.trim(), ...(replyType === 'Email' && subject.trim() ? { subject: subject.trim() } : {}) }, row.id, null, !keep); if (ok && keep) { setText(''); load() } }}>{keep ? 'Send' : 'Send & mark handled'}</button>
-          <ActOpen href={crmConvLink(loc, row.id)} label="Open in CRM" />
-        </div>
-      </div> : <div className="act-ctl"><ActOpen href={crmConvLink(loc, row.id)} label="Reply in CRM" /></div>}
-      {canWrite && row.oppId && !keep ? <div className="act-ctl act-close-lost">
-        <span className="cap">Not interested?</span>
-        <select className="act-in" value={reason} onChange={(e) => setReason(e.target.value)}><option value="">Lost reason…</option>{(data.lostReasons || []).map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}</select>
-        <ActCommit label="Mark lost" className="btn-ghost act-btn" disabled={busy || !reason} onCommit={async () => { const ok = await write({ op: 'opp', oppId: row.oppId, patch: { status: 'lost', lostReasonId: reason } }, row.oppId); if (ok) await write({ op: 'dismiss', id: row.id }, row.id, null, true) }} />
-      </div> : null}
-    </div>
-  )
-}
-// Move a deal along, or close it, from one compact control set.
-function ActDealControls({ d, data, busy, write, currency }) {
-  const [stage, setStage] = useState(d.stageId || '')
-  useEffect(() => { setStage(d.stageId || '') }, [d.stageId])
-  const [close, setClose] = useState('')
-  const [val, setVal] = useState(d.value > 0 ? String(d.value) : '')
-  const [reason, setReason] = useState('')
-  const pipe = (data.pipelines || []).find((p) => p.id === d.pipelineId) || (data.pipelines || [])[0]
-  const stages = pipe ? pipe.stages : []
-  return (
-    <div className="act-ctl">
-      {stages.length ? <label className="act-sel">Stage
-        <select value={stage} disabled={busy} onChange={(e) => setStage(e.target.value)}>
-          {!d.stageId ? <option value="">-</option> : null}
-          {stages.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-        </select>
-      </label> : null}
-      {stage && stage !== (d.stageId || '') ? <button type="button" className="btn-primary act-btn" disabled={busy} onClick={async () => { const ok = await write({ op: 'opp', oppId: d.id, patch: { pipelineStageId: stage, ...(pipe ? { pipelineId: pipe.id } : {}) } }, d.id, { stageId: stage, stage: (stages.find((s) => s.id === stage) || {}).name }); if (!ok) setStage(d.stageId || '') }}>Save stage</button> : null}
-      <label className="act-sel">Close as
-        <select value={close} disabled={busy} onChange={(e) => setClose(e.target.value)}><option value="">-</option><option value="won">Won</option><option value="lost">Lost</option></select>
-      </label>
-      {close === 'won' ? <>
-        <input className="act-in" type="number" min="0" step="1" inputMode="decimal" placeholder={`Value (${currency || 'AUD'})`} value={val} onChange={(e) => setVal(e.target.value)} />
-        <ActCommit label="Mark won" disabled={busy || !(Number(val) > 0)} onCommit={() => write({ op: 'opp', oppId: d.id, patch: { status: 'won', monetaryValue: Number(val) } }, d.id, null, true)} />
-        {!(Number(val) > 0) ? <span className="cap">Enter the deal value first.</span> : null}
-      </> : null}
-      {close === 'lost' ? <>
-        <select className="act-in" value={reason} onChange={(e) => setReason(e.target.value)}><option value="">Lost reason…</option>{(data.lostReasons || []).map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}</select>
-        <ActCommit label="Mark lost" disabled={busy || !reason} onCommit={() => write({ op: 'opp', oppId: d.id, patch: { status: 'lost', lostReasonId: reason } }, d.id, null, true)} />
-        {!reason ? <span className="cap">Pick a lost reason first.</span> : null}
-      </> : null}
-    </div>
-  )
-}
-// ---- My results: the rep scorecard and the leaderboard -------------------------
-const REP_PERIODS = [['last_7d', 'Last 7 days'], ['last_14d', 'Last 14 days'], ['last_30d', 'Last 30 days'], ['this_month', 'This month'], ['last_month', 'Last month'], ['last_90d', 'Last 90 days']]
-const LB_KEYS = [['won', 'Closed deals'], ['revenue', 'Revenue'], ['cash', 'Cash collected'], ['booked', 'Booked'], ['showed', 'Shown'], ['winRate', 'Win rate'], ['showRate', 'Show rate'], ['calls', 'Calls made'], ['minutes', 'Minutes on the phone'], ['leads', 'Leads']]
-const repMin = (m) => (m == null ? '-' : m < 60 ? `${Math.round(m)} min` : m < 1440 ? `${(m / 60).toFixed(1)} h` : `${(m / 1440).toFixed(1)} d`)
-function RepTile({ label, value, sub, tone, rank }) {
-  return <div className={`rep-tile ${tone || ''}`}><div className="rep-tile-l">{label}{rank ? <span className="rep-rank">#{rank.rank}</span> : null}</div><div className="rep-tile-v">{value}</div>{sub ? <div className="rep-tile-s">{sub}</div> : null}</div>
-}
-function RepBar({ label, value, max, text, tone }) {
-  const w = max > 0 ? Math.max(2, Math.round((value / max) * 100)) : 0
-  return <div className="rep-bar"><div className="rep-bar-l"><span>{label}</span><b>{text != null ? text : fmtNumber(value)}</b></div><div className="rep-bar-t"><div className={`rep-bar-f ${tone || ''}`} style={{ width: `${w}%` }} /></div></div>
-}
-function RepLeaderboard({ rows, meId, currency }) {
-  const [key, setKey] = useState('won')
-  const money = (v) => fmtCurrency(v || 0, currency)
-  const fmt = (r, k) => (k === 'revenue' || k === 'cash' ? (r[k] == null ? '-' : money(r[k])) : k === 'winRate' || k === 'showRate' ? (r[k] == null ? '-' : `${r[k]}%`) : fmtNumber(r[k] || 0))
-  const sorted = [...(rows || [])].sort((a, b) => ((b[key] == null ? -1 : b[key]) - (a[key] == null ? -1 : a[key])) || (b.won - a.won) || (b.revenue - a.revenue))
-  const top = sorted.slice(0, 3)
-  const mePos = sorted.findIndex((r) => r.id === meId)
-  const medal = ['🥇', '🥈', '🥉']
-  return (
-    <div className="card rep-card rep-lb">
-      <div className="rep-lb-head"><h4>Leaderboard</h4><label className="act-sel"><select value={key} onChange={(e) => setKey(e.target.value)}>{LB_KEYS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></label></div>
-      {!sorted.length ? <p className="cap">No reps had leads in this period.</p> : <>
-        <div className="rep-podium">{top.map((r, i) => <div key={r.id} className={`rep-pod ${r.id === meId ? 'me' : ''} p${i + 1}`}><div className="rep-pod-m">{medal[i]}</div><b>{r.name}{r.id === meId ? ' (you)' : ''}</b><div className="rep-pod-v">{fmt(r, key)}</div><div className="cap">{key === 'won' ? money(r.revenue) : `${r.won} won`}</div></div>)}</div>
-        {mePos >= 0 ? <p className="rep-lb-me">You are <b>#{mePos + 1} of {sorted.length}</b> on {LB_KEYS.find(([k]) => k === key)[1].toLowerCase()}{mePos > 0 ? `, ${key === 'revenue' ? money(sorted[mePos - 1][key] - sorted[mePos][key]) : `${Math.max(0, (sorted[mePos - 1][key] || 0) - (sorted[mePos][key] || 0))}${key.endsWith('Rate') ? ' points' : ''}`} behind ${sorted[mePos - 1].name}` : ' - top of the board'}.</p> : null}
-        <div className="rep-lb-rows">
-          <div className="rep-lb-row head"><span>#</span><span>Rep</span><span>Leads</span><span>Booked</span><span>Shown</span><span>Won</span><span>Revenue</span><span>Win</span><span>Show</span><span>Calls</span><span>Min</span></div>
-          {sorted.map((r, i) => <div key={r.id} className={`rep-lb-row ${r.id === meId ? 'me' : ''}`}><span>{i + 1}</span><span className="rep-lb-name">{r.name}</span><span>{fmtNumber(r.leads)}</span><span>{fmtNumber(r.booked)}</span><span>{fmtNumber(r.showed)}</span><span>{fmtNumber(r.won)}</span><span>{money(r.revenue)}</span><span>{r.winRate == null ? '-' : `${r.winRate}%`}</span><span>{r.showRate == null ? '-' : `${r.showRate}%`}</span><span>{fmtNumber(r.calls || 0)}</span><span>{fmtNumber(r.minutes || 0)}</span></div>)}
-        </div>
-      </>}
-    </div>
-  )
-}
-// ---- Rep KPIs: monthly targets per rep, and the cockpit that tracks them ------
-// An Agency Admin sets monthly targets per client (a default for every rep,
-// overridable per rep). My results opens with "This month": each target as a
-// bar with a pace mark for where the month is up to, green when on pace.
-const REP_KPI_DEFS = [
-  ['revenue', 'Revenue', 'money'], ['cash', 'Cash collected', 'money'], ['won', 'Deals closed', 'count'], ['avgDeal', 'Average deal value', 'money'],
-  ['booked', 'Meetings booked', 'count'], ['userBooked', 'Set by the rep', 'count'], ['held', 'Meetings held', 'count'],
-  ['showRate', 'Show rate', 'pct'], ['winRate', 'Win rate', 'pct'], ['calls', 'Calls made', 'count'], ['minutes', 'Minutes on the phone', 'count'],
-  ['speedMin', 'Speed to lead (median minutes)', 'lower'], ['leads', 'Leads', 'count'],
-]
-function loadRepKpis(clientId) { const v = (SETTINGS.repkpis && SETTINGS.repkpis[clientId]) || {}; return { default: v.default || {}, byUser: v.byUser || {} } }
-function saveRepKpis(clientId, obj) {
-  SETTINGS.repkpis = { ...(SETTINGS.repkpis || {}), [clientId]: obj }
-  writeLS(REPKPI_KEY, SETTINGS.repkpis); saveSettingsRemote({ repkpis: { [clientId]: obj } }); bumpSettings()
-}
-// Goals for a client. Until goals are saved once, the old Rep KPIs are shown
-// as goals (a default is "each rep gets this"; a per-rep number is that rep's
-// own goal), so nothing set before is lost.
-function loadGoals(clientId) {
-  const v = SETTINGS.goals && SETTINGS.goals[clientId]
-  if (v && Array.isArray(v.goals)) return normGoals(v.goals)
-  return migrateRepKpis(loadRepKpis(clientId))
-}
-const goalsSaved = (clientId) => !!(SETTINGS.goals && SETTINGS.goals[clientId] && Array.isArray(SETTINGS.goals[clientId].goals))
-function saveGoals(clientId, goals) {
-  const obj = { goals: normGoals(goals), savedAt: Date.now() }
-  SETTINGS.goals = { ...(SETTINGS.goals || {}), [clientId]: obj }
-  writeLS(GOALS_KEY, SETTINGS.goals); saveSettingsRemote({ goals: { [clientId]: obj } }); bumpSettings()
-}
-// A rep's own monthly targets: their share of every goal that covers them.
-const repTargetsFor = (clientId, userId, allRepIds = null) => repTargetsFromGoals(loadGoals(clientId), userId, allRepIds, tzTodayStr())
-// Goals: business, pipeline and rep targets in one builder. Metric, target,
-// which pipelines, which reps, and how the number is split among them.
-function GoalsEditor({ clientId, currency }) {
-  const [meta, setMeta] = useState({ users: null, pipelines: [] })
-  const [goals, setGoals] = useState(() => loadGoals(clientId))
-  const [edit, setEdit] = useState(null)
-  const [saved, setSaved] = useState(false)
-  useEffect(() => { setGoals(loadGoals(clientId)); setEdit(null) }, [clientId])
-  useEffect(() => {
-    fetch(`/.netlify/functions/windsor?scope=crmusers&withDeals=1&pipelines=1&client=${encodeURIComponent(clientId)}`, { credentials: 'same-origin' })
-      .then((r) => r.json().catch(() => ({}))).then((j) => setMeta({ users: (j && j.users) || [], pipelines: (j && j.pipelines) || [] })).catch(() => setMeta({ users: [], pipelines: [] }))
-  }, [clientId])
-  const users = meta.users || []
-  const repIds = users.map((u) => u.id)
-  const nameOf = (id) => (users.find((u) => u.id === id) || {}).name || 'Former rep'
-  const pipeName = (id) => (meta.pipelines.find((p) => p.id === id) || {}).name || 'Pipeline'
-  const fmtT = (g) => { const m = goalMetric(g.metric) || []; return m[2] === 'money' ? fmtCurrency(g.target, currency) : m[2] === 'pct' ? `${g.target}%` : m[2] === 'lower' ? `${g.target} min` : fmtNumber(g.target) }
-  const persist = (next) => { setGoals(next); saveGoals(clientId, next); setSaved(true); setTimeout(() => setSaved(false), 2000) }
-  const blank = () => ({ id: newGoalId(), name: '', metric: 'revenue', target: '', period: 'month', from: '', to: '', endsOn: '', byMonth: {}, byQuarter: {}, pipelines: null, reps: null, split: 'even', weights: {}, shares: {} })
-  const today = tzTodayStr()
-  // Progress for every goal in its own window, from the same read the hub uses.
-  const prog = useGoalProgress(clientId, goals, 0)
-  const periodLabel = (g) => (g.period === 'quarter' ? 'quarterly' : g.period === 'range' ? `${g.from} to ${g.to}` : 'monthly')
-  const groups = [['business', 'Business and team goals', 'Every pipeline; all reps or the reps ticked.'], ['pipeline', 'Pipeline goals', 'One or more pipelines; split among the reps attached.'], ['rep', 'Rep goals', 'One rep\'s own target. Beats any share of a wider goal for the same metric.']]
-  const summary = (g) => {
-    const m = goalMetric(g.metric) || []
-    const scope = [g.pipelines ? g.pipelines.map(pipeName).join(', ') : 'All pipelines', g.reps ? g.reps.map(nameOf).join(', ') : 'All reps'].join(' · ')
-    const split = (SPLITS.find(([k]) => k === (g.reps && g.reps.length === 1 ? 'each' : g.split)) || [])[1] || ''
-    const plan = Object.keys(g.byMonth || {}).length + Object.keys(g.byQuarter || {}).length
-    return `${m[1]} · ${fmtT(g)} ${periodLabel(g)}${plan ? ` · ${plan} planned` : ''}${g.endsOn ? ` · until ${g.endsOn}` : ''} · ${scope}${m[2] === 'pct' || m[2] === 'lower' || RATE_METRICS.has(g.metric) || (g.reps && g.reps.length === 1) ? '' : ` · ${split.toLowerCase()}`}`
-  }
-  const form = edit ? (() => {
-    const g = edit; const m = goalMetric(g.metric) || []; const isRate = m[2] === 'pct' || m[2] === 'lower' || RATE_METRICS.has(g.metric)
-    const set = (patch) => setEdit({ ...g, ...patch })
-    const ids = g.reps || repIds
-    const errs = validateGoal({ ...g, target: Number(g.target) }, repIds)
-    const toggle = (list, id) => { const cur = list || []; return cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id] }
-    const shares = goalShares({ ...g, target: Number(g.target) || 0 }, repIds)
-    return (
-      <div className="card goal-form">
-        <div className="rep-lb-head"><h4>{goals.some((x) => x.id === g.id) ? 'Edit goal' : 'New goal'}</h4><button type="button" className="btn-ghost sm" onClick={() => setEdit(null)}>Cancel</button></div>
-        <div className="goal-grid">
-          <label className="goal-f">Metric<select value={g.metric} onChange={(e) => { const mm = goalMetric(e.target.value); set({ metric: e.target.value, pipelines: mm && !mm[3] ? null : g.pipelines }) }}>{GOAL_METRICS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></label>
-          <label className="goal-f">Period<select value={g.period} onChange={(e) => set({ period: e.target.value })}><option value="month">Monthly, recurring</option><option value="quarter">Quarterly, recurring</option><option value="range">Custom dates, once</option></select></label>
-          <label className="goal-f">Target {g.period === 'quarter' ? 'a quarter' : g.period === 'range' ? 'for the dates' : 'a month'}{m[2] === 'pct' ? ' (%)' : m[2] === 'lower' ? ' (minutes)' : m[2] === 'money' ? ` (${currency || 'AUD'})` : ''}<input type="number" min="0" step={m[2] === 'money' ? '100' : '1'} inputMode="decimal" value={g.target} onChange={(e) => set({ target: e.target.value })} /></label>
-          {g.period === 'range' ? <><label className="goal-f">From<input type="date" value={g.from || ''} onChange={(e) => set({ from: e.target.value })} /></label><label className="goal-f">To<input type="date" value={g.to || ''} onChange={(e) => set({ to: e.target.value })} /></label></>
-            : <label className="goal-f">Runs until <span className="cap">(optional)</span><input type="month" value={g.endsOn || ''} onChange={(e) => set({ endsOn: e.target.value })} /></label>}
-          <label className="goal-f">Name <span className="cap">(optional)</span><input type="text" value={g.name} placeholder={m[1] ? `${m[1]} goal` : ''} onChange={(e) => set({ name: e.target.value })} /></label>
-        </div>
-        <div className="goal-f"><span>Pipelines</span>{m[3] === false ? <p className="cap">{m[1]} is per rep, not per pipeline.</p> : <div className="hub-chips">
-          <button type="button" className={`goal-chip ${!g.pipelines ? 'on' : ''}`} onClick={() => set({ pipelines: null })}>All pipelines</button>
-          {meta.pipelines.map((p) => <button type="button" key={p.id} className={`goal-chip ${g.pipelines && g.pipelines.includes(p.id) ? 'on' : ''}`} onClick={() => { const n = toggle(g.pipelines, p.id); set({ pipelines: n.length ? n : null }) }}>{p.name}</button>)}
-        </div>}</div>
-        <div className="goal-f"><span>Reps</span><div className="hub-chips">
-          <button type="button" className={`goal-chip ${!g.reps ? 'on' : ''}`} onClick={() => set({ reps: null })}>All reps</button>
-          {users.map((u) => <button type="button" key={u.id} className={`goal-chip ${g.reps && g.reps.includes(u.id) ? 'on' : ''}`} onClick={() => { const n = toggle(g.reps, u.id); set({ reps: n.length ? n : null }) }}>{u.name}</button>)}
-          {meta.users === null ? <span className="cap">Loading reps…</span> : null}
-        </div></div>
-        {g.period !== 'range' ? <div className="goal-f"><span>Plan {g.period === 'quarter' ? 'quarter by quarter' : 'month by month'} <span className="cap">(optional · blank means the default target)</span></span>
-          <div className="goal-plan">{(g.period === 'quarter' ? quarterKeysFrom(today, 4) : monthKeysFrom(today, 12)).map((k) => { const map = g.period === 'quarter' ? 'byQuarter' : 'byMonth'; const cur = (g[map] || {})[k]; return <label key={k}><span>{g.period === 'quarter' ? k.replace('-', ' ') : new Date(+k.slice(0, 4), +k.slice(5, 7) - 1, 1).toLocaleString('en-AU', { month: 'short', year: '2-digit' })}</span><input type="number" min="0" placeholder={g.target || ''} value={cur ?? ''} onChange={(e) => { const next = { ...(g[map] || {}) }; if (e.target.value === '') delete next[k]; else next[k] = e.target.value; set({ [map]: next }) }} /></label> })}</div></div> : null}
-        {!isRate && !(g.reps && g.reps.length === 1) ? <label className="goal-f">How the number is shared<select value={g.split} onChange={(e) => set({ split: e.target.value })}>{SPLITS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></label> : null}
-        {!isRate && (g.split === 'weighted' || g.split === 'custom') && !(g.reps && g.reps.length === 1) ? <div className="goal-f"><span>{g.split === 'weighted' ? 'Percentage per rep' : 'Amount per rep'}</span>
-          <div className="goal-shares">{ids.map((id) => <label key={id}><span>{nameOf(id)}</span><input type="number" min="0" step={g.split === 'weighted' ? '1' : '1'} value={g.split === 'weighted' ? (g.weights[id] ?? '') : (g.shares[id] ?? '')} onChange={(e) => set(g.split === 'weighted' ? { weights: { ...g.weights, [id]: e.target.value } } : { shares: { ...g.shares, [id]: e.target.value } })} />{g.split === 'weighted' ? <b>= {shares[id] != null ? fmtT({ ...g, target: shares[id] }) : '-'}</b> : null}</label>)}</div>
-          <p className="cap">{g.split === 'weighted' ? `Adds up to ${ids.reduce((a, id) => a + (Number(g.weights[id]) || 0), 0)}%` : `Adds up to ${fmtT({ ...g, target: ids.reduce((a, id) => a + (Number(g.shares[id]) || 0), 0) })} of ${fmtT({ ...g, target: Number(g.target) || 0 })}`}</p></div> : null}
-        {!isRate && g.split === 'even' && ids.length && Number(g.target) > 0 ? <p className="cap">Each of the {ids.length} reps gets {fmtT({ ...g, target: shares[ids[0]] || 0 })}.</p> : null}
-        {errs.length ? <ul className="goal-errs">{errs.map((e, i) => <li key={i}>{e}</li>)}</ul> : null}
-        <div className="act-note-btns"><button type="button" className="btn-primary act-btn" disabled={errs.length > 0} onClick={() => { const next = goals.some((x) => x.id === g.id) ? goals.map((x) => (x.id === g.id ? { ...g, target: Number(g.target) } : x)) : [...goals, { ...g, target: Number(g.target) }]; persist(next); setEdit(null) }}>Save goal</button></div>
-      </div>
-    )
-  })() : null
-  return (
-    <div className="goals">
-      <p className="cap" style={{ marginTop: 0 }}>A goal is a metric, a target for a period (monthly or quarterly recurring, or custom dates once), which pipelines and which reps it covers, and how the number is shared among those reps. A recurring goal can carry a plan with a different number for particular months or quarters, and can stop after a given month. A goal on every pipeline and every rep is a business goal; on one pipeline, a pipeline goal; on one rep, that rep's own target. Business and pipeline goals become the dials on the Sales Hub; a rep's share shows on their My results cockpit. {!goalsSaved(clientId) && goals.length ? 'The Rep KPIs set earlier are shown here as goals; save any change and they are kept as goals from then on.' : ''}</p>
-      <div className="act-note-btns" style={{ marginBottom: 12 }}><button type="button" className="btn-primary act-btn" disabled={!!edit} onClick={() => setEdit(blank())}>New goal</button>{saved ? <span className="cap">Saved.</span> : null}</div>
-      {form}
-      {groups.map(([lvl, title, hint]) => { const list = goals.filter((g) => goalLevel(g) === lvl); return (
-        <div className="goal-group" key={lvl}><div className="hub-sub">{title} <span className="cap">· {hint}</span></div>
-          {list.length ? list.map((g) => { const p = prog[g.id]; const m = goalMetric(g.metric) || []; const fmtV = (v) => (v == null ? '-' : m[2] === 'money' ? fmtCurrency(v, currency) : m[2] === 'pct' ? `${v}%` : m[2] === 'lower' ? `${v} min` : fmtNumber(v)); return <div className="goal-row" key={g.id}><div><b>{g.name || m[1]}</b><div className="cap">{summary(g)}</div>{p ? <div className="cap goal-prog">{p.window.label}: <b>{fmtV(p.actual)}</b> of {fmtV(p.target)}{p.actual != null && p.target && m[2] !== 'lower' ? ` · ${Math.round((p.actual / p.target) * 100)}%` : ''}{p.window.notYet ? ' · not started' : ''}</div> : null}</div><div className="act-note-btns"><button type="button" className="btn-ghost sm" onClick={() => setEdit({ ...g, target: String(g.target), from: g.from || '', to: g.to || '', endsOn: g.endsOn || '' })}>Edit</button><button type="button" className="btn-ghost sm" onClick={() => { if (window.confirm('Delete this goal?')) persist(goals.filter((x) => x.id !== g.id)) }}>Delete</button></div></div> }) : <p className="cap">None yet.</p>}
-        </div>) })}
-    </div>
-  )
-}
-function RepCockpit({ clientId, rep, currency, nonce, canEdit }) {
-  const st = useRepCard(clientId, rep, 'this_month', nonce)
-  useSettingsSync()
-  const targets = repTargetsFor(clientId, rep)
-  const keys = REP_KPI_DEFS.filter(([k]) => targets[k] > 0)
-  const now = new Date()
-  const dim = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()
-  const day = now.getDate()
-  const elapsed = Math.min(1, Math.max(0.03, day / dim))
-  if (!keys.length) return canEdit ? <div className="card rep-cockpit-empty"><b>No monthly targets yet.</b> <span className="cap">Set goals in Settings → this client → Goals, and this becomes the rep's cockpit.</span></div> : null
-  const d = st.data || {}
-  const ap = d.appointments || {}
-  const actual = {
-    revenue: d.revenue || 0, cash: (d.cash && d.cash.collected) || 0, won: d.won || 0, booked: ap.booked || 0, userBooked: ap.set != null ? ap.set : (ap.byStaff || 0), held: ap.showed || 0,
-    avgDeal: d.avgDeal == null ? null : d.avgDeal, showRate: ap.showRate, winRate: d.winRate, calls: (d.calls && d.calls.outbound) || 0, minutes: (d.calls && d.calls.minutes) || 0, speedMin: d.speed ? d.speed.medianMin : null, leads: d.leads || 0,
-  }
-  const fmt = (k, v, kind) => (v == null ? '-' : kind === 'money' ? fmtCurrency(v, currency) : kind === 'pct' ? `${v}%` : kind === 'lower' ? repMin(v) : fmtNumber(v))
-  const monthName = now.toLocaleString('en-AU', { month: 'long' })
-  return (
-    <div className="card rep-cockpit">
-      <div className="rep-cockpit-head"><h4>This month · {monthName}</h4><span className="cap">Day {day} of {dim} · {Math.round(elapsed * 100)}% of the month gone{st.status === 'loading' ? ' · updating…' : ''}</span></div>
-      <div className="rep-cockpit-grid">
-        {keys.map(([k, label, kind]) => {
-          const t = targets[k], a = actual[k]
-          let ratio, status, sub
-          if (kind === 'lower') { ratio = a == null ? 0 : Math.min(1, t / Math.max(a, 0.01)); status = a == null ? '' : a <= t ? 'good' : a <= t * 1.5 ? 'warn' : 'bad'; sub = a == null ? 'not measured yet' : a <= t ? 'inside target' : `${repMin(a - t)} over target` }
-          else if (kind === 'pct') { ratio = a == null ? 0 : Math.min(1, a / t); status = a == null ? '' : a >= t ? 'good' : a >= t * 0.85 ? 'warn' : 'bad'; sub = a == null ? 'nothing to rate yet' : a >= t ? 'on target' : `${t - a} points short` }
-          else if (RATE_METRICS.has(k)) { ratio = a == null ? 0 : Math.min(1, a / t); status = a == null ? '' : a >= t ? 'good' : a >= t * 0.85 ? 'warn' : 'bad'; sub = a == null ? 'nothing won yet' : a >= t ? 'on target' : `${fmt(k, t - a, kind)} under target` }
-          else { ratio = Math.min(1, (a || 0) / t); const paceNeed = t * elapsed; status = (a || 0) >= paceNeed ? 'good' : (a || 0) >= paceNeed * 0.8 ? 'warn' : 'bad'; const left = Math.max(0, t - (a || 0)); sub = (a || 0) >= t ? 'target hit' : `${fmt(k, left, kind)} to go · pace says ${fmt(k, Math.round(paceNeed), kind)} by today` }
-          return (
-            <div className={`rep-kpi ${status}`} key={k}>
-              <div className="rep-kpi-l"><span>{label}</span><b>{fmt(k, a, kind)}<small> / {fmt(k, t, kind)}</small></b></div>
-              <div className="rep-kpi-t"><div className="rep-kpi-f" style={{ width: `${Math.round(ratio * 100)}%` }} />{(kind === 'count' || kind === 'money') && !RATE_METRICS.has(k) ? <div className="rep-kpi-pace" style={{ left: `${Math.round(elapsed * 100)}%` }} title="Where the month is up to" /> : null}</div>
-              <div className="cap">{sub}</div>
-            </div>
-          )
-        })}
-      </div>
-    </div>
-  )
-}
-
-// The client's own key events (Settings -> Key events), read for one rep: a
-// stage event is the leads that reached that stage, a calendar event is the
-// appointments booked on that calendar (with how many showed).
-function repKeyEventRows(clientId, d) {
-  const ke = mergeCalKeyEvents(normKeyEvents(loadKeyEvents(clientId)))
-  const out = []
-  for (const e of ke) {
-    if (!e || WON_RE.test(e.label)) continue
-    if (e.kind === 'calendar') { const c = (d.byCalendar || {})[e.ref]; out.push({ label: e.label, kind: 'calendar', count: c ? c.booked : 0, showed: c ? c.showed : 0 }) }
-    else if (e.kind === 'stage') out.push({ label: e.label, kind: 'stage', count: (d.stages || {})[e.ref] || 0 })
-  }
-  return out
-}
-function RepKeyEvents({ clientId, d }) {
-  const rows = repKeyEventRows(clientId, d)
-  if (!rows.length) return null
-  const max = Math.max(1, d.leads || 0, ...rows.map((r) => r.count))
-  return (
-    <div className="card rep-card">
-      <h4>Key events</h4>
-      <RepBar label="Leads" value={d.leads || 0} max={max} />
-      {rows.map((r) => <RepBar key={r.kind + r.label} label={`${r.kind === 'calendar' ? '📅 ' : ''}${r.label}`} value={r.count} max={max} text={`${fmtNumber(r.count)} · ${d.leads ? Math.round((r.count / d.leads) * 100) : 0}%${r.kind === 'calendar' && r.count ? ` · ${r.showed} showed` : ''}`} tone={r.kind === 'calendar' ? 'good' : ''} />)}
-      <RepBar label="Won" value={d.won || 0} max={max} tone="good" text={`${fmtNumber(d.won || 0)} · ${d.leads ? Math.round(((d.won || 0) / d.leads) * 100) : 0}%`} />
-    </div>
-  )
-}
-function RepCardView({ clientId, authUser, currency, reps, meId, nonce, onGoActions, selfOnly = false }) {
-  const isViewer = selfOnly
-  const [period, setPeriod] = useState('last_30d')
-  const [rep, setRep] = useState(meId || '')
-  const [st, setSt] = useState({ status: 'loading', data: null })
-  const [tick, setTick] = useState(0)
-  useEffect(() => { if (!rep && meId) setRep(meId) }, [meId]) // eslint-disable-line
-  useEffect(() => {
-    if (!isViewer && !rep) { setSt({ status: 'pick', data: null }); return }
-    let dead = false
-    setSt((s) => ({ status: s.data ? 'refreshing' : 'loading', data: s.data }))
-    const r = presetRange(period)
-    const qs = `scope=repcard&client=${encodeURIComponent(clientId)}&${rangeQuery(r)}&preset=${period}${!isViewer && rep ? `&user=${encodeURIComponent(rep)}` : ''}${hoursQuery(loadHours(clientId))}${tick || nonce ? `&_r=${tick}.${nonce || 0}` : ''}`
-    fetch(`/.netlify/functions/windsor?${qs}`, { credentials: 'same-origin' })
-      .then((x) => x.json().catch(() => ({ error: `server ${x.status}` })))
-      .then((j) => { if (!dead) setSt({ status: j && j.error ? 'err' : 'ok', data: j }) })
-      .catch((e) => { if (!dead) setSt({ status: 'err', data: { error: String((e && e.message) || e) } }) })
-    return () => { dead = true }
-  }, [clientId, period, rep, isViewer, tick, nonce])
-  const d = st.data || {}
-  const money = (v) => fmtCurrency(v || 0, currency)
-  const pct = (v) => (v == null ? '-' : `${v}%`)
-  const head = (
-    <div className="act-bar">
-      <div className="act-filters">
-        {!isViewer ? <label className="act-sel"><select value={rep} onChange={(e) => setRep(e.target.value)}><option value="">Pick a rep…</option>{(reps || []).map((u) => <option key={u.id} value={u.id}>{u.name}{u.id === meId ? ' (me)' : ''}</option>)}</select></label> : null}
-        <label className="act-sel"><select value={period} onChange={(e) => setPeriod(e.target.value)}>{REP_PERIODS.map(([id, l]) => <option key={id} value={id}>{l}</option>)}</select></label>
-        <button type="button" className="btn-ghost sm" disabled={st.status === 'refreshing'} onClick={() => setTick((t) => t + 1)}>{st.status === 'refreshing' ? 'Refreshing…' : 'Refresh'}</button>
-      </div>
-    </div>
-  )
-  if (st.status === 'pick') return <div className="act-wrap">{head}<div className="card act-clear"><span className="cap">Pick a rep to see their results.</span></div></div>
-  if (st.status === 'loading') return <div className="act-wrap">{head}<div className="card"><Spinner label="Adding up the period…" /></div></div>
-  if (st.status === 'err') return <div className="act-wrap">{head}<div className="card"><p className="cap act-bad" style={{ margin: 0 }}>{d.error || 'Could not load.'}</p></div></div>
-  const ap = d.appointments || {}
-  const sp = d.speed
-  const now = d.now || { stale: {} }
-  const stale = now.stale || {}
-  const team = d.team || {}
-  const rk = d.rank || {}
-  const stageNames = (() => { const out = []; for (const p of (d.pipelines || [])) for (const s of (p.stages || [])) if (!out.includes(s)) out.push(s); return out })()
-  const stageRows = stageNames.map((n) => [n, (d.stages || {})[n] || 0]).filter(([, v]) => v > 0)
-  const stageMax = Math.max(1, ...stageRows.map(([, v]) => v))
-  const bkt = (sp && sp.buckets) || null
-  const bktMax = bkt ? Math.max(1, ...bkt.map((b) => b.count || 0)) : 1
-  const label = (REP_PERIODS.find(([id]) => id === period) || [])[1]
-  return (
-    <div className="act-wrap rep-wrap">
-      {head}
-      <div className="rep-head"><b>{d.name || 'Rep'}</b><span className="cap">{label}{d.period && d.period.from ? ` · ${d.period.from} to ${d.period.to}` : ''}</span></div>
-      <RepCockpit clientId={clientId} rep={d.userId} currency={currency} nonce={nonce} canEdit={!!(authUser && isAdminishFE(authUser.role))} />
-      <div className="rep-tiles">
-        <RepTile label="Leads" value={fmtNumber(d.leads || 0)} rank={rk.leads} sub={rk.leads && rk.leads.of > 1 ? `of ${rk.leads.of} reps` : null} />
-        <RepTile label="Booked" value={fmtNumber(ap.booked || 0)} rank={rk.booked} sub={ap.booked ? `${ap.byStaff} by you · ${ap.byCustomer} by the customer` : (d.bookRate != null ? `${d.bookRate}% of leads` : null)} />
-        <RepTile label="Show rate" value={pct(ap.showRate)} rank={rk.showRate} sub={team.avgShowRate != null ? `team ${team.avgShowRate}%` : null} tone={ap.showRate != null && team.avgShowRate != null ? (ap.showRate >= team.avgShowRate ? 'good' : 'warn') : ''} />
-        <RepTile label="Win rate" value={pct(d.winRate)} rank={rk.winRate} sub={team.avgWinRate != null ? `team ${team.avgWinRate}%` : null} tone={d.winRate != null && team.avgWinRate != null ? (d.winRate >= team.avgWinRate ? 'good' : 'warn') : ''} />
-        <RepTile label="Won" value={fmtNumber(d.won || 0)} rank={rk.revenue} sub={d.revenue ? `${money(d.revenue)}${d.avgDeal ? ` · avg ${money(d.avgDeal)}` : ''}` : null} tone="good" />
-        <RepTile label="Lost" value={fmtNumber(d.lost || 0)} sub={d.lostReasons && d.lostReasons[0] ? `mostly "${d.lostReasons[0].reason}"` : null} />
-        <RepTile label="Open now" value={fmtNumber(now.open || 0)} sub={now.openValue ? money(now.openValue) + ' in play' : null} />
-        <RepTile label="Stale" value={fmtNumber(stale.count || 0)} sub={stale.count ? `of ${stale.of} open · avg ${stale.avgIdle} days idle · oldest ${stale.oldest}` : (stale.of ? `of ${stale.of} open · ${stale.threshold}+ days` : null)} tone={stale.count ? 'warn' : 'good'} />
-        {d.calls ? <RepTile label="Calls made" value={fmtNumber(d.calls.outbound || 0)} sub={`${fmtNumber(d.calls.connected || 0)} connected · ${fmtNumber(d.calls.minutes || 0)} min on the phone`} /> : null}
-        {d.cash && d.cash.field ? <RepTile label="Cash collected" value={money(d.cash.collected || 0)} sub={d.revenue ? `${Math.round(((d.cash.collected || 0) / d.revenue) * 100)}% of won value` : null} tone="good" /> : null}
-        <RepTile label="Days to close" value={d.avgCloseDays != null ? `${d.avgCloseDays} d` : '-'} rank={rk.closeDays} sub={d.avgCloseDays != null ? `average deal cycle${team.avgCloseDays != null ? ` · team ${team.avgCloseDays} d` : ''}` : 'no wins in this period'} tone={d.avgCloseDays != null && team.avgCloseDays != null ? (d.avgCloseDays <= team.avgCloseDays ? 'good' : 'warn') : ''} />
-        <RepTile label="Speed to lead" value={sp && sp.medianMin != null ? repMin(sp.medianMin) : '-'} sub={sp ? (sp.medianMin != null ? `median · ${sp.within5Pct != null ? `${sp.within5Pct}% under 5 min` : ''}` : 'no replies measured') : 'not measured'} tone={sp && sp.medianMin != null ? (sp.medianMin <= 5 ? 'good' : sp.medianMin <= 60 ? '' : 'warn') : ''} />
-      </div>
-      <RepLeaderboard rows={d.leaderboard || []} meId={d.userId} currency={currency} />
-      <div className="rep-grid">
-        <div className="card rep-card">
-          <h4>Appointments</h4>
-          {ap.booked ? <>
-            <RepBar label="Showed" value={ap.showed} max={ap.booked} tone="good" />
-            <RepBar label="No-show" value={ap.noShow} max={ap.booked} tone="bad" />
-            <RepBar label="Cancelled" value={ap.cancelled} max={ap.booked} />
-            <RepBar label="Still to come" value={ap.upcoming} max={ap.booked} />
-            {ap.unresulted ? <RepBar label="Passed, not resulted" value={ap.unresulted} max={ap.booked} tone="warn" /> : null}
-            {ap.unresulted && onGoActions ? <button type="button" className="btn-ghost sm" onClick={onGoActions}>Result them in the Action list</button> : null}
-          </> : <p className="cap">No appointments booked in this period.</p>}
-        </div>
-        <RepKeyEvents clientId={clientId} d={d} />
-        <div className="card rep-card">
-          <h4>How far your leads got</h4>
-          {stageRows.length ? stageRows.map(([n, v]) => <RepBar key={n} label={n} value={v} max={stageMax} text={`${fmtNumber(v)} · ${d.leads ? Math.round((v / d.leads) * 100) : 0}%`} />) : <p className="cap">No leads in this period.</p>}
-          {d.qualified != null && d.leads ? <p className="cap">Qualified: {fmtNumber(d.qualified)} ({pct(d.qualRate)})</p> : null}
-        </div>
-        <div className="card rep-card">
-          <h4>Speed to lead</h4>
-          {sp && sp.medianMin != null ? <>
-            <p className="cap"><b>In business hours</b>: {sp.inHours != null ? `${fmtNumber(sp.inHours)} leads · ` : ''}median {repMin(sp.medianMin)}{sp.avgMin != null ? ` · average ${repMin(sp.avgMin)}` : ''} · {sp.measured} replied{sp.viaAppt ? ` (${sp.viaAppt} by booking an appointment)` : ''}. {sp.full ? 'Every lead measured.' : `${sp.sampled} of ${sp.totalLeads} leads measured.`}</p>
-            {bkt ? bkt.map((b) => <RepBar key={b.key || b.label} label={b.label} value={b.count || 0} max={bktMax} tone={/Under 5|5-15/.test(b.label) ? 'good' : /Over 24|4-24/.test(b.label) ? 'bad' : ''} />) : null}
-            {sp.after && sp.after.count ? <p className="cap"><b>After hours</b>: {fmtNumber(sp.after.count)} leads arrived outside business hours{sp.after.medianMin != null ? `; answered a median ${repMin(sp.after.medianMin)} after the next opening${sp.after.within5Pct != null ? `, ${sp.after.within5Pct}% within 5 min of opening` : ''}` : ''}. The buckets above are in-hours leads only.</p> : (sp.hours ? <p className="cap">Every lead in this period arrived in business hours.</p> : null)}
-          </> : <p className="cap">{sp ? 'No first replies could be measured for this period.' : 'Speed to lead was not measured for this period.'}</p>}
-        </div>
-        <div className="card rep-card">
-          <h4>Lost reasons</h4>
-          {d.lostReasons && d.lostReasons.length ? d.lostReasons.slice(0, 6).map((r) => <RepBar key={r.reason} label={r.reason} value={r.count} max={d.lostReasons[0].count} tone="bad" />) : <p className="cap">Nothing lost in this period.</p>}
-          {d.byPipeline && d.byPipeline.length > 1 ? <p className="cap">By pipeline: {d.byPipeline.map((p) => `${p.name} ${p.leads} leads, ${p.won} won`).join(' · ')}</p> : null}
-        </div>
-      </div>
-      <p className="cap act-foot">Leads are the deals assigned to {isViewer ? 'you' : 'this rep'} that were created in the period. Won and lost count deals from those leads. Open and stale are what is on the desk right now. Speed to lead follows the client's business-hours rule and counts the first reply a person sent (or a staff-booked appointment), on a sample of the rep's leads. Ranks are among the {team.reps || 0} reps who had leads in the period.</p>
-    </div>
-  )
-}
-// ---- Compare: two reps side by side --------------------------------------------
-// For an Account Admin or agency staff: the same scorecard for two people at
-// once, one metric per row, the better side marked. Two reads of the same
-// repcard scope, so it costs nothing new on the server.
-function useRepCard(clientId, rep, period, nonce) {
-  const [st, setSt] = useState({ status: 'idle', data: null })
-  useEffect(() => {
-    if (!rep) { setSt({ status: 'idle', data: null }); return }
-    let dead = false
-    setSt((s) => ({ status: 'loading', data: s.data }))
-    const r = presetRange(period)
-    fetch(`/.netlify/functions/windsor?scope=repcard&client=${encodeURIComponent(clientId)}&${rangeQuery(r)}&preset=${period}&user=${encodeURIComponent(rep)}${hoursQuery(loadHours(clientId))}${nonce ? `&_r=${nonce}` : ''}`, { credentials: 'same-origin' })
-      .then((x) => x.json().catch(() => ({ error: `server ${x.status}` })))
-      .then((j) => { if (!dead) setSt({ status: j && j.error ? 'err' : 'ok', data: j }) })
-      .catch((e) => { if (!dead) setSt({ status: 'err', data: { error: String((e && e.message) || e) } }) })
-    return () => { dead = true }
-  }, [clientId, rep, period, nonce])
-  return st
-}
-function RepCompareView({ clientId, currency, reps, meId, nonce }) {
-  const [period, setPeriod] = useState('last_30d')
-  const [a, setA] = useState(meId || (reps[0] && reps[0].id) || '')
-  const [b, setB] = useState((reps.find((r) => r.id !== (meId || (reps[0] && reps[0].id))) || {}).id || '')
-  const A = useRepCard(clientId, a, period, nonce), B = useRepCard(clientId, b, period, nonce)
-  const money = (v) => fmtCurrency(v || 0, currency)
-  const da = A.data || {}, db = B.data || {}
-  const ready = A.status === 'ok' && B.status === 'ok'
-  const rows = [
-    ['Leads', (d) => d.leads, (v) => fmtNumber(v || 0), 'high'],
-    ['Appointments booked', (d) => (d.appointments || {}).booked, (v) => fmtNumber(v || 0), 'high'],
-    ['Booked by the customer', (d) => (d.appointments || {}).byCustomer, (v) => fmtNumber(v || 0), 'high'],
-    ['Showed', (d) => (d.appointments || {}).showed, (v) => fmtNumber(v || 0), 'high'],
-    ['Show rate', (d) => (d.appointments || {}).showRate, (v) => (v == null ? '-' : `${v}%`), 'high'],
-    ['Won', (d) => d.won, (v) => fmtNumber(v || 0), 'high'],
-    ['Win rate', (d) => d.winRate, (v) => (v == null ? '-' : `${v}%`), 'high'],
-    ['Revenue', (d) => d.revenue, (v) => money(v), 'high'],
-    ['Average deal', (d) => d.avgDeal, (v) => (v == null ? '-' : money(v)), 'high'],
-    ['Lost', (d) => d.lost, (v) => fmtNumber(v || 0), 'low'],
-    ['Open now', (d) => (d.now || {}).open, (v) => fmtNumber(v || 0), null],
-    ['Stale now', (d) => ((d.now || {}).stale || {}).count, (v) => fmtNumber(v || 0), 'low'],
-    ['Speed to lead (median, in hours)', (d) => d.speed && d.speed.medianMin, (v) => (v == null ? '-' : repMin(v)), 'low'],
-    ['Replied under 5 min', (d) => d.speed && d.speed.within5Pct, (v) => (v == null ? '-' : `${v}%`), 'high'],
-    ['Days to close', (d) => d.avgCloseDays, (v) => (v == null ? '-' : `${v} d`), 'low'],
-    ['Calls made', (d) => d.calls && d.calls.outbound, (v) => fmtNumber(v || 0), 'high'],
-    ['Minutes on the phone', (d) => d.calls && d.calls.minutes, (v) => fmtNumber(v || 0), 'high'],
-    ['Cash collected', (d) => d.cash && d.cash.collected, (v) => (v == null ? '-' : money(v)), 'high'],
-  ]
-  const better = (va, vb, dir) => { if (!dir || va == null || vb == null || va === vb) return [false, false]; return dir === 'high' ? [va > vb, vb > va] : [va < vb, vb < va] }
-  const stageNames = (() => { const out = []; for (const p of (da.pipelines || db.pipelines || [])) for (const s of (p.stages || [])) if (!out.includes(s)) out.push(s); return out })()
-  const stageRows = stageNames.map((n) => [n, (da.stages || {})[n] || 0, (db.stages || {})[n] || 0]).filter(([, x, y]) => x || y)
-  const reasons = [...new Set([...(da.lostReasons || []).map((r) => r.reason), ...(db.lostReasons || []).map((r) => r.reason)])].map((n) => [n, ((da.lostReasons || []).find((r) => r.reason === n) || {}).count || 0, ((db.lostReasons || []).find((r) => r.reason === n) || {}).count || 0]).sort((x, y) => (y[1] + y[2]) - (x[1] + x[2])).slice(0, 8)
-  const pair = (label, x, y, fmt = fmtNumber, dir = 'high') => { const [ba, bb] = better(x, y, dir); return <div className="cmp-row" key={label}><span className="cmp-l">{label}</span><span className={`cmp-v ${ba ? 'win' : ''}`}>{fmt(x)}</span><span className={`cmp-v ${bb ? 'win' : ''}`}>{fmt(y)}</span></div> }
-  const sel = (v, set, other) => <select value={v} onChange={(e) => set(e.target.value)}><option value="">Pick a rep…</option>{reps.map((u) => <option key={u.id} value={u.id} disabled={u.id === other}>{u.name}{u.id === meId ? ' (me)' : ''}</option>)}</select>
-  return (
-    <div className="act-wrap">
-      <div className="act-bar"><div className="act-filters">
-        <label className="act-sel">{sel(a, setA, b)}</label><span className="cap">vs</span><label className="act-sel">{sel(b, setB, a)}</label>
-        <label className="act-sel"><select value={period} onChange={(e) => setPeriod(e.target.value)}>{REP_PERIODS.map(([id, l]) => <option key={id} value={id}>{l}</option>)}</select></label>
-      </div></div>
-      {!a || !b ? <div className="card act-clear"><span className="cap">Pick two reps to compare.</span></div>
-        : A.status === 'err' || B.status === 'err' ? <div className="card"><p className="cap act-bad" style={{ margin: 0 }}>{(A.data && A.data.error) || (B.data && B.data.error) || 'Could not load.'}</p></div>
-          : !ready ? <div className="card"><Spinner label="Adding up both reps…" /></div> : (
-            <div className="cmp-wrap">
-              <div className="card rep-card cmp-card">
-                <div className="cmp-row cmp-head"><span className="cmp-l" /><span className="cmp-v">{da.name}</span><span className="cmp-v">{db.name}</span></div>
-                {rows.map(([label, get, fmt, dir]) => pair(label, get(da), get(db), fmt, dir))}
-              </div>
-              <div className="rep-grid">
-                {(() => { const ra = repKeyEventRows(clientId, da), rb = repKeyEventRows(clientId, db); return ra.length ? <div className="card rep-card cmp-card"><h4>Key events</h4>
-                  <div className="cmp-row cmp-head"><span className="cmp-l" /><span className="cmp-v">{da.name}</span><span className="cmp-v">{db.name}</span></div>
-                  {ra.map((r, i) => pair(`${r.kind === 'calendar' ? '📅 ' : ''}${r.label}`, r.count, (rb[i] || {}).count || 0, (v) => fmtNumber(v || 0), 'high'))}
-                </div> : null })()}
-                <div className="card rep-card cmp-card"><h4>How far leads got</h4>
-                  <div className="cmp-row cmp-head"><span className="cmp-l" /><span className="cmp-v">{da.name}</span><span className="cmp-v">{db.name}</span></div>
-                  {stageRows.length ? stageRows.map(([n, x, y]) => pair(n, x, y, (v) => fmtNumber(v || 0), 'high')) : <p className="cap">No leads in this period.</p>}
-                </div>
-                <div className="card rep-card cmp-card"><h4>Lost reasons</h4>
-                  <div className="cmp-row cmp-head"><span className="cmp-l" /><span className="cmp-v">{da.name}</span><span className="cmp-v">{db.name}</span></div>
-                  {reasons.length ? reasons.map(([n, x, y]) => pair(n, x, y, (v) => fmtNumber(v || 0), 'low')) : <p className="cap">Nothing lost in this period.</p>}
-                </div>
-                <div className="card rep-card cmp-card"><h4>Speed to lead, in business hours</h4>
-                  <div className="cmp-row cmp-head"><span className="cmp-l" /><span className="cmp-v">{da.name}</span><span className="cmp-v">{db.name}</span></div>
-                  {pair('Leads in hours', da.speed && da.speed.inHours, db.speed && db.speed.inHours, (v) => (v == null ? '-' : fmtNumber(v)), null)}
-                  {pair('Leads after hours', da.speed && da.speed.after && da.speed.after.count, db.speed && db.speed.after && db.speed.after.count, (v) => (v == null ? '-' : fmtNumber(v)), null)}
-                  {pair('Median reply', da.speed && da.speed.medianMin, db.speed && db.speed.medianMin, (v) => (v == null ? '-' : repMin(v)), 'low')}
-                  {pair('Average reply', da.speed && da.speed.avgMin, db.speed && db.speed.avgMin, (v) => (v == null ? '-' : repMin(v)), 'low')}
-                  {((da.speed && da.speed.buckets) || (db.speed && db.speed.buckets) || []).map((bk, i) => pair(bk.label, ((da.speed && da.speed.buckets) || [])[i] && da.speed.buckets[i].count, ((db.speed && db.speed.buckets) || [])[i] && db.speed.buckets[i].count, (v) => fmtNumber(v || 0), i < 2 ? 'high' : i > 3 ? 'low' : null))}
-                  {pair('After-hours median (from opening)', da.speed && da.speed.after && da.speed.after.medianMin, db.speed && db.speed.after && db.speed.after.medianMin, (v) => (v == null ? '-' : repMin(v)), 'low')}
-                </div>
-              </div>
-              <p className="cap act-foot">Green marks the better side. Same rules as My results: leads assigned to each rep created in the period; speed follows the client's business-hours rule and counts the first reply a person sent.</p>
-            </div>
-          )}
-    </div>
-  )
-}
-
-function DealsActionsView({ clientId, authUser, currency, nonce }) {
-  const isViewer = !!(authUser && isClientRoleFE(authUser.role))
-  const [screen, setScreenRaw] = useState(isViewer ? 'results' : 'actions')
-  const touched = useRef(false)
-  const setScreen = (s) => { touched.current = true; setScreenRaw(s) }
-  const [mine, setMine] = useState(isViewer)
-  const [stale, setStale] = useState(7)
-  const [tier, setTier] = useState(0)
-  const [tick, setTick] = useState(0)
-  const [st, setSt] = useState({ status: 'loading', data: null })
-  const [rep, setRep] = useState('all')
-  const [cal, setCal] = useState('all')
-  const [pipeF, setPipeF] = useState('all')
-  const [stageF, setStageF] = useState('all')
-  const [sortBy, setSortBy] = useState('newest')
-  const [busy, setBusy] = useState({})
-  const [gone, setGone] = useState({})
-  const [patched, setPatched] = useState({})
-  const [msg, setMsg] = useState(null)
-  const [openSec, setOpenSec] = useState({})
-  const loadedAt = useRef(0)
-  useEffect(() => {
-    let dead = false
-    setSt((s) => ({ status: s.data ? 'refreshing' : 'loading', data: s.data }))
-    const qs = `scope=actions&client=${encodeURIComponent(clientId)}&mine=${mine ? 1 : 0}&stale=${stale}${tick || nonce ? `&_r=${tick}.${nonce || 0}` : ''}`
-    fetch(`/.netlify/functions/windsor?${qs}`, { credentials: 'same-origin' })
-      .then((r) => r.json().catch(() => ({ error: `server ${r.status}` })))
-      .then((j) => {
-        if (dead) return
-        loadedAt.current = Date.now(); setSt({ status: j && j.error && !j.counts ? 'err' : 'ok', data: j }); setGone({}); setPatched({})
-        // Home is the rep's own results whenever the CRM knows who they are.
-        if (!touched.current && j && j.meMatched) setScreenRaw('results')
-      })
-      .catch((e) => { if (!dead) setSt({ status: 'err', data: { error: String(e && e.message || e) } }) })
-    return () => { dead = true }
-  }, [clientId, mine, stale, tick, nonce])
-  useEffect(() => {
-    const iv = setInterval(() => { if (document.visibilityState === 'visible') setTick((t) => t + 1) }, 60000)
-    const vis = () => { if (document.visibilityState === 'visible' && Date.now() - loadedAt.current > 20000) setTick((t) => t + 1) }
-    document.addEventListener('visibilitychange', vis)
-    return () => { clearInterval(iv); document.removeEventListener('visibilitychange', vis) }
-  }, [])
-  const data = st.data || {}
-  const canWrite = data.canWrite === true
-  const loc = data.locationId
-  const tz = data.tz
-  const users = data.users || []
-  const reps = data.reps || users
-  const userName = useMemo(() => Object.fromEntries(users.map((u) => [u.id, u.name])), [users])
-  const write = async (payload, id, patch = null, remove = false) => {
-    setBusy((b) => ({ ...b, [id]: true })); setMsg(null)
-    try {
-      const r = await fetch(`/.netlify/functions/windsor?scope=actions&client=${encodeURIComponent(clientId)}`, { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) })
-      const j = await r.json().catch(() => ({ error: `server ${r.status}` }))
-      if (!r.ok || (j && j.error)) throw new Error((j && j.error) || `server ${r.status}`)
-      if (remove) setGone((g) => ({ ...g, [id]: true }))
-      if (patch) setPatched((p) => ({ ...p, [id]: { ...(p[id] || {}), ...patch } }))
-      setMsg({ ok: true, text: payload.op === 'note' ? 'Note added.' : payload.op === 'appt' ? `Appointment marked ${payload.status === 'noshow' ? 'no-show' : payload.status}.` : payload.op === 'dismiss' ? 'Marked as handled.' : payload.op === 'reply' ? 'Reply sent and marked handled.' : 'Saved to the CRM.' })
-      return true
-    } catch (e) { setMsg({ ok: false, text: String((e && e.message) || e) }); return false }
-    finally { setBusy((b) => { const n = { ...b }; delete n[id]; return n }) }
-  }
-  const repOk = (uid) => rep === 'all' || (rep === 'none' ? !uid : uid === rep)
-  const live = (rows) => (rows || []).filter((r) => !gone[r.id] && repOk(r.userId)).map((r) => (patched[r.id] ? { ...r, ...patched[r.id] } : r))
-  const lists = {
-    upcoming: live(data.upcoming).filter((a) => cal === 'all' || a.calendar === cal),
-    appts: live(data.appts).filter((a) => cal === 'all' || a.calendar === cal),
-    wonNoValue: live(data.wonNoValue), lostNoReason: live(data.lostNoReason), inbound: live(data.inbound),
-    staleOpen: live(data.staleOpen).filter((d) => !tier || (d.idleDays || 0) >= tier), unassigned: rep === 'all' || rep === 'none' ? live(data.unassigned) : [],
-  }
-  const todo = Object.entries(lists).reduce((n, [k, l]) => n + (k === 'upcoming' ? 0 : l.length), 0)
-  const sorters = { newest: (a, b) => (b.createdMs || 0) - (a.createdMs || 0), oldest: (a, b) => (a.createdMs || 0) - (b.createdMs || 0), value: (a, b) => (b.value || 0) - (a.value || 0), idle: (a, b) => (b.idleDays || 0) - (a.idleDays || 0), recent: (a, b) => (b.updatedMs || 0) - (a.updatedMs || 0) }
-  const deals = live(data.open).filter((d) => (pipeF === 'all' || d.pipelineId === pipeF) && (stageF === 'all' || d.stageId === stageF)).sort(sorters[sortBy] || sorters.newest)
-  const pipeSel = (data.pipelines || []).find((p) => p.id === pipeF)
-  // Live deals grouped per pipeline stage, in pipeline order.
-  const dealGroups = useMemo(() => {
-    const order = []; const idx = {}
-    for (const p of (data.pipelines || [])) for (const s of (p.stages || [])) { const k = `${p.id}|${s.id}`; idx[k] = order.length; order.push({ key: k, pipeline: p.name, stage: s.name, rows: [] }) }
-    const extra = { key: 'other', pipeline: '', stage: 'No stage', rows: [] }
-    for (const d of deals) { const k = `${d.pipelineId}|${d.stageId}`; if (idx[k] != null) order[idx[k]].rows.push(d); else extra.rows.push(d) }
-    const out = order.filter((g) => g.rows.length); if (extra.rows.length) out.push(extra)
-    return out
-  }, [deals, data.pipelines])
-  const money = (v) => fmtCurrency(v, currency)
-  // Every section starts collapsed so the whole list of what needs doing is
-  // visible at a glance; a tap opens the one being worked on.
-  const isOpen = (k) => (openSec[k] == null ? false : openSec[k])
-  const sec = (key, title, help, rows, render, extra = null, tone = '') => {
-    if (!rows.length && st.status === 'ok') return null
-    return (
-      <section className="act-sec" key={key}>
-        <button type="button" className="act-sec-head" onClick={() => setOpenSec((o) => ({ ...o, [key]: !isOpen(key) }))}>
-          <span className={`act-count ${tone || (rows.length ? 'on' : '')}`}>{rows.length}</span><b>{title}</b><span className="cap">{help}</span><span className="act-chev">{isOpen(key) ? '▾' : '▸'}</span>
-        </button>
-        {isOpen(key) && extra ? <div className="act-sec-extra">{extra}</div> : null}
-        {isOpen(key) ? <div className="act-rows">{rows.map(render)}</div> : null}
-      </section>
-    )
-  }
-  const who = (r) => <div className="act-who"><b>{r.name}</b>{r.pipeline || r.stage ? <span className="cap">{[r.pipeline, r.stage].filter(Boolean).join(' · ')}</span> : null}{r.user ? <span className="cap">Rep: {r.user}</span> : <span className="cap act-norep">No rep</span>}</div>
-  const dealRow = (d) => (
-    <div className="act-row" key={d.id}>
-      {who(d)}
-      <div className="act-meta"><span>{d.value > 0 ? money(d.value) : <span className="cap">No value</span>}{d.idleDays >= 7 ? <> <ActTierBadge r={d} /></> : null} <ActWaiting r={d} /></span><span className="cap">Last activity {actAgo(d.idleDays)} · created {actAgo(d.ageDays)}</span></div>
-      <div className="act-ctl-col">
-        {canWrite ? <ActDealControls d={d} data={data} busy={!!busy[d.id]} write={write} currency={currency} /> : null}
-        <div className="act-ctl"><ActNotes clientId={clientId} contactId={d.contactId} canWrite={canWrite} write={write} busy={!!busy[d.contactId]} userName={userName} /><ActOpen href={crmLink(loc, d.contactId)} /></div>
-      </div>
-    </div>
-  )
-  const st7 = data.staleTiers || {}
-  if (st.status === 'loading') return <div className="card"><Spinner label="Reading the CRM…" /></div>
-  if (st.status === 'err') return <div className="card"><p className="cap act-bad">Could not load: {data.error || 'unknown error'}</p><button type="button" className="btn-ghost sm" onClick={() => setTick((t) => t + 1)}>Try again</button></div>
-  if (data.ghl === false) return <div className="card"><p className="cap">{data.error || 'This account has no Caalano Systems connection.'}</p></div>
-  return (
-    <div className="act-wrap">
-      <div className="act-bar">
-        <div className="subtabs act-screens">
-          <button type="button" className={screen === 'results' ? 'active' : ''} onClick={() => setScreen('results')}>My results</button>
-          <button type="button" className={screen === 'deals' ? 'active' : ''} onClick={() => setScreen('deals')}>Live deals{deals.length ? <span className="act-pill dim">{deals.length}</span> : null}</button>
-          <button type="button" className={screen === 'actions' ? 'active' : ''} onClick={() => setScreen('actions')}>Action list{todo ? <span className="act-pill">{todo}</span> : null}</button>
-          {!data.accountUser && reps.length > 1 ? <button type="button" className={screen === 'compare' ? 'active' : ''} onClick={() => setScreen('compare')}>Compare</button> : null}
-        </div>
-        {screen === 'results' || screen === 'compare' ? null : <div className="act-filters">
-          {data.meMatched && !data.accountUser ? <label className="act-sel"><select value={mine ? 'mine' : 'all'} onChange={(e) => { setMine(e.target.value === 'mine'); setRep('all') }}><option value="mine">Mine</option><option value="all">Everyone</option></select></label> : null}
-          {!mine ? <label className="act-sel"><select value={rep} onChange={(e) => setRep(e.target.value)}><option value="all">All reps</option><option value="none">No rep</option>{reps.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}</select></label> : null}
-          {screen === 'actions' && (data.calendars || []).length > 1 ? <label className="act-sel"><select value={cal} onChange={(e) => setCal(e.target.value)}><option value="all">All calendars</option>{(data.calendars || []).map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}</select></label> : null}
-          {screen === 'actions' ? <label className="act-sel"><select value={tier} onChange={(e) => setTier(Number(e.target.value))}><option value={0}>Stale: all (7+ days)</option><option value={14}>Stale: 14+ days</option><option value={21}>Stale: 21+ days</option><option value={30}>Stale: 30+ days</option></select></label> : null}
-          {screen === 'deals' && (data.pipelines || []).length > 1 ? <label className="act-sel"><select value={pipeF} onChange={(e) => { setPipeF(e.target.value); setStageF('all') }}><option value="all">All pipelines</option>{(data.pipelines || []).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label> : null}
-          {screen === 'deals' && pipeSel ? <label className="act-sel"><select value={stageF} onChange={(e) => setStageF(e.target.value)}><option value="all">All stages</option>{pipeSel.stages.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></label> : null}
-          {screen === 'deals' ? <label className="act-sel"><select value={sortBy} onChange={(e) => setSortBy(e.target.value)}><option value="newest">Newest first</option><option value="oldest">Oldest first</option><option value="recent">Last touched</option><option value="idle">Longest idle</option><option value="value">Highest value</option></select></label> : null}
-          <button type="button" className="btn-ghost sm" disabled={st.status === 'refreshing'} onClick={() => setTick((t) => t + 1)} title="Re-read the CRM now">{st.status === 'refreshing' ? 'Refreshing…' : 'Refresh'}</button>
-        </div>}
-      </div>
-      {screen === 'results' ? <RepCardView clientId={clientId} authUser={authUser} currency={currency} reps={reps} meId={data.meId || null} nonce={nonce} onGoActions={() => setScreen('actions')} selfOnly={!!data.accountUser} /> : null}
-      {screen === 'compare' ? <RepCompareView clientId={clientId} currency={currency} reps={reps} meId={data.meId || null} nonce={nonce} /> : null}
-      {screen !== 'results' && screen !== 'compare' && msg ? <p className={`cap act-msg ${msg.ok ? 'ok' : 'bad'}`}>{msg.text}</p> : null}
-      {screen !== 'results' && screen !== 'compare' && !canWrite ? <p className="cap act-ro">Read-only: you can see the list and open each record in the CRM, but not update it from here.{isViewer ? ' Ask your admin for CRM update access.' : ''}</p> : null}
-      {screen !== 'results' && screen !== 'compare' && mine && !data.meMatched ? <p className="cap act-ro">Your login e-mail does not match a user in this CRM, so the list shows everyone.</p> : null}
-      {screen === 'results' || screen === 'compare' ? null : screen === 'actions' ? (
-        todo === 0 && st.status === 'ok' && !lists.upcoming.length ? <div className="card act-clear"><b>All clear.</b> <span className="cap">Nothing needs fixing{mine ? ' on your deals' : ''} right now.</span></div> : <>
-          {todo === 0 && st.status === 'ok' ? <div className="card act-clear"><b>All clear.</b> <span className="cap">Nothing needs fixing{mine ? ' on your deals' : ''} right now.</span></div> : null}
-          {sec('upcoming', ...ACT_SECTIONS.upcoming, lists.upcoming, (a) => (
-            <div className="act-row" key={a.id}>
-              {who(a)}
-              <div className="act-meta"><span>{actWhen(a.startMs, tz)} <span className="act-status">{String(a.status || 'new').replace(/_/g, ' ')}</span> <ActWaiting r={a} /></span><span className="cap">{a.calendar}{a.title ? ` · ${a.title}` : ''} · {a.inDays === 0 ? 'today' : a.inDays === 1 ? 'tomorrow' : `in ${a.inDays} days`}{a.by === 'self' ? ' · booked by the customer' : ''}</span></div>
-              <div className="act-ctl">
-                {canWrite && /^new$|^booked$|^$/.test(String(a.status || '')) ? <ActCommit label="Confirm" disabled={busy[a.id]} onCommit={() => write({ op: 'appt', eventId: a.id, status: 'confirmed' }, a.id, { status: 'confirmed' })} /> : null}
-                <ActConversation clientId={clientId} row={{ id: null, contactId: a.contactId, oppId: a.oppId }} data={data} canWrite={canWrite} write={write} busy={!!busy[a.contactId]} loc={loc} userName={userName} keep label={a.unreplied ? 'Reply' : 'Conversation'} />
-                <ActNotes clientId={clientId} contactId={a.contactId} canWrite={canWrite} write={write} busy={!!busy[a.contactId]} userName={userName} />
-                <ActOpen href={crmLink(loc, a.contactId)} />
-              </div>
-            </div>
-          ), null, 'info')}
-          {sec('appts', ...ACT_SECTIONS.appts, lists.appts, (a) => <ActApptRow key={a.id} a={a} tz={tz} busy={!!busy[a.id]} canWrite={canWrite} write={write} loc={loc} who={who} clientId={clientId} userName={userName} />)}
-          {sec('wonNoValue', ...ACT_SECTIONS.wonNoValue, lists.wonNoValue, (d) => <ActValueRow key={d.id} d={d} busy={!!busy[d.id]} canWrite={canWrite} write={write} currency={currency} loc={loc} who={who} clientId={clientId} userName={userName} />)}
-          {sec('lostNoReason', ...ACT_SECTIONS.lostNoReason, lists.lostNoReason, (d) => <ActReasonRow key={d.id} d={d} data={data} busy={!!busy[d.id]} canWrite={canWrite} write={write} loc={loc} who={who} clientId={clientId} userName={userName} />)}
-          {sec('inbound', ...ACT_SECTIONS.inbound, lists.inbound, (c) => (
-            <div className="act-row" key={c.id}>
-              {who(c)}
-              <div className="act-meta"><span>{c.snippet || <i className="cap">(no text)</i>}</span><span className="cap">{c.type ? `${String(c.type).replace(/^TYPE_/, '').toLowerCase()} · ` : ''}{actHrs(c.hoursAgo)}{c.unread ? ` · ${c.unread} unread` : ''}{c.autoReplied ? ' · an automation replied, no person has' : ''}</span></div>
-              <div className="act-ctl-col">
-                <div className="act-ctl">
-                  <ActConversation clientId={clientId} row={c} data={data} canWrite={canWrite} write={write} busy={!!busy[c.id] || !!busy[c.oppId]} loc={loc} userName={userName} />
-                  <ActNotes clientId={clientId} contactId={c.contactId} canWrite={canWrite} write={write} busy={!!busy[c.contactId]} userName={userName} />
-                  {canWrite ? <button type="button" className="btn-ghost sm" disabled={busy[c.id]} onClick={() => write({ op: 'dismiss', id: c.id }, c.id, null, true)} title="Hide this from the list for a while (it does not touch the CRM)">Handled</button> : null}
-                </div>
-              </div>
-            </div>
-          ))}
-          {sec('staleOpen', `${ACT_SECTIONS.staleOpen[0]} (${tier || 7}+ days)`, ACT_SECTIONS.staleOpen[1], lists.staleOpen, dealRow,
-            <div className="act-tiers">{ACT_TIERS.map(([d, l, k]) => <button type="button" key={k} className={`act-tier ${k} ${tier === d ? 'on' : ''}`} onClick={() => setTier(tier === d ? 0 : d)}>{l}: {st7[k] || 0}</button>)}</div>)}
-          {sec('unassigned', ...ACT_SECTIONS.unassigned, lists.unassigned, (d) => <ActAssignRow key={d.id} d={d} users={users} busy={!!busy[d.id]} canWrite={canWrite} write={write} loc={loc} who={who} clientId={clientId} userName={userName} />)}
-        </>
-      ) : (
-        <div className="act-deals">
-          {!deals.length ? <div className="card act-clear"><span className="cap">No open deals{mine ? ' assigned to you' : ''}{pipeF !== 'all' ? ' in this pipeline' : ''}.</span></div> : null}
-          {dealGroups.map((g) => (
-            <section className="act-sec" key={g.key}>
-              <button type="button" className="act-sec-head" onClick={() => setOpenSec((o) => ({ ...o, [g.key]: !isOpen(g.key) }))}>
-                <span className="act-count">{g.rows.length}</span><b>{g.stage}</b><span className="cap">{g.pipeline}{g.rows.some((r) => r.value > 0) ? ` · ${money(g.rows.reduce((s, r) => s + (r.value || 0), 0))}` : ''}</span><span className="act-chev">{isOpen(g.key) ? '▾' : '▸'}</span>
-              </button>
-              {isOpen(g.key) ? <div className="act-rows">{g.rows.map(dealRow)}</div> : null}
-            </section>
-          ))}
-          {data.open && data.open.length >= 400 ? <p className="cap">Showing the 400 most recently touched open deals.</p> : null}
-        </div>
-      )}
-      {screen !== 'results' && screen !== 'compare' ? <p className="cap act-foot">CRM snapshot from {data.snapshotAt ? actWhen(data.snapshotAt, tz) : '-'} · re-reads every minute while open{data.truncated ? ' · the snapshot is capped, so very old deals may be missing' : ''}.</p> : null}
-    </div>
-  )
-}
-// An appointment past its time: the CRM's current status, a result to pick,
-// and a Save to confirm it - nothing is written on the first tap.
-function ActApptRow({ a, tz, busy, canWrite, write, loc, who, clientId, userName }) {
-  const [pick, setPick] = useState('')
-  const cur = String(a.status || 'booked').replace(/_/g, ' ')
-  const opts = [['showed', 'Showed'], ['noshow', 'No-show'], ['cancelled', 'Cancelled']]
-  return (
-    <div className="act-row">
-      {who(a)}
-      <div className="act-meta"><span>{actWhen(a.startMs, tz)} <span className="act-status">{cur}</span> <ActWaiting r={a} /></span><span className="cap">{a.calendar}{a.title ? ` · ${a.title}` : ''} · {actAgo(a.daysAgo)}</span></div>
-      <div className="act-ctl-col">
-        {canWrite ? <div className="act-ctl">
-          <div className="act-seg">{opts.map(([v, l]) => <button type="button" key={v} className={pick === v ? 'on' : ''} disabled={busy} onClick={() => setPick(pick === v ? '' : v)}>{l}</button>)}</div>
-          {pick ? <ActCommit key={pick} label={`Save ${opts.find(([v]) => v === pick)[1].toLowerCase()}`} disabled={busy} onCommit={() => write({ op: 'appt', eventId: a.id, status: pick }, a.id, null, true)} /> : null}
-        </div> : null}
-        <div className="act-ctl"><ActNotes clientId={clientId} contactId={a.contactId} canWrite={canWrite} write={write} busy={busy} userName={userName} /><ActOpen href={crmLink(loc, a.contactId)} /></div>
-      </div>
-    </div>
-  )
-}
-function ActValueRow({ d, busy, canWrite, write, currency, loc, who, clientId, userName }) {
-  const [val, setVal] = useState('')
-  return (
-    <div className="act-row">
-      {who(d)}
-      <div className="act-meta"><span>Won {actAgo(d.idleDays)}</span><span className="cap">No value recorded</span></div>
-      <div className="act-ctl">
-        {canWrite ? <><input className="act-in" type="number" min="0" step="1" inputMode="decimal" placeholder={`Value (${currency || 'AUD'})`} value={val} onChange={(e) => setVal(e.target.value)} />
-          <ActCommit label="Save" disabled={busy || !(Number(val) > 0)} onCommit={() => write({ op: 'opp', oppId: d.id, patch: { monetaryValue: Number(val) } }, d.id, null, true)} /></> : null}
-        <ActNotes clientId={clientId} contactId={d.contactId} canWrite={canWrite} write={write} busy={busy} userName={userName} />
-        <ActOpen href={crmLink(loc, d.contactId)} />
-      </div>
-    </div>
-  )
-}
-function ActReasonRow({ d, data, busy, canWrite, write, loc, who, clientId, userName }) {
-  const [reason, setReason] = useState('')
-  return (
-    <div className="act-row">
-      {who(d)}
-      <div className="act-meta"><span>Lost {actAgo(d.idleDays)}</span><span className="cap">No lost reason</span></div>
-      <div className="act-ctl">
-        {canWrite ? <><select className="act-in" value={reason} onChange={(e) => setReason(e.target.value)}><option value="">Lost reason…</option>{(data.lostReasons || []).map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}</select>
-          <ActCommit label="Save" disabled={busy || !reason} onCommit={() => write({ op: 'opp', oppId: d.id, patch: { lostReasonId: reason } }, d.id, null, true)} /></> : null}
-        <ActNotes clientId={clientId} contactId={d.contactId} canWrite={canWrite} write={write} busy={busy} userName={userName} />
-        <ActOpen href={crmLink(loc, d.contactId)} />
-      </div>
-    </div>
-  )
-}
-function ActAssignRow({ d, users, busy, canWrite, write, loc, who, clientId, userName }) {
-  const [uid, setUid] = useState('')
-  return (
-    <div className="act-row">
-      {who(d)}
-      <div className="act-meta"><span>{d.value > 0 ? fmtCurrency(d.value) : <span className="cap">No value</span>}</span><span className="cap">Created {actAgo(d.ageDays)}</span></div>
-      <div className="act-ctl">
-        {canWrite ? <><select className="act-in" value={uid} onChange={(e) => setUid(e.target.value)}><option value="">Assign to…</option>{users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}</select>
-          <button type="button" className="btn-primary act-btn" disabled={busy || !uid} onClick={() => write({ op: 'opp', oppId: d.id, patch: { assignedTo: uid } }, d.id, null, true)}>Assign</button></> : null}
-        <ActNotes clientId={clientId} contactId={d.contactId} canWrite={canWrite} write={write} busy={busy} userName={userName} />
-        <ActOpen href={crmLink(loc, d.contactId)} />
-      </div>
-    </div>
-  )
-}
+// ---- Sales Hub, Goals and Deals & Actions: src/views/sales-hub.jsx, loaded on first open ----
+const SalesHubView = lazyView(() => import('./views/sales-hub.jsx'), 'SalesHubView')
+const DealsActionsView = lazyView(() => import('./views/sales-hub.jsx'), 'DealsActionsView')
 
 function ClientWorkspace({ client, index, data, config, range, nonce, wonBasis = 'closed', onBack, authUser, initialTab, onTabChange }) {
   useSettingsSync()
@@ -17758,1238 +16160,8 @@ function ClientWorkspace({ client, index, data, config, range, nonce, wonBasis =
   )
 }
 
-/* ============ Settings ============ */
-// Campaign → pipeline linker, per client. Fetches the client's campaigns +
-// pipelines on expand and writes overrides to the shared localStorage map that
-// Caalano360 reads for spend attribution.
-// A target is one number per stage, but it can be thought of two ways - "we
-// want 40 site visits" or "a site visit should cost $150" - and with a monthly
-// budget in hand the two are the same statement. So both columns are offered
-// and typing in either fills the other: volume -> cost = spend / volume, cost ->
-// volume = spend / cost. The side that was TYPED is what is stored as the
-// intent; the other is recomputed from the budget whenever the budget changes,
-// so raising the budget lifts every volume target set by cost, and every cost
-// target set by volume gets cheaper - which is what a person changing the
-// budget means.
-const KPI_LEADS_KEY = '*leads'   // the top of the funnel, which is not a pipeline stage
-function KpiEditor({ clientId, embedded, nonce }) {
-  const [open, setOpen] = useState(!!embedded)
-  const [st, setSt] = useState({ status: 'idle', blend: null })
-  const [pid, setPid] = useState('') // '' = client-level; a pipeline id = per-pipeline
-  const [k, setK] = useState(() => loadKpis(clientId))
-  useEffect(() => {
-    if (!open || st.status !== 'idle') return
-    setSt({ status: 'loading', blend: null })
-    const r = presetRange('last_30d')
-    dedupeFetch(`/.netlify/functions/windsor?client=${clientId}&channel=blend&${rangeQuery(r)}${nonce ? `&_r=${nonce}` : ''}`)
-      .then((x) => (x.ok ? x.json() : Promise.reject(new Error('http'))))
-      .then((j) => setSt({ status: 'ok', blend: j.blend }))
-      .catch(() => setSt({ status: 'err', blend: null }))
-  }, [open, st.status, clientId])
-  const pipes = (st.blend && st.blend.pipelines) || []
-  const multi = pipes.length > 1
-  // Multi-pipeline clients set every target per pipeline; default to the first.
-  useEffect(() => { if (multi && !pid) setPid(pipes[0].id) }, [multi]) // eslint-disable-line
-  useEffect(() => { setK(loadKpis(clientId, pid || undefined)) }, [pid, clientId])
-  const set = (patch) => setK((p) => { const nx = { ...p, ...patch }; saveKpis(clientId, nx, pid || undefined); return nx })
-  const selPipe = multi ? pipes.find((p) => p.id === pid) : pipes[0]
-  const stageRows = selPipe ? (selPipe.stages || []) : [...new Set(pipes.flatMap((p) => (p.stages || []).map((s) => s.name)))].map((name) => ({ name }))
-  const numOr = (v) => (v == null || v === '' ? '' : v)
-  // The budget is one number for the CLIENT - it is what the client pays - and
-  // each pipeline gets its share of it by that pipeline's share of last month's
-  // leads, the same allocation the Channel split uses. A pipeline can be given
-  // its own figure instead, which sticks until it is cleared.
-  useSettingsSync()
-  const clientAll = SETTINGS.kpis[clientId] || {}
-  const clientBudget = Number(clientAll.monthlySpend) > 0 ? Number(clientAll.monthlySpend) : null
-  const totalLeads30 = (st.blend && st.blend.crm && st.blend.crm.leads) || 0
-  const shareOf = (p) => (p && totalLeads30 ? ((p.crm && p.crm.leads) || 0) / totalLeads30 : 1)
-  const share = multi ? shareOf(selPipe) : 1
-  const pipeOverride = multi && Number(k.pipeBudget) > 0 ? Number(k.pipeBudget) : null
-  const spend = multi ? (pipeOverride || (clientBudget ? Math.round(clientBudget * share) : null)) : clientBudget
-  const actualLeads = selPipe ? ((selPipe.crm && selPipe.crm.leads) || 0) : totalLeads30
-  // Which stages are key events, so they stand out in the table: those are the
-  // ones the rest of the app reports on, and the targets that matter most.
-  const keNames = useMemo(() => {
-    try { const ke = formKeyEvents(clientId, pid || 'all', pipes); return new Set((ke.events || []).map((e) => (e.kind === 'calendar' ? e.stage : e.ref)).filter(Boolean)) } catch { return new Set() }
-  }, [clientId, pid, pipes])
-
-  // One edit updates both columns. `basis` records which side was typed.
-  const setTarget = (key, side, raw) => setK((p) => {
-    const stages = { ...(p.stages || {}) }, stageCost = { ...(p.stageCost || {}) }, stageBasis = { ...(p.stageBasis || {}) }
-    if (raw === '') { delete stages[key]; delete stageCost[key]; delete stageBasis[key] }
-    else {
-      const v = Number(raw)
-      if (side === 'volume') { stages[key] = v; stageBasis[key] = 'volume'; if (spend && v > 0) stageCost[key] = Math.round(spend / v); else delete stageCost[key] }
-      else { stageCost[key] = v; stageBasis[key] = 'cost'; if (spend && v > 0) stages[key] = Math.round(spend / v); else delete stages[key] }
-    }
-    const nx = { ...p, stages, stageCost, stageBasis }; saveKpis(clientId, nx, pid || undefined); return nx
-  })
-  // A new budget re-derives every stage's non-typed side from the typed one.
-  const rederive = (p, sp) => {
-    const stages = { ...(p.stages || {}) }, stageCost = { ...(p.stageCost || {}) }, stageBasis = p.stageBasis || {}
-    for (const key of new Set([...Object.keys(stages), ...Object.keys(stageCost)])) {
-      const basis = stageBasis[key] || (stages[key] != null ? 'volume' : 'cost')
-      if (!sp) { if (basis === 'volume') delete stageCost[key]; else delete stages[key]; continue }
-      if (basis === 'volume' && stages[key] > 0) stageCost[key] = Math.round(sp / stages[key])
-      if (basis === 'cost' && stageCost[key] > 0) stages[key] = Math.round(sp / stageCost[key])
-    }
-    return { ...p, stages, stageCost }
-  }
-  // The client's budget. Every pipeline's derived side follows it, so all of
-  // them are re-derived and written, not only the one on screen.
-  const setSpend = (raw) => {
-    const sp = raw === '' ? undefined : Number(raw)
-    const all = SETTINGS.kpis[clientId] || {}
-    const { byPipeline, ...clientLevel } = all
-    if (multi && byPipeline) {
-      for (const p of pipes) {
-        const cur = byPipeline[p.id]; if (!cur) continue
-        const eff = Number(cur.pipeBudget) > 0 ? Number(cur.pipeBudget) : (sp ? Math.round(sp * shareOf(p)) : undefined)
-        saveKpis(clientId, rederive(cur, eff), p.id)
-      }
-    }
-    saveKpis(clientId, { ...clientLevel, monthlySpend: sp }, undefined)
-    setK(loadKpis(clientId, pid || undefined))
-  }
-  // A pipeline's own figure, overriding its share; empty goes back to the share.
-  const setPipeBudget = (raw) => setK((p) => {
-    const v = raw === '' ? undefined : Number(raw)
-    const eff = v || (clientBudget ? Math.round(clientBudget * share) : undefined)
-    const nx = { ...rederive(p, eff), pipeBudget: v }; saveKpis(clientId, nx, pid || undefined); return nx
-  })
-  const money0 = (v) => (v == null || !isFinite(v) ? '-' : `$${fmtNumber(Math.round(v))}`)
-  const row = (key, label) => {
-    const vol = k.stages && k.stages[key], cost = k.stageCost && k.stageCost[key]
-    const basis = k.stageBasis && k.stageBasis[key]
-    return (
-      <tr key={key} className={`${key === KPI_LEADS_KEY ? 'kpi-row-leads' : ''}${keNames.has(key) ? ' kpi-row-ke' : ''}`}>
-        <td className="lft" title={keNames.has(key) ? `${label} - a key event` : label}>{label}{keNames.has(key) ? <span className="kpi-ke-tag" title="A key event: this stage is reported on throughout the app">key event</span> : null}</td>
-        <td><input type="number" min="0" className={basis === 'cost' ? 'kpi-derived' : ''} value={numOr(vol)} onChange={(e) => setTarget(key, 'volume', e.target.value)} placeholder={spend && cost ? String(Math.round(spend / cost)) : '#'} title={basis === 'cost' ? 'Worked out from the cost target and the monthly budget' : 'Target volume this month'} /></td>
-        <td><input type="number" min="0" className={basis === 'volume' ? 'kpi-derived' : ''} value={numOr(cost)} onChange={(e) => setTarget(key, 'cost', e.target.value)} placeholder={spend && vol ? String(Math.round(spend / vol)) : '$'} title={basis === 'volume' ? 'Worked out from the volume target and the monthly budget' : 'Target cost per one of these'} disabled={!spend && basis !== 'cost'} /></td>
-      </tr>
-    )
-  }
-  const body = (
-    <div className={embedded ? '' : 'linker-body'}>
-      {multi && <div className="kpi-pipe-sel">
-        <label>Pipeline</label>
-        <select value={pid} onChange={(e) => setPid(e.target.value)}>{pipes.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select>
-        <span className="cap">Targets are set per pipeline for this client.</span>
-      </div>}
-
-      <div className="kpi-block">
-        <div className="kpi-block-h">Monthly budget <span className="sub">· the number every cost and volume target below is worked out from</span></div>
-        <div className="kpi-spend">
-          <span className="kpi-spend-cur">$</span>
-          <input type="number" min="0" value={numOr(clientAll.monthlySpend)} onChange={(e) => setSpend(e.target.value)} placeholder="per month" />
-          <span className="cap">The paid budget for the month{multi ? ', across every pipeline' : ''}.</span>
-        </div>
-        {multi && selPipe ? (
-          <div className="kpi-share">
-            <div className="kpi-share-h">This pipeline's share <span className="sub">· {Math.round(share * 100)}% of the budget, by its share of last month's leads ({fmtNumber(actualLeads)} of {fmtNumber(totalLeads30)})</span></div>
-            <div className="kpi-spend">
-              <span className="kpi-spend-cur">$</span>
-              <input type="number" min="0" className={pipeOverride ? '' : 'kpi-derived'} value={numOr(k.pipeBudget)} onChange={(e) => setPipeBudget(e.target.value)} placeholder={clientBudget ? String(Math.round(clientBudget * share)) : '-'} title={pipeOverride ? 'Set for this pipeline - clear it to go back to the share' : 'Worked out from the client budget; type a figure to override it'} />
-              <span className="cap">{pipeOverride ? `Overriding the ${money0(clientBudget ? clientBudget * share : 0)} share.` : clientBudget ? `Type a figure to give this pipeline a different budget.` : 'Set the client budget above first.'}</span>
-            </div>
-            <div className="kpi-share-list">{pipes.map((p) => <span key={p.id} className={p.id === pid ? 'on' : ''}>{p.name} <b>{Math.round(shareOf(p) * 100)}%</b></span>)}</div>
-          </div>
-        ) : null}
-      </div>
-
-      <div className="kpi-block">
-        <div className="kpi-block-h">Funnel targets{multi && selPipe ? ` · ${selPipe.name}` : ''} <span className="sub">· type a volume or a cost - the other is worked out for you</span></div>
-        {st.status === 'loading' ? <Spinner label="Loading pipeline stages…" />
-          : stageRows.length || st.status === 'ok' ? (
-            <div className="table-wrap"><table className="mini-tbl appt-tbl kpi-tbl">
-              <thead><tr><th className="lft">Stage</th><th title="How many you want to reach this stage per month">Target volume</th><th title="What you want each one to cost">Target cost</th></tr></thead>
-              <tbody>
-                {row(KPI_LEADS_KEY, 'Leads')}
-                {stageRows.map((r) => row(r.name, r.name))}
-              </tbody>
-            </table></div>
-          ) : st.status === 'err' ? <p className="cap">Couldn’t load the pipeline just now - targets can still be typed and will apply once it loads.</p> : null}
-        {!spend ? <p className="cap kpi-hint">Enter a monthly budget above to unlock the cost column.</p> : null}
-        <HelpNote>Volume is how many leads reach a stage in a month. A cost target is the budget divided by that volume - so it is a cost per lead that <i>reaches</i> the stage, not a cost per action at it.</HelpNote>
-      </div>
-
-      <div className="kpi-block">
-        <div className="kpi-block-h">Efficiency targets <span className="sub">· used by the scorecards and the Weekly Traffic Light</span></div>
-        <div className="kpi-inputs">
-          <label>Meta cost / lead<input type="number" min="0" value={numOr(k.metaCpl)} onChange={(e) => set({ metaCpl: e.target.value === '' ? undefined : Number(e.target.value) })} placeholder="$ target" /></label>
-          <label>Google cost / conv<input type="number" min="0" value={numOr(k.googleCostConv)} onChange={(e) => set({ googleCostConv: e.target.value === '' ? undefined : Number(e.target.value) })} placeholder="$ target" /></label>
-          <label>All-leads CPL<input type="number" min="0" value={numOr(k.cpl)} onChange={(e) => set({ cpl: e.target.value === '' ? undefined : Number(e.target.value) })} placeholder="$ target" /></label>
-          <label>Cost / booked appt<input type="number" min="0" value={numOr(k.cpba)} onChange={(e) => set({ cpba: e.target.value === '' ? undefined : Number(e.target.value) })} placeholder="$ target" /></label>
-          <label>Cost / won (CPA)<input type="number" min="0" value={numOr(k.cpa)} onChange={(e) => set({ cpa: e.target.value === '' ? undefined : Number(e.target.value) })} placeholder="$ target" /></label>
-          <label>Booking rate %<input type="number" min="0" value={numOr(k.bookingRate)} onChange={(e) => set({ bookingRate: e.target.value === '' ? undefined : Number(e.target.value) })} placeholder="% target" /></label>
-          <label>Weekly spend<input type="number" min="0" value={numOr(k.wkSpend)} onChange={(e) => set({ wkSpend: e.target.value === '' ? undefined : Number(e.target.value) })} placeholder={spend ? String(Math.round(spend / 4.345)) : '$ per week'} /></label>
-          <label>Avg client LTV<input type="number" min="0" value={numOr(k.clientLtv)} onChange={(e) => set({ clientLtv: e.target.value === '' ? undefined : Number(e.target.value) })} placeholder="$ lifetime" /></label>
-        </div>
-        <div className="cap">LTV powers the Caalano360 unit-economics header (LTV:CAC, profit per client). Leave blank to use average deal value.</div>
-      </div>
-    </div>
-  )
-  if (embedded) return body
-  return (
-    <div className="linker">
-      <button className="linker-toggle" onClick={() => setOpen((o) => !o)}>{open ? '▾' : '▸'} KPI targets</button>
-      {open && body}
-    </div>
-  )
-}
-// Tracking health & lead reconciliation (moved to Settings). Ad-reported vs CRM
-// leads, variance, and source-tag coverage for one client.
-function TrackingHealth({ paid, crmLeads, attribData, channels, periodLabel }) {
-  const p = paid || {}
-  const adLeads = (p.metaLeads || 0) + (p.googleConv || 0)
-  const variance = adLeads ? ((crmLeads - adLeads) / adLeads) * 100 : null
-  const opps = attribData ? attribData.opps : null
-  const attributed = attribData ? attribData.attributed : null
-  const cov = opps ? (attributed / opps) * 100 : null
-  const covCls = cov == null ? '' : cov >= 80 ? 'good' : cov >= 50 ? 'warn' : 'bad'
-  const chMeta = channels ? (channels.meta?.totals?.leads || 0) : 0
-  const chGoogle = channels ? (channels.google?.totals?.leads || 0) : 0
-  const chOther = channels ? (channels.other?.totals?.leads || 0) : 0
-  const totCh = chMeta + chGoogle + chOther || 1
-  // Manually-added (CRM UI) opportunities inflate the CRM count vs what the ads
-  // actually drove. Exclude them to get the true ad-vs-CRM gap.
-  const manual = attribData ? (attribData.manualLeads || 0) : 0
-  const crmExcl = Math.max(0, crmLeads - manual)
-  const trueVar = adLeads ? ((crmExcl - adLeads) / adLeads) * 100 : null
-  const varCls = (v) => v == null ? '' : Math.abs(v) <= 15 ? 'good' : Math.abs(v) <= 35 ? 'warn' : 'bad'
-  const sources = (attribData && attribData.oppSources) || []
-  return (
-    <div className="card th-card" style={{ marginTop: 12 }}>
-      <div className="th-head">
-        <h3>Tracking health &amp; lead reconciliation</h3>
-        {cov != null && <span className={`th-cov ${covCls}`}>{cov.toFixed(0)}% of opportunities have a source tag</span>}
-      </div>
-      <div className="th-grid">
-        <div className="th-stat"><div className="th-l">Ad-reported leads</div><div className="th-v">{fmtNumber(adLeads)}</div><div className="th-sub">Meta {fmtNumber(p.metaLeads || 0)} · Google {fmtNumber(p.googleConv || 0)}</div></div>
-        <div className="th-stat"><div className="th-l">CRM opportunities</div><div className="th-v">{fmtNumber(crmLeads)}</div><div className="th-sub">created in {periodLabel}</div></div>
-        <div className="th-stat"><div className="th-l">Manual (CRM UI)</div><div className="th-v th-manual">{attribData ? fmtNumber(manual) : '-'}</div><div className="th-sub">added by hand · excluded below</div></div>
-        <div className="th-stat"><div className="th-l">CRM excl. manual</div><div className="th-v">{attribData ? fmtNumber(crmExcl) : '-'}</div><div className="th-sub">the true ad-driven CRM count</div></div>
-        <div className="th-stat"><div className="th-l">True variance</div><div className={`th-v ${attribData ? varCls(trueVar) : ''}`}>{!attribData || trueVar == null ? '-' : `${trueVar > 0 ? '+' : ''}${trueVar.toFixed(0)}%`}</div><div className="th-sub">ad vs CRM excl. manual{variance != null ? ` · raw ${variance > 0 ? '+' : ''}${variance.toFixed(0)}%` : ''}</div></div>
-        <div className="th-stat"><div className="th-l">Tagged source split</div>
-          {attribData ? <>
-            <div className="th-bar"><span style={{ width: `${(chMeta / totCh) * 100}%`, background: '#4f7cff' }} /><span style={{ width: `${(chGoogle / totCh) * 100}%`, background: '#12b886' }} /><span style={{ width: `${(chOther / totCh) * 100}%`, background: 'var(--faint)' }} /></div>
-            <div className="th-sub">Meta {fmtNumber(chMeta)} · Google {fmtNumber(chGoogle)} · Other/untagged {fmtNumber(chOther)}</div>
-          </> : <div className="th-sub">Connect Caalano Systems for source tagging.</div>}
-        </div>
-      </div>
-      {sources.length > 0 && <div className="th-sources">
-        <span className="th-sources-l">Opportunity sources</span>
-        {sources.slice(0, 10).map((s) => <span key={s.name} className={`th-src ${s.manual ? 'manual' : ''}`}>{s.name} <b>{fmtNumber(s.count)}</b>{s.manual ? ' ✋' : ''}</span>)}
-      </div>}
-      <Caveat>Ad-reported leads are what Meta/Google count; CRM opportunities are what landed in Caalano Systems. <b>Manual (CRM UI)</b> opportunities were added by hand in the CRM (not driven by ads), so <b>True variance</b> compares ad-reported leads to CRM <b>excluding</b> those - the real gap. A remaining gap usually means duplicate/again-counted ad conversions, leads not reaching the CRM, or missing UTMs (see source-tag coverage). ✋ = a manually-added source.</Caveat>
-    </div>
-  )
-}
-
-// Attribution diagnostics (moved to Settings). Exposes where paid spend and CRM
-// revenue fail to tie together, with token-overlap "looks like" hints.
-function AttributionDiagnostics({ attribData, camps, currency }) {
-  if (!attribData || !camps || !camps.length) return null
-  const money = (v) => fmtCurrency(v, currency)
-  const badge = (s) => <span className="src-badge" style={{ background: s === 'Meta' ? '#4f7cff' : '#12b886' }}>{s === 'Meta' ? 'M' : 'G'}</span>
-  // Auto-fold numeric Google/Meta campaign IDs in utm_campaign to their live name
-  // first (from Windsor's campaign_id↔name pairing), so IDs that resolve to a real
-  // campaign aren't flagged as "unmatched" here - only genuinely orphaned UTMs are.
-  const byCampaign = applyAliases(attribData.byCampaign, attribData.campIdMap)
-  const oCamp = mkOutcomeMap(byCampaign)
-  const adNames = new Set(camps.map((cc) => unorm(cc.name)).filter(Boolean))
-  const unmatchedAd = camps.filter((cc) => cc.spend > 0 && !oCamp.has(unorm(cc.name))).sort((a, z) => z.spend - a.spend)
-  const notSet = (byCampaign || []).find((x) => x.name === '(not set)') || null
-  const unmatchedUtm = (byCampaign || []).filter((x) => x.name !== '(not set)' && x.leads > 0 && !adNames.has(unorm(x.name))).sort((a, z) => (z.won - a.won) || (z.revenue - a.revenue) || (z.leads - a.leads))
-  const lostRev = unmatchedUtm.reduce((s, x) => s + x.revenue, 0) + (notSet ? notSet.revenue : 0)
-  const gapSpend = unmatchedAd.reduce((s, x) => s + x.spend, 0)
-  if (!unmatchedAd.length && !unmatchedUtm.length && !(notSet && notSet.leads)) return null
-  const opps = attribData.opps || 0, attributed = attribData.attributed || 0
-  const cov = opps ? (attributed / opps) * 100 : null
-  const covCls = cov == null ? '' : cov >= 80 ? 'good' : cov >= 50 ? 'warn' : 'bad'
-  const toks = (s) => new Set(String(s || '').toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 2 && !/^\d+$/.test(w)))
-  const suggest = (name) => {
-    const a = toks(name); if (!a.size) return null
-    let best = null, bs = 0
-    for (const cnd of unmatchedUtm) { const bb = toks(cnd.name); let s = 0; for (const w of a) if (bb.has(w)) s++; const score = s / Math.max(1, Math.min(a.size, bb.size)); if (score > bs) { bs = score; best = cnd } }
-    return bs >= 0.34 && best ? best.name : null
-  }
-  return (
-    <details className="card th-card attr-diag" style={{ marginTop: 12 }}>
-      <summary>
-        <span className="attr-sum-t">Attribution diagnostics</span>
-        <span className={`th-cov ${covCls}`}>{cov == null ? 'no CRM data' : `${cov.toFixed(0)}% of leads UTM-tagged`}</span>
-      </summary>
-      <div className="attr-body">
-        <p className="cap" style={{ marginTop: 4 }}>Where paid spend and CRM revenue do not tie together. Fixing UTM tags at the source is what makes the ROAS-by-campaign numbers trustworthy.</p>
-        {notSet && notSet.leads > 0 && (
-          <div className="attr-note">
-            <b>{fmtNumber(notSet.leads)} leads</b> ({fmtNumber(notSet.won)} won, {money(notSet.revenue)}) arrived with <b>no utm_campaign at all</b>. These can never be tied to a campaign until UTM tagging is added on the landing pages / lead forms.
-          </div>
-        )}
-        <div className="attr-cols">
-          <div>
-            <div className="attr-h">Ad spend with no CRM match{gapSpend > 0 ? ` · ${money(gapSpend)}` : ''}</div>
-            {unmatchedAd.length ? <ul className="attr-list">
-              {unmatchedAd.slice(0, 8).map((cc) => {
-                const sg = suggest(cc.name)
-                return <li key={cc.source + cc.name} className="attr-li-col"><div className="attr-row"><span className="attr-nm" title={cc.name}>{badge(cc.source)} {cc.name}</span><span className="attr-x">{money(cc.spend)}</span></div>{sg ? <div className="attr-sug" title={`Unmatched CRM campaign "${sg}" looks related`}>looks like &ldquo;{sg}&rdquo;</div> : null}</li>
-              })}
-              {unmatchedAd.length > 8 && <li className="attr-more">+{unmatchedAd.length - 8} more</li>}
-            </ul> : <p className="attr-empty">Every spending campaign matched a utm_campaign.</p>}
-          </div>
-          <div>
-            <div className="attr-h">CRM revenue with no spend match{lostRev > 0 ? ` · ${money(lostRev)}` : ''}</div>
-            {unmatchedUtm.length ? <ul className="attr-list">
-              {unmatchedUtm.slice(0, 8).map((x) => (
-                <li key={x.name}><span className="attr-nm" title={x.name}>{x.name}</span><span className="attr-x">{fmtNumber(x.leads)} leads · {fmtNumber(x.won)} won · {money(x.revenue)}</span></li>
-              ))}
-              {unmatchedUtm.length > 8 && <li className="attr-more">+{unmatchedUtm.length - 8} more</li>}
-            </ul> : <p className="attr-empty">Every tagged campaign matched a spend row.</p>}
-          </div>
-        </div>
-        <Caveat>A utm_campaign that carries the ad campaign ID (or a shortened slug) instead of the exact campaign name will land here even though it is really the same campaign - the "looks like" hint flags the likely pair. Set the campaign to pipeline links above to force a match for reporting.</Caveat>
-      </div>
-    </details>
-  )
-}
-
-// Per-client tracking diagnostics for Settings. Lazily fetches the blend +
-// attribution feeds on expand (one client at a time), then renders tracking
-// health and attribution diagnostics.
-function ClientTrackingDiagnostics({ clientId, currency, embedded, nonce }) {
-  const [open, setOpen] = useState(!!embedded)
-  const [st, setSt] = useState({ status: 'idle', blend: null, attr: null })
-  useEffect(() => {
-    if (!open || st.status !== 'idle') return
-    setSt({ status: 'loading', blend: null, attr: null })
-    const r = presetRange('last_30d')
-    Promise.all([
-      dedupeFetch(`/.netlify/functions/windsor?client=${clientId}&channel=blend&${rangeQuery(r)}${nonce ? `&_r=${nonce}` : ''}`).then((x) => (x.ok ? x.json() : null)).catch(() => null),
-      dedupeFetch(`/.netlify/functions/windsor?client=${clientId}&channel=attribution&${rangeQuery(r)}${nonce ? `&_r=${nonce}` : ''}`).then((x) => (x.ok ? x.json() : null)).catch(() => null),
-    ]).then(([b, a]) => setSt({ status: 'ok', blend: (b && b.blend) || null, attr: (a && a.attribution) || null }))
-      .catch(() => setSt({ status: 'err', blend: null, attr: null }))
-  }, [open, st.status, clientId])
-  const periodLabel = rangeLabel(presetRange('last_30d'))
-  return (
-    <div className="cd-wrap">
-      {!embedded && <button className="cd-toggle" onClick={() => setOpen((o) => !o)}>{open ? '▾' : '▸'} Tracking health &amp; attribution diagnostics <span className="cd-sub">last 30 days</span></button>}
-      {open && (st.status === 'loading' ? <Spinner label="Loading tracking diagnostics…" />
-        : st.status === 'err' ? <p className="cap" style={{ color: 'var(--neg)' }}>Could not load diagnostics for this client.</p>
-          : st.status === 'ok' && st.blend ? <>
-            <TrackingHealth paid={st.blend.paid} crmLeads={st.blend.crm ? st.blend.crm.leads : 0} attribData={st.attr} channels={st.attr && st.attr.channels} periodLabel={periodLabel} />
-            <AttributionDiagnostics attribData={st.attr} camps={st.blend.campaigns || []} currency={currency} />
-          </> : null)}
-    </div>
-  )
-}
-
-function KeyEventsEditor({ clientId, embedded, nonce }) {
-  const [open, setOpen] = useState(!!embedded)
-  const [sel, setSel] = useState(() => loadKeyEventsRaw(clientId))
-  const [st, setSt] = useState({ status: 'idle', blend: null })
-  const [cals, setCals] = useState({ status: 'idle', list: [] })
-  useEffect(() => {
-    if (!open || st.status !== 'idle') return
-    setSt({ status: 'loading', blend: null })
-    const r = presetRange('last_30d')
-    dedupeFetch(`/.netlify/functions/windsor?client=${clientId}&channel=blend&${rangeQuery(r)}${nonce ? `&_r=${nonce}` : ''}`)
-      .then((x) => (x.ok ? x.json() : Promise.reject(new Error('http'))))
-      .then((j) => setSt({ status: 'ok', blend: j.blend }))
-      .catch(() => setSt({ status: 'err', blend: null }))
-  }, [open, st.status, clientId])
-  useEffect(() => {
-    if (!open || cals.status !== 'idle') return
-    setCals({ status: 'loading', list: [] })
-    fetch(`/.netlify/functions/windsor?scope=calendars&client=${clientId}${nonce ? `&_r=${nonce}` : ''}`)
-      .then((x) => (x.ok ? x.json() : Promise.reject(new Error('http'))))
-      .then((j) => setCals({ status: 'ok', list: j.calendars || [], pipelines: j.pipelines || [] }))
-      .catch(() => setCals({ status: 'err', list: [], pipelines: [] }))
-  }, [open, cals.status, clientId])
-  // Prefer Windsor's blend pipelines (they carry per-stage open-deal counts), but
-  // fall back to the direct-GHL pipeline list from the calendars scope when the
-  // blend has none - e.g. a just-linked client Windsor hasn't synced yet, so the
-  // stages still appear immediately instead of "No pipeline stages found".
-  const blendPipes = (st.blend && st.blend.pipelines) || []
-  const directPipes = cals.pipelines || []
-  // Stage NAMES come from Caalano Systems, which is where they're edited; the
-  // blend feed is a periodic mirror, so preferring it meant a renamed stage kept
-  // its old name here until that sync caught up. Counts still come from the
-  // blend - it's the only side that has them - matched to the live stage by id.
-  const pipes = React.useMemo(() => {
-    if (!directPipes.length) return blendPipes
-    const bById = new Map(blendPipes.map((p) => [p.id, p]))
-    return directPipes.map((p) => {
-      const b = bById.get(p.id)
-      if (!b) return p
-      const bStage = new Map((b.stages || []).map((x) => [x.id, x]))
-      return {
-        ...b, ...p,
-        // Live id/name/position wins; anything else the blend knows about a
-        // stage (open counts, value) rides along.
-        stages: (p.stages || []).map((x) => ({ ...(bStage.get(x.id) || {}), ...x })),
-      }
-    })
-  }, [directPipes, blendPipes])
-  const withStages = pipes.filter((p) => (p.stages || []).length)
-  const multi = withStages.length > 1
-  // A stage entry is a bare name (or {stage} with no cal); a calendar entry is
-  // {cal, label, stage?} where `stage` is the pipeline stage it's linked to - so
-  // matching stage checkboxes must exclude calendar entries.
-  // A stage checkbox is per (pipeline, name) for multi-pipeline clients so a
-  // same-named stage in two pipelines is two independent key events (each scoped to
-  // its own pipeline), never one merged/summed event.
-  const hasStage = (n, pid) => sel.some((e) => {
-    if (typeof e === 'string') return e === n            // legacy bare = every pipeline
-    if (!e || e.cal != null || e.stage !== n) return false
-    if (!multi || pid == null) return true
-    return e.pipeline == null || e.pipeline === pid       // scoped = only its pipeline
-  })
-  const hasCal = (id) => sel.some((e) => e && typeof e === 'object' && e.cal === id)
-  const calStageOf = (id) => { const e = sel.find((x) => x && x.cal === id); return (e && e.stage) || '' }
-  const calPipeOf = (id) => { const e = sel.find((x) => x && x.cal === id); return (e && e.pipeline) || '' }
-  const persist = (nx) => { saveKeyEvents(clientId, nx); return nx }
-  // Expand legacy bare stage names into pipeline-scoped entries (one per pipeline
-  // that owns the stage) so counts stop merging across same-named stages.
-  const expandLegacy = (list) => {
-    if (!multi) return list
-    const out = []
-    for (const e of list) {
-      if (typeof e === 'string') {
-        const owners = withStages.filter((p) => (p.stages || []).some((s) => s.name === e))
-        if (owners.length) for (const p of owners) out.push({ stage: e, pipeline: p.id })
-        else out.push(e)
-      } else out.push(e)
-    }
-    return out
-  }
-  const toggleStage = (n, pid) => setSel((prev) => {
-    if (!multi) return persist(hasStage(n) ? prev.filter((e) => !(e === n || (e && e.cal == null && e.stage === n))) : [...prev, n])
-    const base = expandLegacy(prev)
-    const on = base.some((e) => e && e.cal == null && e.stage === n && e.pipeline === pid)
-    const nx = on ? base.filter((e) => !(e && e.cal == null && e.stage === n && e.pipeline === pid)) : [...base, { stage: n, pipeline: pid }]
-    return persist(nx)
-  })
-  const toggleCal = (cal) => setSel((prev) => persist(hasCal(cal.id) ? prev.filter((e) => !(e && e.cal === cal.id)) : [...prev, { cal: cal.id, label: cal.name }]))
-  // Link a calendar to a pipeline (resets the stage) then to a stage within it.
-  // Single-pipeline clients auto-fill the pipeline so the link is still scoped.
-  const linkCalPipe = (id, pipeline) => setSel((prev) => persist(prev.map((e) => (e && e.cal === id ? { ...e, pipeline: pipeline || undefined, stage: undefined } : e))))
-  const linkCalStage = (id, stage) => setSel((prev) => persist(prev.map((e) => (e && e.cal === id ? { ...e, stage: stage || undefined, pipeline: (multi ? e.pipeline : (withStages[0] && withStages[0].id)) || e.pipeline || undefined } : e))))
-  const stagesOfPipe = (pid) => { const p = withStages.find((x) => x.id === pid); return p ? (p.stages || []).slice().sort((a, b) => a.pos - b.pos).map((s) => s.name) : [] }
-  const allStages = (() => { const m = new Map(); for (const p of withStages) for (const s of (p.stages || [])) if (!m.has(s.name)) m.set(s.name, s.pos == null ? 999 : s.pos); return [...m.entries()].sort((a, b) => a[1] - b[1]).map(([n]) => n) })()
-  // One-time migration: once the pipelines load for a multi-pipeline client, expand
-  // any legacy bare stage-name key events into pipeline-scoped ones so same-named
-  // stages across pipelines stop being counted together.
-  useEffect(() => {
-    if (!multi || st.status !== 'ok') return
-    const hasBare = sel.some((e) => typeof e === 'string' && withStages.some((p) => (p.stages || []).some((s) => s.name === e)))
-    if (hasBare) { const nx = expandLegacy(sel); saveKeyEvents(clientId, nx); setSel(nx) }
-  }, [multi, st.status]) // eslint-disable-line
-  return (
-    <div className="linker">
-      {!embedded && <button className="linker-toggle" onClick={() => setOpen((o) => !o)}>{open ? '▾' : '▸'} Key events{sel.length ? ` · ${sel.length}` : ''}</button>}
-      {open && <div className={embedded ? '' : 'linker-body'}>
-        <HelpNote>Tick the pipeline stages and booked calendars that count as progress for this client - they drive the Key Events funnel and cost-per-event everywhere. Link each ticked calendar to the stage it represents so the two count as one step (the stage catches leads that got there without a tracked booking); several calendars can share a stage. Leave everything empty for the default leads → booked → shown → won.</HelpNote>
-        <div className="kev-group">
-          <div className="kev-pipe">📅 Booked calendars <span className="cap" style={{ textTransform: 'none', letterSpacing: 0, fontWeight: 400 }}>· tick the ones that matter, then link each to its pipeline stage</span></div>
-          {cals.status === 'loading' ? <Spinner label="Loading calendars…" />
-            : cals.list.length ? <div className="kev-caltbl">
-              <div className="kev-calhead"><span /><span>Calendar</span>{multi ? <span>Pipeline</span> : null}<span>Counts as stage</span></div>
-              {[...cals.list].sort((a, b) => (hasCal(b.id) - hasCal(a.id)) || String(a.name).localeCompare(String(b.name))).map((cal) => {
-              const on = hasCal(cal.id)
-              return (
-                <div className={`kev-cal ${on ? 'on' : ''}`} key={cal.id}>
-                  <label className={`kev-item ${on ? 'on' : ''}`}><input type="checkbox" checked={on} onChange={() => toggleCal(cal)} /><span title={cal.name}>{cal.name}</span>{cal.typeLabel && cal.type !== 'round_robin' ? <em className="kev-caltype">{cal.typeLabel}</em> : null}</label>
-                  {on && (allStages.length
-                    ? <span className="kev-link">
-                        {multi && <select className="kev-stage" value={calPipeOf(cal.id)} onChange={(e) => linkCalPipe(cal.id, e.target.value)} title="Which pipeline this calendar's stage belongs to">
-                          <option value="">↕ pipeline…</option>
-                          {withStages.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-                        </select>}
-                        <select className="kev-stage" value={calStageOf(cal.id)} disabled={multi && !calPipeOf(cal.id)} onChange={(e) => linkCalStage(cal.id, e.target.value)} title="Link this calendar to the pipeline stage it represents, so it sits in the right funnel order">
-                          <option value="">↕ link to stage…</option>
-                          {(multi ? stagesOfPipe(calPipeOf(cal.id)) : (withStages[0] ? stagesOfPipe(withStages[0].id) : allStages)).map((s) => <option key={s} value={s}>{s}</option>)}
-                        </select>
-                      </span>
-                    : <span className="cap" style={{ opacity: .7 }}>loading stages…</span>)}
-                  {!on ? <span className="kev-off cap">not counted</span> : null}
-                </div>
-              )
-            })}</div>
-              : cals.status === 'ok' ? <p className="cap">No calendars found for this client.</p>
-                : <p className="cap">Couldn’t load calendars.</p>}
-        </div>
-        <div className="kev-pipe" style={{ marginTop: 10 }}>Pipeline stages{multi ? ' · grouped by pipeline' : ''}</div>
-        {(st.status === 'loading' || (cals.status === 'loading' && !withStages.length)) ? <Spinner label="Loading pipeline stages…" />
-          : withStages.length ? withStages.map((p) => (
-            <div className="kev-group" key={p.id}>
-              {multi && <div className="kev-pipe">{p.name}</div>}
-              <div className="kev-list">{(p.stages || []).slice().sort((a, b) => a.pos - b.pos).map((s) => (
-                <label className={`kev-item ${hasStage(s.name, p.id) ? 'on' : ''}`} key={s.name}><input type="checkbox" checked={hasStage(s.name, p.id)} onChange={() => toggleStage(s.name, p.id)} /><span title={s.name}>{s.name}</span></label>
-              ))}</div>
-            </div>
-          ))
-          : (st.status === 'ok' || cals.status === 'ok') ? <p className="cap">No Caalano Systems pipeline stages found.</p>
-            : <p className="cap">Couldn’t load pipeline stages.</p>}
-      </div>}
-    </div>
-  )
-}
-// Settings pane: pick the "qualified lead" stage per pipeline.
-function QualStageEditor({ clientId, nonce }) {
-  useSettingsSync()
-  const [st, setSt] = useState({ status: 'idle', blend: null })
-  useEffect(() => {
-    if (st.status !== 'idle') return
-    setSt({ status: 'loading', blend: null })
-    const r = presetRange('last_30d')
-    dedupeFetch(`/.netlify/functions/windsor?client=${clientId}&channel=blend&${rangeQuery(r)}${nonce ? `&_r=${nonce}` : ''}`)
-      .then((x) => (x.ok ? x.json() : Promise.reject(new Error('http'))))
-      .then((j) => setSt({ status: 'ok', blend: j.blend }))
-      .catch(() => setSt({ status: 'err', blend: null }))
-  }, [st.status, clientId])
-  const pipes = ((st.blend && st.blend.pipelines) || []).filter((p) => (p.stages || []).length)
-  const map = loadQualStage(clientId)
-  const setStage = (pid, stage) => { const nx = { ...loadQualStage(clientId) }; if (stage) nx[pid] = stage; else delete nx[pid]; saveQualStage(clientId, nx) }
-  return (
-    <div className="linker">
-      <HelpNote>Pick the stage that marks a lead <b>qualified</b> for each pipeline - typically just after the discovery call. A lead counts as qualified once it <b>reaches that stage or beyond</b>, and any won deal always counts. Leave a pipeline on “Not set” to keep Qualified off for it. <b>Qualified only appears on the dashboards when at least one pipeline has a stage set here.</b></HelpNote>
-      {st.status === 'loading' ? <Spinner label="Loading pipeline stages…" />
-        : pipes.length ? pipes.map((p) => (
-          <div className="camp-row" key={p.id}>
-            <span className="camp-nm" title={p.name}>{p.name}</span>
-            <select className="camp-lnk" value={map[p.id] || ''} onChange={(e) => setStage(p.id, e.target.value)}>
-              <option value="">Not set - no qualified metric</option>
-              {(p.stages || []).slice().sort((a, b) => a.pos - b.pos).map((s) => <option key={s.name} value={s.name}>{s.name}</option>)}
-            </select>
-          </div>
-        ))
-          : st.status === 'ok' ? <p className="cap">No pipeline stages found for this client.</p>
-            : <p className="cap">Couldn’t load pipeline stages.</p>}
-    </div>
-  )
-}
-// Settings pane: link old UTM values (from a rename) to the current campaign / ad
-// set / creative so historical CRM leads aggregate under the current name.
-function AliasEditor({ clientId, nonce }) {
-  useSettingsSync()
-  const [st, setSt] = useState({ status: 'idle' })
-  useEffect(() => {
-    if (st.status !== 'idle') return
-    setSt({ status: 'loading' })
-    // Wide 90-day window so pre-rename (old-UTM) leads still show up to be linked.
-    const now = new Date(); now.setHours(12, 0, 0, 0)
-    const from = new Date(now); from.setDate(from.getDate() - 90)
-    const r = { from: iso(from), to: iso(now) }
-    const q = `client=${clientId}&${rangeQuery(r)}${nonce ? `&_r=${nonce}` : ''}`
-    Promise.all([
-      dedupeFetch(`/.netlify/functions/windsor?channel=attribution&${q}`).then((x) => (x.ok ? x.json() : null)).catch(() => null),
-      // Lightweight name-only endpoint (not the heavy buildMeta) so the current
-      // campaign / ad-set / ad names load reliably even for large accounts.
-      fetch(`/.netlify/functions/windsor?scope=adnames&${q}`).then((x) => (x.ok ? x.json() : null)).catch(() => null),
-    ]).then(([a, n]) => setSt({ status: 'ok', attr: a && a.attribution, names: (n && !n.error) ? { campaign: n.campaigns || [], medium: n.adsets || [], content: n.ads || [], ids: n.ids || { campaign: [], medium: [], content: [] } } : null }))
-      .catch(() => setSt({ status: 'err' }))
-  }, [st.status, clientId])
-  const A = st.attr
-  const aliases = loadAliases(clientId)
-  const tok = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().split(' ').filter((w) => w.length > 2)
-  const bestMatch = (name, candidates) => {
-    const w = new Set(tok(name)); if (!w.size) return ''
-    let best = '', score = 0
-    for (const c of candidates) { let s = 0; for (const x of tok(c)) if (w.has(x)) s++; if (s > score) { score = s; best = c } }
-    return score >= 1 ? best : ''
-  }
-  // The reliable ad identity is its number code (CD_62 / CDa_72 / CDas_06), not
-  // the descriptive wording. Extract it so we can match old→current by number.
-  const adCode = (s) => { const m = String(s || '').match(/\bcd[a-z]*[_-]?(\d+)/i); return m ? m[0].toLowerCase().replace(/[^a-z0-9]/g, '') : null }
-  // Suggest a current name for an old UTM: prefer an exact ad-number match (high
-  // confidence); fall back to wording only when no code matches (verify).
-  const suggestFor = (name, candidates) => {
-    const code = adCode(name)
-    if (code) {
-      const same = candidates.filter((c) => adCode(c) === code)
-      if (same.length === 1) return { value: same[0], by: 'code' }
-      if (same.length > 1) return { value: bestMatch(name, same) || same[0], by: 'code' }
-    }
-    const w = bestMatch(name, candidates)
-    return { value: w, by: w ? 'words' : null }
-  }
-  // utm values that are organic traffic sources, not ads - never offer them for
-  // ad-set / creative aliasing.
-  const NONAD = new Set(['social', 'organic', 'manual', 'calendar', 'email', 'referral', 'direct', 'none', 'sms', 'whatsapp', 'qr', 'link', 'bio', 'link_in_bio', 'linktree', 'linkinbio', 'profile'])
-  const isNonAd = (name) => { const s = String(name || '').trim().toLowerCase(); return NONAD.has(s) || /link.?in.?bio|linktree/.test(s) }
-  // Current-name lists are now channel-tagged: [{ name, channel }]. Tolerate the
-  // old string-array shape too (cached responses) so nothing breaks mid-deploy.
-  const curListRaw = st.names || { campaign: [], medium: [], content: [] }
-  const asObjs = (arr) => (arr || []).map((x) => (typeof x === 'string' ? { name: x, channel: null } : x)).filter((x) => x && x.name)
-  const curList = { campaign: asObjs(curListRaw.campaign), medium: asObjs(curListRaw.medium), content: asObjs(curListRaw.content) }
-  // Match on names AND raw entity IDs, so a UTM carrying a live campaign/ad-set/ad
-  // ID (not its name) is treated as matched and hidden too.
-  const curIds = curListRaw.ids || { campaign: [], medium: [], content: [] }
-  const matchSet = (lvl) => new Set([...curList[lvl].map((o) => unorm(o.name)), ...((curIds[lvl] || []).map(unorm))])
-  const curSet = { campaign: matchSet('campaign'), medium: matchSet('medium'), content: matchSet('content') }
-  // Did the current-name lists actually load? If not, we can't tell which UTMs
-  // are unmatched (everything would look unmatched), so we warn instead of dumping.
-  const namesLoaded = !!st.names && (curList.campaign.length + curList.medium.length + curList.content.length) > 0
-  const outcomes = { campaign: (A && A.byCampaign) || [], medium: (A && A.byMedium) || [], content: (A && A.byCreative) || [] }
-  const keep = loadKeep(clientId)
-  const unmatched = (lvl) => {
-    if (!namesLoaded) return [] // no reference set - don't mislead by listing everything
-    return (outcomes[lvl] || []).filter((o) => o.leads > 0 && o.name && o.name !== '(not set)'
-      && !curSet[lvl].has(unorm(o.name))
-      && !((lvl === 'medium' || lvl === 'content') && isNonAd(o.name))
-      && !(keep[lvl] && keep[lvl][o.name])
-      && !(aliases[lvl] && aliases[lvl][o.name])).sort((a, b) => b.leads - a.leads).slice(0, 40)
-  }
-  // Old spellings that differ from a current name only by case or punctuation.
-  // They are not offered for linking because they already fold into that name
-  // everywhere - but they are listed, so "no unmatched UTMs" never hides them.
-  const folded = (lvl) => {
-    if (!namesLoaded) return []
-    const live = new Map(curList[lvl].map((o) => [unorm(o.name), o.name]))
-    return (outcomes[lvl] || []).filter((o) => o.leads > 0 && o.name && live.has(unorm(o.name)) && live.get(unorm(o.name)) !== o.name && !(aliases[lvl] && aliases[lvl][o.name]))
-      .map((o) => ({ ...o, cur: live.get(unorm(o.name)) })).sort((a, b) => b.leads - a.leads).slice(0, 40)
-  }
-  const LEVELS = [['campaign', 'Campaigns', 'utm_campaign'], ['medium', 'Ad sets', 'utm_medium'], ['content', 'Creatives', 'utm_content']]
-  return (
-    <div className="linker">
-      <HelpNote>When you rename a campaign, ad set or creative, historical CRM leads keep the <b>old</b> UTM they were stamped with - so their results don't roll into the new name. Link each old UTM below to the current name and they'll aggregate together everywhere (live views and reports). We match on the <b>ad number</b> (the <code>CD_62</code> / <code>CDa_72</code> code) shown as a badge: a green <b>✓ #CODE</b> means the numbers match (high confidence); an amber <b>✓ Approve</b> is a wording guess to verify first. Nothing is linked until you click approve or pick from the dropdown - <b>ignore a row and it keeps its own identity, untouched.</b> If a row is a legit standalone (e.g. a paused campaign) and not a rename, hit <b>Keep separate</b> to clear it from the list without merging anything.</HelpNote>
-      {st.status === 'loading' ? <Spinner label="Scanning for unmatched UTMs (last 90 days)…" />
-        : st.status === 'err' ? <p className="cap">Couldn't load campaign / CRM data for this client.</p>
-        : !namesLoaded ? <div className="alias-warn"><b>⚠ Couldn't load the current campaign / ad-set / ad names</b> from the ad account, so we can't tell which UTMs are unmatched (everything would look unmatched). This is usually a temporary load issue on a large account.<button className="btn-ghost sm" style={{ marginLeft: 8 }} onClick={() => setSt({ status: 'idle' })}>↻ Retry</button></div>
-          : LEVELS.map(([lvl, label, utm]) => {
-            const un = unmatched(lvl)
-            const fo = folded(lvl)
-            const existing = Object.entries(aliases[lvl] || {})
-            const keptList = Object.keys(keep[lvl] || {})
-            return (
-              <div className="kev-group" key={lvl}>
-                <div className="kev-pipe">{label} <span className="cap" style={{ textTransform: 'none', letterSpacing: 0, fontWeight: 400 }}>· {utm}</span></div>
-                {existing.length > 0 && <div className="alias-existing">{existing.map(([oldN, cur]) => (
-                  <div className="alias-row alias-set" key={oldN}><span className="alias-old" title={oldN}>{oldN}</span><span className="alias-arrow">→</span><span className="alias-cur" title={cur}>{cur}</span><button className="alias-x" title="Remove link" onClick={() => setAlias(clientId, lvl, oldN, '')}>✕</button></div>
-                ))}</div>}
-                {keptList.length > 0 && <div className="alias-existing">{keptList.map((oldN) => (
-                  <div className="alias-row alias-kept" key={oldN}><span className="alias-old" title={oldN}>{oldN}</span><span className="alias-kept-tag">kept separate</span><button className="alias-x" title="Undo - show this UTM in the unmatched list again" onClick={() => setKeep(clientId, lvl, oldN, false)}>✕</button></div>
-                ))}</div>}
-                {fo.length > 0 && <details className="alias-folded"><summary><b>{fo.length} spelling{fo.length === 1 ? '' : 's'}</b> fold into current names automatically <span className="cap">· same name, different case or punctuation - already counted together everywhere</span></summary>{fo.map((o) => (
-                  <div className="alias-row alias-fold" key={o.name}><span className="alias-old" title={o.name}>{o.name} <span className="alias-leads">· {fmtNumber(o.leads)} lead{o.leads === 1 ? '' : 's'}</span></span><span className="alias-arrow">→</span><span className="alias-cur" title={o.cur}>{o.cur}</span></div>
-                ))}</details>}
-                {un.length === 0 ? <p className="cap" style={{ margin: '2px 0 0' }}>{existing.length ? 'No further unmatched UTMs.' : 'No unmatched UTMs - everything ties to a current name.'}</p>
-                  : un.map((o) => {
-                    const oc = adCode(o.name)
-                    const cand = curList[lvl].map((x) => x.name)
-                    const sug = suggestFor(o.name, cand)
-                    const sc = sug.value ? adCode(sug.value) : null
-                    return (
-                      <div className="alias-row" key={o.name}>
-                        <span className="alias-old" title={o.name}>{oc ? <span className="alias-code">{oc.toUpperCase()}</span> : null}{o.name} <span className="alias-leads">· {fmtNumber(o.leads)} lead{o.leads === 1 ? '' : 's'}{o.won ? `, ${fmtNumber(o.won)} won` : ''}</span></span>
-                        <span className="alias-arrow">→</span>
-                        <div className="alias-pick">
-                          <select className="camp-lnk alias-sel" value="" onChange={(e) => e.target.value && setAlias(clientId, lvl, o.name, e.target.value)}>
-                            <option value="">Not linked - leave as is</option>
-                            {[['meta', 'Meta'], ['google', 'Google'], [null, 'Other']].map(([ch, chLbl]) => {
-                              const opts = curList[lvl].filter((x) => (ch === null ? !x.channel : x.channel === ch))
-                              if (!opts.length) return null
-                              return <optgroup key={chLbl} label={chLbl}>{opts.map((x) => { const cc = adCode(x.name); return <option key={x.name} value={x.name}>{cc ? cc.toUpperCase() + ' · ' : ''}{x.name}</option> })}</optgroup>
-                            })}
-                          </select>
-                          {sug.value ? <button className={`alias-ok ${sug.by === 'code' ? 'by-code' : 'by-words'}`} title={`Approve: ${o.name} → ${sug.value}${sug.by === 'code' ? ` (ad-number match ${(sc || '').toUpperCase()})` : ' (wording guess - verify the ad number first)'}`} onClick={() => setAlias(clientId, lvl, o.name, sug.value)}>✓ {sug.by === 'code' ? `#${(sc || '').toUpperCase()}` : 'Approve'} <span className="alias-ok-tgt">{sug.value}</span></button> : null}
-                          <button className="alias-keep" title="Not a rename - this is a legit standalone (e.g. a paused campaign). Hide it and keep its data under its own name." onClick={() => setKeep(clientId, lvl, o.name, true)}>Keep separate</button>
-                        </div>
-                      </div>
-                    )
-                  })}
-              </div>
-            )
-          })}
-    </div>
-  )
-}
-function CampaignLinker({ clientId, embedded, nonce }) {
-  const [open, setOpen] = useState(!!embedded)
-  const [st, setSt] = useState({ status: 'idle', blend: null })
-  const [manual, setManual] = useState(() => loadCampMap(clientId))
-  useEffect(() => {
-    if (!open || st.status !== 'idle') return
-    setSt({ status: 'loading', blend: null })
-    const r = presetRange('last_30d')
-    dedupeFetch(`/.netlify/functions/windsor?client=${clientId}&channel=blend&${rangeQuery(r)}${nonce ? `&_r=${nonce}` : ''}`)
-      .then((x) => (x.ok ? x.json() : Promise.reject(new Error('http'))))
-      .then((j) => setSt({ status: 'ok', blend: j.blend }))
-      .catch(() => setSt({ status: 'err', blend: null }))
-  }, [open, st.status, clientId])
-  const setLink = (name, target) => setManual((m) => { const nx = { ...m }; if (target === 'auto') delete nx[name]; else nx[name] = target; saveCampMap(clientId, nx); return nx })
-  const b = st.blend
-  const pipes = (b && b.pipelines) || []
-  const camps = (b && b.campaigns) || []
-  return (
-    <div className="linker">
-      {!embedded && <button className="linker-toggle" onClick={() => setOpen((o) => !o)}>{open ? '▾' : '▸'} Link campaigns to pipelines</button>}
-      {open && <div className={embedded ? '' : 'linker-body'}>
-        {st.status === 'loading' ? <Spinner label="Loading campaigns…" />
-          : st.status === 'err' ? <p className="cap">Couldn't load - this client may have no ad accounts or Caalano Systems mapped.</p>
-            : !camps.length ? <p className="cap">No campaigns found in the last 30 days.</p>
-              : !pipes.length ? <p className="cap">No Caalano Systems pipelines to link to.</p>
-                : <>
-                  <p className="cap" style={{ marginTop: 0 }}>Assign each campaign to a pipeline, or “All pipelines” to share its spend. Auto = matched by name.</p>
-                  {camps.map((cc) => (
-                    <div className="camp-row" key={cc.source + cc.name}>
-                      <span className="src-badge" style={{ background: cc.source === 'Meta' ? '#4f7cff' : '#12b886' }}>{cc.source === 'Meta' ? 'M' : 'G'}</span>
-                      <span className="camp-nm" title={cc.name}>{cc.name}</span>
-                      <select className="camp-lnk" value={manual[cc.name] ?? 'auto'} onChange={(e) => setLink(cc.name, e.target.value)}>
-                        <option value="auto">Auto{cc.auto && cc.auto !== 'all' ? ` · ${pipes.find((p) => p.id === cc.auto)?.name?.slice(0, 20) || 'matched'}` : ' · all'}</option>
-                        <option value="all">All pipelines</option>
-                        {pipes.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-                      </select>
-                    </div>
-                  ))}
-                </>}
-      </div>}
-    </div>
-  )
-}
-// Agency-wide contact self-booking tag audit. Walks each Caalano Systems
-// client one at a time (per-request) so we never hit the function timeout, and
-// reports which accounts carry a "customer booked appointment"-style tag, how
-// often it is applied, and the resulting contact self-booking rate.
-function TagAudit({ clients }) {
-  const [st, setSt] = useState({ status: 'idle', rows: [], msg: null })
-  const run = async () => {
-    setSt({ status: 'running', rows: [], msg: null })
-    const rows = []
-    for (const c of clients) {
-      try {
-        const r = await fetch(`/.netlify/functions/windsor?scope=tagaudit&client=${c.id}`)
-        const j = await r.json().catch(() => ({}))
-        if (j && j.connected === false) { setSt({ status: 'idle', rows: [], msg: 'Caalano Systems is not connected yet - connect it first, then re-run.' }); return }
-        rows.push({ id: c.id, name: c.name, a: (j && j.audit) || { error: j.error || 'no data' } })
-      } catch { rows.push({ id: c.id, name: c.name, a: { error: 'request failed' } }) }
-      setSt({ status: 'running', rows: [...rows], msg: null })
-    }
-    setSt({ status: 'done', rows, msg: null })
-  }
-  const withTag = st.rows.filter((r) => r.a && r.a.hasTag).length
-  const missing = st.rows.filter((r) => r.a && r.a.hasCrm && !r.a.hasTag).map((r) => r.name)
-  return (
-    <div className="tag-audit">
-      <div className="ta-head">
-        <div>
-          <div className="ta-t">Contact self-booking tag audit</div>
-          <div className="ta-s">Scans each account for a "customer booked appointment" style tag and how often it is applied, so you can see the contact self-booking rate and which accounts are missing the tag.</div>
-        </div>
-        <button className="print-btn" onClick={run} disabled={st.status === 'running'}>{st.status === 'running' ? `Scanning… ${st.rows.length}/${clients.length}` : st.status === 'done' ? '↻ Re-run' : '▶ Run tag audit'}</button>
-      </div>
-      {st.msg && <p className="cap" style={{ color: 'var(--warn)' }}>{st.msg}</p>}
-      {st.rows.length > 0 && (
-        <>
-          {st.status === 'done' && <p className="cap" style={{ margin: '2px 0 8px' }}><b>{withTag}</b> of {st.rows.length} accounts carry a booking tag.{missing.length ? <> Missing: <b>{missing.join(', ')}</b>.</> : ' All accounts have it.'}</p>}
-          <div className="table-wrap">
-            <table className="tag-audit-tbl">
-              <thead><tr><th>Account</th><th>Tag found</th><th>Tag name(s)</th><th>Applied</th><th>Self-book rate</th><th>Notes</th></tr></thead>
-              <tbody>
-                {st.rows.map((r) => {
-                  const a = r.a || {}
-                  if (a.error) return <tr key={r.id}><td className="ta-nm">{r.name}</td><td colSpan={5} className="ta-err">{a.error}</td></tr>
-                  if (!a.hasCrm) return <tr key={r.id}><td className="ta-nm">{r.name}</td><td colSpan={5} className="ta-muted">no Caalano Systems account</td></tr>
-                  const names = [...new Set([...(a.definedMatches || []), ...(a.appliedNames || [])])]
-                  const tagsReadable = (a.contactTagsAvailable || 0) > 0
-                  return (
-                    <tr key={r.id}>
-                      <td className="ta-nm">{r.name}</td>
-                      <td><span className={`tk ${a.hasTag ? 'tk-full' : 'tk-none'}`}>{a.hasTag ? 'Yes' : 'No'}</span></td>
-                      <td className="ta-tags">{names.length ? names.slice(0, 4).join(', ') + (names.length > 4 ? ` +${names.length - 4}` : '') : '-'}</td>
-                      <td>{tagsReadable ? `${fmtNumber(a.contactsWithTag)} / ${fmtNumber(a.sampled)}` : <span className="ta-muted">not on opps</span>}</td>
-                      <td>{a.selfBookRate != null ? <b>{a.selfBookRate}%</b> : <span className="ta-muted">-</span>}{a.selfBookRate != null && a.booked ? <span className="ta-sub"> ({a.self}/{a.booked} booked)</span> : ''}</td>
-                      <td className="ta-note">{!tagsReadable && a.hasTag ? 'Defined but not returned on opportunities - rate needs a contacts pull.' : a.definedErr ? 'Tag list blocked (scope), applied-scan only.' : a.hasTag ? 'From last ' + fmtNumber(a.sampled) + ' opps.' : 'No booking tag on this account.'}</td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-          <Caveat>The tag is a lifetime flag on the contact, so the self-booking rate is "share of booked deals whose contact self-booked at least once," sampled from the most recent opportunities. For a per-appointment figure we would add the appointments API. Rate is split by channel in the data if you want it surfaced next.</Caveat>
-        </>
-      )}
-    </div>
-  )
-}
-
-// Per-client timezone alignment badge. All CRM reporting is bucketed by the
-// Caalano Systems location timezone; this shows it and confirms the Meta ad
-// account is on the same zone (so Meta and CRM days match).
-function TimezoneBadge({ clientId, hasMeta }) {
-  const [tz, setTz] = useState(null)
-  useEffect(() => {
-    let alive = true
-    fetch(`/.netlify/functions/windsor?scope=tz&client=${clientId}`).then((r) => (r.ok ? r.json() : null)).then((j) => { if (alive && j) setTz(j) }).catch(() => {})
-    return () => { alive = false }
-  }, [clientId])
-  if (!tz || !tz.crmTz) return null
-  return (
-    <div className="tz-badge">
-      <span className="tz-main">Reporting timezone <b>{tz.crmTz}</b></span>
-      {hasMeta && tz.metaTz && (
-        tz.aligned
-          ? <span className="tz-ok">Meta ad account matches ✓</span>
-          : <span className="tz-warn">Meta ad account is {tz.metaTz} - reporting uses the CRM zone</span>
-      )}
-      {hasMeta && !tz.metaTz && <span className="tz-sub">Meta zone not detected</span>}
-    </div>
-  )
-}
-
-// Explore the accounts available to connect (Caalano Systems locations via the
-// GHL API + Meta / Google ad accounts Windsor can see) and assemble a new
-// client by linking one of each. Saved to the shared settings store and merged
-// into the registry, so the new client goes live without a code change.
-function AddClientModal({ existing, editClient, onClose }) {
-  const isEdit = !!editClient
-  const [st, setSt] = useState({ status: 'loading', data: null })
-  const [name, setName] = useState(editClient ? editClient.name : '')
-  const [ghl, setGhl] = useState(editClient ? (editClient.ghl || '') : '')
-  const [meta, setMeta] = useState(editClient ? (editClient.meta || '') : '')
-  const [google, setGoogle] = useState(editClient ? (editClient.google || '') : '')
-  const [ga4, setGa4] = useState(editClient ? (editClient.ga4 || '') : '')
-  const [nameEdited, setNameEdited] = useState(isEdit)
-  const [saved, setSaved] = useState(false)
-  const [refreshing, setRefreshing] = useState(false)
-  useEffect(() => {
-    let alive = true
-    fetchDiscover().then((j) => { if (alive) setSt({ status: 'ok', data: j }) }).catch(() => { if (alive) setSt({ status: 'err', data: null }) })
-    return () => { alive = false }
-  }, [])
-  const refreshAccounts = () => {
-    setRefreshing(true)
-    fetchDiscover(true).then((j) => setSt({ status: 'ok', data: j })).catch(() => setSt({ status: 'err', data: null })).finally(() => setRefreshing(false))
-  }
-  const d = st.data || {}
-  const nameOf = (arr, id) => { const it = (arr || []).find((x) => normId(x.id) === normId(id)); return it ? it.name : null }
-  const slug = (s) => s.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'client'
-  const uniqueId = (base) => { let id = base, n = 2; const taken = new Set((existing || []).filter((c) => !isEdit || c.id !== editClient.id).map((c) => c.id)); while (taken.has(id)) id = `${base}-${n++}`; return id }
-  const canSave = name.trim() && (meta || google || ghl || (ga4 || '').trim())
-  const save = () => {
-    if (!canSave) return
-    const mapping = {
-      name: name.trim(),
-      meta: meta || null, google: google || null, ghl: ghl || null, ga4: (ga4 || '').trim() || null,
-      metaName: nameOf(d.meta, meta), googleName: nameOf(d.google, google), ghlName: nameOf(d.ghl, ghl), ga4Name: nameOf(d.ga4, ga4),
-    }
-    saveCustomClient(isEdit ? editClient.id : uniqueId(slug(name)), mapping)
-    setSaved(true); setTimeout(onClose, 900)
-  }
-  const remove = () => { if (isEdit && confirm(`Remove ${editClient.name} from the dashboard? This only removes the mapping; no CRM/ad data is touched.`)) { removeCustomClient(editClient.id); onClose() } }
-  // Picking any account fills the client name from that account (unless the user
-  // typed their own) - so a Meta-only or Google-only client still gets a name.
-  const fillName = (nm) => { if (nm && !nameEdited) setName(nm) }
-  const pickGhl = (id) => { setGhl(id); fillName(nameOf(d.ghl, id)) }
-  const pickMeta = (id) => { setMeta(id); fillName(nameOf(d.meta, id)) }
-  const pickGoogle = (id) => { setGoogle(id); fillName(nameOf(d.google, id)) }
-  const pickGa4 = (id) => { setGa4(id); fillName(nameOf(d.ga4, id)) }
-  // A selected id that isn't in the discovered list (e.g. a brand-new Windsor
-  // account not yet backfilled, or an existing link whose account has no recent
-  // activity) still needs to show as selected + be linkable - so the picker also
-  // takes a manual ID entry and surfaces any off-list selection at the top.
-  const Col = ({ title, items, sel, onSel, empty }) => {
-    const inList = !!sel && (items || []).some((it) => normId(it.id) === normId(sel))
-    return (
-      <div className="addcl-col">
-        <div className="addcl-col-h">{title} <span className="addcl-count">{items ? items.length : 0}</span></div>
-        <div className="addcl-list">
-          {sel && !inList ? (
-            <button className="addcl-item on" onClick={() => onSel('')} title={String(sel)}>
-              <span className="addcl-nm">Manually linked</span>
-              <span className="addcl-meta"><span className="addcl-mapped">selected</span> · <code>{String(sel).slice(0, 20)}</code></span>
-            </button>
-          ) : null}
-          {!items || !items.length ? (sel && !inList ? null : <div className="cap" style={{ padding: 8 }}>{empty}</div>) : items.map((it) => (
-            <button key={it.id} className={`addcl-item ${normId(sel) === normId(it.id) ? 'on' : ''}`} onClick={() => onSel(normId(sel) === normId(it.id) ? '' : it.id)} title={it.id}>
-              <span className="addcl-nm">{it.name}</span>
-              <span className="addcl-meta">{it.mapped ? <span className="addcl-mapped">in use</span> : <span className="addcl-free">available</span>} · <code>{String(it.id).slice(0, 14)}</code></span>
-            </button>
-          ))}
-        </div>
-        <input className="addcl-manual" placeholder="or paste an account ID + Enter"
-          defaultValue=""
-          onKeyDown={(e) => { if (e.key === 'Enter') { const v = e.target.value.trim(); if (v) { onSel(v); e.target.value = '' } } }}
-          onBlur={(e) => { const v = e.target.value.trim(); if (v) { onSel(v); e.target.value = '' } }} />
-      </div>
-    )
-  }
-  return (
-    <div className="modal-bg" onClick={onClose}>
-      <div className="modal addcl-modal" onClick={(e) => e.stopPropagation()}>
-        <div className="m-head"><div><h3>{isEdit ? `Edit ${editClient.name}` : 'Add a client'}</h3><span className="cap">Link any mix of Caalano Systems, Meta &amp; Google - you only need one</span></div><div style={{ display: 'flex', gap: 8, alignItems: 'center' }}><button className="btn-ghost sm" onClick={refreshAccounts} disabled={refreshing} title="Re-check the Meta / Google / Caalano Systems connections for newly added accounts">{refreshing ? 'Refreshing…' : '⟳ Refresh accounts'}</button><button className="icon-btn" onClick={onClose}>✕</button></div></div>
-        <div className="m-body">
-          {st.status === 'loading' ? <Spinner label="Exploring available accounts…" />
-            : st.status === 'err' ? <div className="cap">Couldn’t load available accounts - <button className="btn-ghost sm" onClick={refreshAccounts}>try again</button>.</div>
-              : <>
-                <div className="addcl-name">
-                  <label>Client name <span className="cap" style={{ textTransform: 'none', letterSpacing: 0, fontWeight: 400 }}>· auto-fills from the first account you pick - edit freely</span></label>
-                  <input value={name} onChange={(e) => { setName(e.target.value); setNameEdited(true) }} placeholder="Type a name, or pick an account below" />
-                </div>
-                <div className="addcl-cols">
-                  <Col title="🟢 Caalano Systems" items={d.ghl} sel={ghl} onSel={pickGhl} empty={d.ghlErr || (d.connected === false ? 'Caalano Systems not connected.' : 'No locations found.')} />
-                  <Col title="🔵 Meta Ads" items={d.meta} sel={meta} onSel={pickMeta} empty={d.metaErr ? `⚠ Windsor Meta connector error - it may need re-authorising in Windsor: ${d.metaErr}` : 'No Meta accounts found yet - a just-connected account can take a while to sync. Paste its ID below to link it now.'} />
-                  <Col title="🟩 Google Ads" items={d.google} sel={google} onSel={pickGoogle} empty={d.googleErr ? `⚠ Windsor Google connector error - it may need re-authorising in Windsor: ${d.googleErr}` : 'No Google accounts found yet - a just-connected account can take a while to sync. Paste its ID below to link it now.'} />
-                  <Col title="📊 Google Analytics 4" items={d.ga4} sel={ga4} onSel={pickGa4} empty={d.ga4Err ? (/don'?t\s+have\s+this\s+connector/i.test(d.ga4Err) ? `⚠ Windsor doesn't recognise the GA4 connector on this key. Add the "Google Analytics 4" data source in your Windsor account (Data sources → add GA4), then hit Refresh accounts.` : `⚠ Windsor GA4 connector error - it may need re-authorising in Windsor: ${d.ga4Err}`) : 'No GA4 properties found yet from Windsor. Paste the property ID below to link it now.'} />
-                </div>
-                <div className="addcl-status cap">
-                  {d.connected === false ? <span className="addcl-stat-bad">● Caalano Systems not connected</span> : <span className="addcl-stat-ok">● Live from Windsor</span>}
-                  {d.fetchedAt ? <> · refreshed {new Date(d.fetchedAt).toLocaleTimeString()}</> : null}
-                  {' · '}{fmtNumber((d.meta || []).length)} Meta · {fmtNumber((d.google || []).length)} Google · {fmtNumber((d.ga4 || []).length)} GA4 · {fmtNumber((d.ghl || []).length)} CRM accounts visible
-                  {d.metaErr || d.googleErr ? <span className="addcl-stat-bad"> · a connector is erroring (see above)</span> : null}
-                </div>
-                <div className="addcl-foot">
-                  {isEdit ? <button className="addcl-remove" onClick={remove}>Remove client</button> : <span className="cap">{!name.trim() ? 'Add a name to continue.' : (ghl || meta || google || (ga4 || '').trim()) ? `Linking${ghl ? ' CRM' : ''}${meta ? ' · Meta' : ''}${google ? ' · Google' : ''}${(ga4 || '').trim() ? ' · GA4' : ''}` : 'Pick at least one account (any one is fine).'}</span>}
-                  <button className="addcl-save" disabled={!canSave || saved} onClick={save}>{saved ? '✓ Saved' : (isEdit ? 'Save changes' : 'Add client')}</button>
-                </div>
-                <Caveat style={{ marginTop: 10 }}>You only need <b>one</b> account linked - a Meta-only (or Google-only, or CRM-only) client is fine. Saved to the shared settings store and merged in immediately. Meta / Google accounts come from Windsor (any account with activity in the last 12 months); Caalano Systems locations from the agency connection. <b>New account not showing?</b> Windsor only lists an account here once it has <b>synced data with activity in the last 12 months</b> - so a just-connected account (still backfilling) or a dormant one with no recent spend won't appear yet, even though Windsor may count it as "connected". That's why the numbers here can be lower than the account totals in your Windsor dashboard. In the meantime, paste its <b>account ID</b> into the box under the relevant column to link it right away, or hit <b>Refresh accounts</b>.</Caveat>
-              </>}
-        </div>
-      </div>
-    </div>
-  )
-}
-// --- Auto-onboard --------------------------------------------------------
-// Name-normaliser + similarity for matching a GHL location to its Meta / Google
-// ad accounts. Strips punctuation and common legal/industry filler so
-// "Quad Care Pty Ltd" ~ "Quad Care - ADHD" still match on their real name.
-const AO_STOP = new Set(['pty', 'ltd', 'inc', 'llc', 'co', 'the', 'group', 'and', 'pl'])
-const aoTokens = (s) => new Set(String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').split(' ').filter((t) => t && !AO_STOP.has(t)))
-const aoSim = (a, b) => { const A = aoTokens(a), B = aoTokens(b); if (!A.size || !B.size) return 0; let inter = 0; for (const t of A) if (B.has(t)) inter++; return inter / Math.max(A.size, B.size) }
-const aoBest = (name, list) => { let best = null, score = 0; for (const it of list) { const s = aoSim(name, it.name); if (s > score) { score = s; best = it } } return score >= 0.5 ? { id: best.id, name: best.name, score } : null }
-const aoSlug = (s) => String(s).toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'client'
-// Auto-onboard modal: pulls every GHL agency location + Windsor Meta/Google
-// account, fuzzy-matches each unmapped location to its ad accounts, and lets you
-// confirm + create them all in one pass. The closest thing to "install to a
-// sub-account and it connects" with the accounts we can already see.
-function AutoOnboardModal({ existing, onClose }) {
-  const [st, setSt] = useState({ status: 'loading', data: null })
-  const [rows, setRows] = useState([])
-  const [busy, setBusy] = useState(false)
-  const [done, setDone] = useState(0)
-  const load = (force) => {
-    setSt({ status: 'loading', data: null })
-    const scanUrl = `/.netlify/functions/windsor?scope=onboardscan${force ? `&_r=${Date.now()}` : ''}`
-    Promise.all([
-      fetchDiscover(force),
-      apiJson(scanUrl, { timeoutMs: 25000, tries: 1 }).catch(() => ({ locations: [] })),
-    ]).then(([d, scan]) => {
-      setSt({ status: 'ok', data: d })
-      // Readiness per location: true = API reachable (app installed), false = app
-      // not installed on that sub-account, null/undefined = not scanned/unknown.
-      const readyMap = {}
-      for (const l of (scan.locations || [])) readyMap[normId(l.id)] = l.ready
-      const mapped = new Set()
-      for (const c of existing || []) { if (c.ghl) mapped.add(normId(c.ghl)) }
-      const meta = d.meta || [], google = d.google || []
-      // Anchor on GHL locations not already linked to a client; suggest the best
-      // Meta + Google match for each. Default-select only the API-ready ones.
-      const next = (d.ghl || []).filter((l) => !mapped.has(normId(l.id)) && !l.mapped).map((l) => {
-        const m = aoBest(l.name, meta.filter((x) => !x.mapped)) || aoBest(l.name, meta)
-        const g = aoBest(l.name, google.filter((x) => !x.mapped)) || aoBest(l.name, google)
-        const ready = normId(l.id) in readyMap ? readyMap[normId(l.id)] : null
-        return { ghlId: l.id, ghlName: l.name, name: l.name, meta: m ? m.id : '', google: g ? g.id : '', sel: ready !== false, matchM: m ? Math.round(m.score * 100) : null, matchG: g ? Math.round(g.score * 100) : null, ready }
-      }).sort((a, b) => (a.ready === false) - (b.ready === false) || String(a.name).localeCompare(String(b.name)))
-      setRows(next)
-    }).catch(() => setSt({ status: 'err', data: null }))
-  }
-  useEffect(() => { load(false) /* eslint-disable-next-line */ }, [])
-  const d = st.data || {}
-  const metaList = d.meta || [], googleList = d.google || []
-  const nameOf = (list, id) => { const it = list.find((x) => normId(x.id) === normId(id)); return it ? it.name : null }
-  const upd = (i, patch) => setRows((rs) => rs.map((r, j) => (j === i ? { ...r, ...patch } : r)))
-  const selected = rows.filter((r) => r.sel && r.ready !== false)
-  const notReady = rows.filter((r) => r.ready === false).length
-  const createAll = async () => {
-    if (!selected.length || busy) return
-    setBusy(true); let n = 0
-    const taken = new Set((existing || []).map((c) => c.id))
-    for (const r of selected) {
-      let base = aoSlug(r.name), id = base, k = 2
-      while (taken.has(id)) id = `${base}-${k++}`
-      taken.add(id)
-      saveCustomClient(id, {
-        name: r.name.trim() || r.ghlName, meta: r.meta || null, google: r.google || null, ghl: r.ghlId || null,
-        metaName: nameOf(metaList, r.meta), googleName: nameOf(googleList, r.google), ghlName: r.ghlName,
-      })
-      n++; setDone(n)
-    }
-    setBusy(false); setTimeout(onClose, 700)
-  }
-  return (
-    <div className="modal-bg" onClick={onClose}>
-      <div className="modal addcl-modal" onClick={(e) => e.stopPropagation()}>
-        <div className="m-head">
-          <div><h3>✨ Auto-onboard clients</h3><span className="cap">Every Caalano Systems location that isn’t linked yet, matched to its Meta &amp; Google ad accounts</span></div>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}><button className="btn-ghost sm" onClick={() => load(true)} disabled={st.status === 'loading'}>⟳ Refresh</button><button className="icon-btn" onClick={onClose}>✕</button></div>
-        </div>
-        <div className="m-body">
-          {st.status === 'loading' ? <Spinner big label="Scanning your Caalano Systems, Meta &amp; Google accounts…" />
-            : st.status === 'err' ? <div className="cap">Couldn’t load accounts - <button className="btn-ghost sm" onClick={() => load(true)}>try again</button>.</div>
-              : rows.length === 0 ? <div className="empty-deep" style={{ padding: '26px 10px' }}><div className="big">✓</div><b>Every Caalano Systems location is already linked to a client.</b><p className="cap">New sub-account? Install the app on it and add its ad account to your Meta Business Manager + Windsor, then hit Refresh.</p></div>
-                : (<>
-                  <p className="cap" style={{ marginTop: 0 }}>{rows.length} unlinked location{rows.length === 1 ? '' : 's'} found. Review the suggested Meta / Google matches (green = confident), untick any you don’t want, then create them all. You can fine-tune links afterwards on each client.{notReady ? <> <b style={{ color: 'var(--warn)' }}>{notReady} can’t be onboarded yet</b> - the marketplace app isn’t installed on those sub-accounts, so the API can’t reach them. Install it (or enable “install on all sub-accounts” in your Caalano Systems app) and hit Refresh.</> : null}</p>
-                  <div className="ao-table">
-                    <div className="ao-h"><span /><span>Client name</span><span>Caalano Systems</span><span>Meta</span><span>Google</span></div>
-                    {rows.map((r, i) => (
-                      <div className={`ao-row${r.sel && r.ready !== false ? '' : ' off'}`} key={r.ghlId}>
-                        <label className="ao-chk"><input type="checkbox" checked={r.sel && r.ready !== false} disabled={r.ready === false} onChange={() => upd(i, { sel: !r.sel })} /></label>
-                        <input className="ao-name" value={r.name} onChange={(e) => upd(i, { name: e.target.value })} disabled={r.ready === false} />
-                        <span className="ao-ghl" title={r.ghlId}>{r.ghlName}{r.ready === false ? <span className="ao-badge weak" title="Install the marketplace app on this sub-account to enable API access">⚠ app not installed</span> : r.ready === true ? <span className="ao-badge good">✓ API ready</span> : null}</span>
-                        <span className="ao-sel">
-                          <select value={r.meta} onChange={(e) => upd(i, { meta: e.target.value })}><option value="">- none -</option>{metaList.map((m) => <option key={m.id} value={m.id}>{m.name}{m.mapped ? ' (in use)' : ''}</option>)}</select>
-                          {r.matchM != null && r.meta ? <span className={`ao-badge ${r.matchM >= 60 ? 'good' : 'weak'}`}>{r.matchM}%</span> : null}
-                        </span>
-                        <span className="ao-sel">
-                          <select value={r.google} onChange={(e) => upd(i, { google: e.target.value })}><option value="">- none -</option>{googleList.map((g) => <option key={g.id} value={g.id}>{g.name}{g.mapped ? ' (in use)' : ''}</option>)}</select>
-                          {r.matchG != null && r.google ? <span className={`ao-badge ${r.matchG >= 60 ? 'good' : 'weak'}`}>{r.matchG}%</span> : null}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                  <div className="addcl-foot">
-                    <span className="cap">{selected.length} of {rows.length} selected{busy ? ` · creating ${done}/${selected.length}…` : ''}</span>
-                    <button className="addcl-save" disabled={!selected.length || busy} onClick={createAll}>{busy ? 'Creating…' : `Create ${selected.length} client${selected.length === 1 ? '' : 's'}`}</button>
-                  </div>
-                  <Caveat style={{ marginTop: 10 }}>Matches are by account name - a location with no confident ad-account match is created CRM-only, which is fine (link Meta/Google later). Meta/Google accounts only appear once Windsor has synced them, so add the ad account to your Business Manager + Windsor first if it’s missing.</Caveat>
-                </>)}
-        </div>
-      </div>
-    </div>
-  )
-}
-// An account chip that shows the account NAME (resolved from discovery) with the
-// raw id underneath, so mis-links are obvious at a glance.
-function AccountTag({ label, id, name }) {
-  if (!id) return <span className="idtag">{label} <b>-</b></span>
-  return <span className="idtag has" title={String(id)}>{label} <b>{name || id}</b>{name ? <code className="idtag-id">{id}</code> : null}</span>
-}
-// Per-client setup health for the compact status strip on each Settings card.
-// ok (green ✓) / warn (amber !) / bad (red ✗).
-function clientHealth(c) {
-  const keRaw = SETTINGS.keyevents[c.id]
-  const keConfigured = !!(keRaw && keRaw.length)
-  const ke = loadKeyEvents(c.id)
-  const hasCal = ke.some((e) => e && typeof e === 'object' && e.cal)
-  const kpiRaw = SETTINGS.kpis[c.id] || {}
-  const kpiSet = Object.keys(kpiRaw).some((k) => k !== 'byPipeline' && kpiRaw[k] != null && kpiRaw[k] !== '') || (kpiRaw.byPipeline && Object.keys(kpiRaw.byPipeline).length > 0)
-  return [
-    { img: FAVICON('meta.com'), short: 'Meta', label: 'Meta Ads account', state: c.meta ? 'ok' : 'bad' },
-    { img: FAVICON('ads.google.com'), short: 'Google', label: 'Google Ads account', state: c.google ? 'ok' : 'bad' },
-    { img: CRM_LOGO, short: 'CRM', label: 'Caalano Systems (CRM)', state: c.ghl ? 'ok' : 'bad' },
-    { ic: '🎯', short: 'Events', label: 'Key events configured', state: keConfigured ? 'ok' : (SEED_KEYEVENTS[c.id] ? 'warn' : (c.ghl ? 'warn' : 'bad')) },
-    { ic: '📅', short: 'Cals', label: 'Booked calendars linked', state: hasCal ? 'ok' : (c.ghl ? 'warn' : 'bad') },
-    { ic: '📝', short: 'Forms', label: `Forms reviewed (${formsDoneCount(c.id)} linked)`, state: c.ghl ? (formsDoneCount(c.id) > 0 ? 'ok' : 'warn') : 'bad' },
-    { ic: '📊', short: 'KPIs', label: 'KPI targets set', state: kpiSet ? 'ok' : 'warn' },
-    { ic: '📡', short: 'Diag', label: 'Tracking diagnostics ready', state: (c.ghl && (c.meta || c.google)) ? 'ok' : (c.ghl ? 'warn' : 'bad') },
-  ]
-}
-const CRM_LOGO = 'https://assets.cdn.filesafe.space/4iJNxErzfROlH5M5akcm/media/694b2a2bd573507fc6f55bd6.png'
-const STATE_TXT = { ok: 'connected / done', warn: 'needs attention', bad: 'not connected' }
-function HealthIcon({ h }) {
-  if (!h.img) return <span className="sth-ic">{h.ic}</span>
-  return <span className="sth-ic"><img src={h.img} alt="" width="16" height="16" loading="lazy" onError={(e) => { e.currentTarget.style.display = 'none' }} /></span>
-}
-function HealthStrip({ c }) {
-  return (
-    <div className="set-health">
-      {clientHealth(c).map((h) => (
-        <span key={h.label} className="sth" title={`${h.label} - ${STATE_TXT[h.state]}`}>
-          <HealthIcon h={h} />
-          <span className="sth-lb">{h.short}</span>
-          <span className={`sth-mk ${h.state}`}>{h.state === 'ok' ? '✓' : h.state === 'bad' ? '✗' : '●'}</span>
-        </span>
-      ))}
-    </div>
-  )
-}
-// Settings toolbar button: re-pull each business's website + uploaded logo from
-// Caalano Systems and cache them as avatars (manual overrides are preserved).
-function LogoSyncButton() {
-  const [state, setState] = useState('idle') // idle | syncing | done | err
-  const go = () => { setState('syncing'); syncLogos({ force: true }).then((ok) => setState(ok ? 'done' : 'err')).catch(() => setState('err')) }
-  const label = state === 'syncing' ? '⟳ Syncing logos…' : state === 'done' ? '✓ Logos synced' : state === 'err' ? '⚠ Retry logos' : '🖼 Sync logos'
-  return <button className="set-add ghost" onClick={go} disabled={state === 'syncing'} title="Pull each business's website + logo from Caalano Systems and use it as their avatar everywhere">{label}</button>
-}
-const SET_FILTERS = [['all', 'All'], ['active', 'Active'], ['inactive', 'Inactive'], ['deleted', 'Deleted']]
-// Global creative-fatigue thresholds - one shared set, applied to every active
-// Meta client's fatigue read (Cockpit badges + the Meta Creative Fatigue tab).
-function FatigueSettings() {
-  useSettingsSync()
-  const [cfg, setCfg] = useState(() => loadFatigueCfg())
-  useEffect(() => { setCfg(loadFatigueCfg()) }, [SETTINGS.loaded])
-  const upd = (k, v) => { const n = { ...cfg, [k]: v }; setCfg(n) }
-  const commit = () => saveFatigueCfg(cfg)
-  const reset = () => { setCfg({ ...FATIGUE_DEFAULTS }); saveFatigueCfg({ ...FATIGUE_DEFAULTS }) }
-  const Row = ({ label, k, suffix, step, hint }) => (
-    <label className="fat-set-row">
-      <span className="fat-set-lab">{label}{hint ? <span className="cap"> · {hint}</span> : null}</span>
-      <span className="fat-set-in"><input type="number" step={step || 1} value={cfg[k]} onChange={(e) => upd(k, e.target.value === '' ? '' : Number(e.target.value))} onBlur={commit} />{suffix ? <em>{suffix}</em> : null}</span>
-    </label>
-  )
-  return (
-    <div className="card fat-set">
-      <h3 style={{ marginTop: 0 }}>Creative fatigue thresholds</h3>
-      <HelpNote>One shared set of rules, applied live to every active Meta client. A creative scores points for high frequency, a falling click-through rate, and a below-average quality ranking: <b>2+ points = High 🔥</b>, <b>1 point = Medium 👀</b>. Changes save to the server and apply on the next load.</HelpNote>
-      <div className="fat-set-grid">
-        <div className="fat-set-col">
-          <div className="fat-set-t">Frequency (impressions ÷ reach)</div>
-          <Row label="Watch when frequency reaches" k="freqMed" suffix="×" step={0.5} />
-          <Row label="Fatigued when frequency reaches" k="freqHigh" suffix="×" step={0.5} />
-        </div>
-        <div className="fat-set-col">
-          <div className="fat-set-t">CTR decline (first vs second half of the window)</div>
-          <Row label="Watch when CTR falls by" k="ctrDropMed" suffix="%" step={5} />
-          <Row label="Fatigued when CTR falls by" k="ctrDropHigh" suffix="%" step={5} />
-        </div>
-        <div className="fat-set-col">
-          <div className="fat-set-t">Noise filter</div>
-          <Row label="Ignore creatives under" k="minImpr" suffix="impressions" step={100} hint="too little data to judge" />
-        </div>
-      </div>
-      <div style={{ marginTop: 12 }}><button className="link-btn sm" onClick={reset}>Reset to defaults</button> <span className="set-saved" style={{ marginLeft: 8 }}>✓ Saved to server · shared across your team</span></div>
-    </div>
-  )
-}
-
-// Per-client monthly organic-social KPI targets (measured on the Blended view of
-// the Organic Social → KPIs & Trends tab). Saved to the server, shared with the team.
-function SocialKpiSettings({ clients }) {
-  useSettingsSync()
-  const list = (clients || []).slice().sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base' }))
-  const [cid, setCid] = useState(list[0] ? list[0].id : '')
-  const cur = loadSocialKpis(cid)
-  const set = (k, v) => { const nx = { ...loadSocialKpis(cid) }; if (v === '' || v == null) delete nx[k]; else nx[k] = Number(v); saveSocialKpis(cid, nx) }
-  const FIELDS = [
-    { k: 'followersEnd', label: 'Total followers (goal)', hint: 'target audience size' },
-    { k: 'netFollowers', label: 'Net new followers / mo', hint: 'follows − unfollows' },
-    { k: 'reach', label: 'Organic reach / mo' },
-    { k: 'views', label: 'Views / mo' },
-    { k: 'impressions', label: 'Impressions / mo', hint: 'Facebook' },
-    { k: 'engagement', label: 'Engagement / mo' },
-    { k: 'posts', label: 'Posts / mo' },
-    { k: 'er', label: 'Engagement rate % / mo' },
-  ]
-  return (
-    <div className="card">
-      <h3 style={{ marginTop: 0 }}>Organic social KPIs</h3>
-      <HelpNote>Set each client's <b>monthly</b> organic-social targets. They're scored against the latest month on the Blended view of Organic Social → <b>KPIs &amp; Trends</b>. Saved to the server and shared with the team.</HelpNote>
-      <div className="pipe-sel" style={{ marginBottom: 12 }}><label>Client</label>
-        <select value={cid} onChange={(e) => setCid(e.target.value)}>{list.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
-      </div>
-      <div className="soc-kpiset-grid">
-        {FIELDS.map((f) => (
-          <label className="soc-kpiset" key={f.k}>
-            <span>{f.label}{f.hint ? <em> · {f.hint}</em> : null}</span>
-            <input type="number" min="0" value={cur[f.k] ?? ''} placeholder="-" onChange={(e) => set(f.k, e.target.value)} />
-          </label>
-        ))}
-      </div>
-    </div>
-  )
-}
-// A small on/off switch (accessible) reused across Settings.
-function Toggle({ on, onChange, sm, disabled }) {
-  return (
-    <button type="button" role="switch" aria-checked={!!on} disabled={disabled} className={`tgl${on ? ' on' : ''}${sm ? ' sm' : ''}`} onClick={() => onChange(!on)}>
-      <span className="tgl-knob" />
-    </button>
-  )
-}
-// Settings → Daily performance: per-client (and per-pipeline) visibility on the Daily
-// Performance tab. Pulls the same trends feed the tab uses to know each client's
-// channels + pipelines; toggles persist via the shared settings store.
-function DailyPerfSettings({ clients }) {
-  useSettingsSync()
-  const [st, setSt] = useState({ status: 'loading', data: null })
-  useEffect(() => {
-    let alive = true
-    fetch('/.netlify/functions/windsor?scope=trends')
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error('http'))))
-      .then((j) => { if (alive) setSt({ status: j && j.clients ? 'ok' : 'err', data: j }) })
-      .catch(() => { if (alive) setSt({ status: 'err', data: null }) })
-    return () => { alive = false }
-  }, [])
-  if (st.status === 'loading') return <div className="card"><Spinner label="Loading Daily Performance clients…" /></div>
-  if (st.status === 'err' || !st.data || !st.data.clients) return <div className="card"><p className="cap" style={{ margin: 0 }}>Couldn't load the Daily Performance client list - try Refresh.</p></div>
-  const tc = st.data.clients
-  const list = (clients || [])
-    .filter((c) => tc[c.id] && (tc[c.id].hasMeta || tc[c.id].hasGoogle) && !isClientDeleted(c.id))
-    .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base' }))
-  const shown = list.filter((c) => dpClientOn(c.id)).length
-  const setAll = (on) => { for (const c of list) setDpClient(c.id, on) }
-  return (
-    <div className="card dp-set">
-      <h3 style={{ marginTop: 0 }}>Daily performance visibility</h3>
-      <HelpNote>Choose which clients appear on the <b>Daily Performance</b> tab - and, for clients running more than one pipeline, which pipeline tiles show. Everything is on by default. Saved to the server &amp; shared across your team.</HelpNote>
-      <div className="dp-bar">
-        <span className="dp-count">{shown} of {list.length} clients shown</span>
-        <div className="dp-bulk"><button onClick={() => setAll(true)}>Show all</button><button onClick={() => setAll(false)}>Hide all</button></div>
-      </div>
-      <div className="dp-list">
-        {list.map((c) => {
-          const t = tc[c.id]
-          const on = dpClientOn(c.id)
-          const pipes = (t.pipelines || []).filter((p) => !p.unlinked)
-          return (
-            <div className={`dp-row${on ? '' : ' is-off'}`} key={c.id}>
-              <div className="dp-row-h">
-                <Toggle on={on} onChange={(v) => setDpClient(c.id, v)} />
-                <span className="dp-nm">{c.name}</span>
-                <span className="dp-tags cap">{t.hasMeta ? 'Meta' : ''}{t.hasMeta && t.hasGoogle ? ' · ' : ''}{t.hasGoogle ? 'Google' : ''}{pipes.length > 1 ? ` · ${pipes.length} pipelines` : ''}</span>
-              </div>
-              {on && pipes.length > 1 ? (
-                <div className="dp-pipes">
-                  {pipes.map((p) => (
-                    <label className="dp-pipe" key={p.id}>
-                      <Toggle on={dpPipeOn(c.id, p.id)} onChange={(v) => setDpPipe(c.id, p.id, v)} sm />
-                      <span className="dp-pipe-nm">{p.name}</span>
-                    </label>
-                  ))}
-                </div>
-              ) : null}
-            </div>
-          )
-        })}
-        {!list.length ? <p className="cap" style={{ margin: 0 }}>No clients with Meta or Google ad data to configure.</p> : null}
-      </div>
-    </div>
-  )
-}
-// Parse CHANGELOG.md (bundled at build time) into version entries for the Logs
-// panel. Each release is a `## vX.Y.Z - date · `status` - title` block followed
-// by `- ` bullet lines.
-// Two shapes are in the file: older releases put a title on the heading and
-// `- ` bullets underneath; newer ones have `## vX.Y.Z - date · \`hash\`` and
-// paragraphs that open with a bold lead ("**What changed** - detail"). Both
-// come out as a title plus one line per change.
-function parseChangelog(raw) {
-  const strip = (t) => t.replace(/\*\*/g, '').replace(/`/g, '').replace(/\s+/g, ' ').trim()
-  return String(raw || '').split(/\n## /).slice(1).map((block) => {
-    const nl = block.indexOf('\n')
-    const head = (nl === -1 ? block : block.slice(0, nl)).trim()
-    const body = nl === -1 ? '' : block.slice(nl + 1)
-    const m = head.match(/^(v[\d.]+)\s*-\s*(\d{4}-\d{2}-\d{2})?\s*(?:·\s*`?([^`\s]*)`?)?\s*(?:-\s*(.+))?$/)
-    const lines = body.split('\n')
-    const bullets = lines.map((l) => l.trim()).filter((l) => l.startsWith('- ')).map((l) => strip(l.replace(/^-\s*/, '')))
-    // Paragraphs: blank-line separated, ignoring bullet lines and the --- rule.
-    const paras = body.split(/\n\s*\n/).map((pp) => pp.split('\n').filter((l) => !/^\s*-\s/.test(l) && !/^---\s*$/.test(l.trim())).join(' ').trim()).filter(Boolean)
-    const leads = paras.map((pp) => { const mm = pp.match(/^\*\*(.+?)\*\*\s*[-–:]?\s*(.*)$/); return mm ? { lead: strip(mm[1]), text: strip(mm[2]) } : { lead: '', text: strip(pp) } })
-    const items = bullets.length ? bullets : leads.map((x) => (x.lead ? `${x.lead}: ${x.text}` : x.text))
-    const title = (m && m[4] && m[4].trim()) || (leads[0] && leads[0].lead) || (items[0] || '').slice(0, 80) || head
-    return m
-      ? { version: m[1], date: (m[2] || '').trim(), status: (m[3] || '').trim(), title, bullets: items }
-      : { version: head.split(/\s/)[0], date: '', status: '', title, bullets: items }
-  })
-}
-// Human labels for the top-level views, for the activity trail.
-const VIEW_LABEL = {
-  overview: 'Agency Overview', trends: 'Trends', weekly: 'Weekly Traffic Light', forecast: 'Funnel Forecaster', cockpit: 'Creative Cockpit',
-  insights: 'Meta Insights', update: 'Client Update', monthly: 'Monthly Report', reports: 'Monthly Reports',
-  social: 'Organic Social Media', settings: 'Settings', clients: 'Client workspace',
-}
+// ---- Settings: the client editors and the Settings page: src/views/settings.jsx, loaded on first open ----
+const SettingsPage = lazyView(() => import('./views/settings.jsx'), 'SettingsPage')
 // "Sydney, NSW, AU" from whatever parts came back. Best-effort: a VPN or a mobile
 // network moves people hundreds of kilometres, so this is always a hint, never a
 // claim about where a person physically was.
@@ -19015,913 +16187,6 @@ const placesOf = (u) => {
   return out
 }
 const placeList = (u) => { const p = placesOf(u); return p.length ? `Signed in from: ${p.join(' · ')}` : null }
-const auditMins = (n) => (n == null ? null : n < 60 ? `${n}m` : `${Math.floor(n / 60)}h ${n % 60}m`)
-const auditAgo = (ms) => {
-  if (!ms) return null
-  const s = Math.max(0, Math.round((Date.now() - ms) / 1000))
-  if (s < 90) return 'just now'
-  const m = Math.round(s / 60); if (m < 60) return `${m} min ago`
-  const h = Math.round(m / 60); if (h < 24) return `${h} hour${h === 1 ? '' : 's'} ago`
-  const d = Math.round(h / 24); return `${d} day${d === 1 ? '' : 's'} ago`
-}
-// Logs - Super-Admin only. Two views: build/version history (from CHANGELOG.md)
-// and the live reliability failure log (server-side ring buffer).
-// One-click backup from Settings → Logs: the same file the backup-export
-// function serves, fetched with the session cookie and saved, so nobody has to
-// type a function URL. Three flavours: config only, with the CRM token (goes
-// in the password manager), with the logs (bulky).
-// One quiet line: when the daily backup last ran. The download buttons that
-// used to sit here are gone - the backup is automatic now and the file holds
-// everything sensitive, so it is not something to leave a button for on a
-// page people share screenshots of. Superadmins can still fetch it by URL
-// (see BACKUP.md).
-function BackupStatus() {
-  const [st, setSt] = useState(null)
-  useEffect(() => {
-    let dead = false
-    fetch('/.netlify/functions/settings-backup-now?status=1&format=json', { credentials: 'same-origin' })
-      .then((r) => (r.ok ? r.json() : null)).then((j) => { if (!dead) setSt(j || { error: true }) }).catch(() => { if (!dead) setSt({ error: true }) })
-    return () => { dead = true }
-  }, [])
-  if (!st) return null
-  const ago = (iso) => { const m = Math.round((Date.now() - Date.parse(iso || 0)) / 60000); return !isFinite(m) ? 'never' : m < 60 ? `${m} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} days ago` }
-  let text, cls = ''
-  if (st.error) { text = 'Daily backup status unavailable.'; cls = 'logs-backup-err' }
-  else if (!st.configured) { text = 'Daily backup is not set up (BACKUP_GH_TOKEN / BACKUP_GH_REPO).'; cls = 'logs-backup-err' }
-  else if (!st.last) text = 'Daily backup: has not run yet.'
-  else if (st.last.state === 'ok') { const r = st.last.result || {}; text = `Daily backup: last succeeded ${ago(st.last.finishedAt)} (${r.files || 0} files, ${Math.round((r.bytes || 0) / 1024)} KB).`; cls = 'logs-backup-ok' }
-  else if (st.last.state === 'running') text = `Daily backup: running (started ${ago(st.last.startedAt)}).`
-  else { text = `Daily backup: last run ${st.last.state} ${ago(st.last.finishedAt)}${st.last.error ? ` - ${st.last.error}` : ''}.`; cls = 'logs-backup-err' }
-  return <p className={`cap logs-backup-line ${cls}`}>{text} <a href="/.netlify/functions/settings-backup-now?status=1" target="_blank" rel="noreferrer">Details</a></p>
-}
-
-function LogsPanel({ clients }) {
-  const [tab, setTab] = useState('versions')
-  const nameOf = (id) => { const c = (clients || []).find((x) => x.id === id); return c ? c.name : (id ? `…${String(id).slice(-6)}` : '-') }
-  // Load the (large) changelog markdown on demand instead of inlining it into the
-  // main bundle for every visitor - this panel is Super-Admin only.
-  const [changelogRaw, setChangelogRaw] = useState('')
-  const [clState, setClState] = useState('loading') // loading | ok | err
-  // The changelog ships as its own lazy chunk. After a fresh deploy a browser can
-  // still be running the previous index.html, which points at the OLD chunk hash -
-  // that 404s and, if swallowed silently, the panel just shows "0 releases". Load
-  // it explicitly with a visible error + retry so a stale page is obvious (and a
-  // reload fixes it) instead of looking like the history vanished.
-  const clAlive = useRef(true)
-  const loadChangelog = React.useCallback(() => {
-    setClState('loading')
-    // Fetched from a Super-Admin-only function rather than bundled. As an
-    // import it became a 343KB chunk under /assets/, which is served without a
-    // session - so the whole development history, naming clients and explaining
-    // every calculation, was readable by anyone who found the URL.
-    fetch('/.netlify/functions/changelog')
-      .then((r) => (r.ok ? r.text() : ''))
-      .then((txt) => { if (clAlive.current) { setChangelogRaw(txt || ''); setClState((txt || '').trim() ? 'ok' : 'err') } })
-      .catch(() => { if (clAlive.current) setClState('err') })
-  }, [])
-  useEffect(() => { clAlive.current = true; loadChangelog(); return () => { clAlive.current = false } }, [loadChangelog])
-  const versions = useMemo(() => parseChangelog(changelogRaw), [changelogRaw])
-  const [log, setLog] = useState({ status: 'idle' })
-  const [days, setDays] = useState(3)
-  const loadLog = () => {
-    setLog({ status: 'loading' })
-    apiJson(`/.netlify/functions/windsor?scope=diaglog&days=${days}&_r=${Date.now()}`, { timeoutMs: 20000, tries: 1 })
-      .then((j) => setLog({ status: j && j.error ? 'err' : 'ok', data: j }))
-      .catch((e) => setLog({ status: 'err', data: { error: String(e.message || e) } }))
-  }
-  useEffect(() => { if (tab === 'failures') loadLog() /* eslint-disable-next-line */ }, [tab, days])
-  // Navigation audit trail.
-  const [audit, setAudit] = useState({ status: 'idle' })
-  const [aDays, setADays] = useState(7)
-  const [aUser, setAUser] = useState('')
-  const loadAudit = () => {
-    setAudit({ status: 'loading' })
-    apiJson(`/.netlify/functions/windsor?scope=auditlog&days=${aDays}${aUser ? `&user=${encodeURIComponent(aUser)}` : ''}&_r=${Date.now()}`, { timeoutMs: 20000, tries: 1 })
-      .then((j) => setAudit({ status: j && j.error ? 'err' : 'ok', data: j }))
-      .catch(() => setAudit({ status: 'err' }))
-  }
-  useEffect(() => { if (tab === 'activity') loadAudit() /* eslint-disable-next-line */ }, [tab, aDays, aUser])
-  const sevMeta = { error: ['✗', 'bad', 'Error'], 'error-stale': ['◐', 'warn', 'Error (served cached)'], slow: ['⏱', 'warn', 'Slow'], client: ['◱', 'bad', 'Browser'] }
-  // Download the current reliability log (with resolved client names) as a JSON
-  // file - so it can be handed off for diagnosis without needing live log access.
-  const exportLog = (fmt) => {
-    const d = (log && log.data) || {}
-    const entries = (d.entries || []).map((e) => ({ when: new Date(e.t).toISOString(), sev: e.sev, scope: e.scope, client: nameOf(e.client), clientId: e.client || null, user: e.user || null, userName: e.userName || null, userRole: e.userRole || null, ms: e.ms != null ? e.ms : null, ageMs: e.ageMs != null ? e.ageMs : null, cache: e.cache || null, where: e.where || null, q: e.q || null, error: e.error || null }))
-    const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
-    let blob, name
-    if (fmt === 'csv') {
-      const esc = (v) => { const s = v == null ? '' : String(v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s }
-      const head = ['when', 'sev', 'scope', 'client', 'user', 'userName', 'userRole', 'ms', 'ageMs', 'cache', 'where', 'q', 'error']
-      const lines = [head.join(','), ...entries.map((e) => head.map((k) => esc(e[k])).join(','))]
-      blob = new Blob([lines.join('\n')], { type: 'text/csv' }); name = `caalano360-reliability-log-${days}d-${stamp}.csv`
-    } else {
-      const payload = { exportedAt: new Date().toISOString(), appVersion: APP_VERSION, windowDays: days, count: d.count != null ? d.count : entries.length, summary: d.summary || {}, entries }
-      blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' }); name = `caalano360-reliability-log-${days}d-${stamp}.json`
-    }
-    const url = URL.createObjectURL(blob); const a = document.createElement('a')
-    a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove()
-    setTimeout(() => URL.revokeObjectURL(url), 2000)
-  }
-  const canExport = log.status === 'ok' && log.data && Array.isArray(log.data.entries) && log.data.entries.length > 0
-  return (
-    <div className="logs-panel">
-      <div className="card">
-        <div className="logs-head">
-          <div><h3 style={{ margin: 0 }}>Logs</h3><p className="cap" style={{ margin: '4px 0 0' }}>Super-Admin only. Build history, the reliability log, and where each person has been in the app.</p></div>
-          <div className="chan-toggle">
-            <button className={tab === 'versions' ? 'on' : ''} onClick={() => setTab('versions')}>Build versions</button>
-            <button className={tab === 'failures' ? 'on' : ''} onClick={() => setTab('failures')}>Failure logs</button>
-            <button className={tab === 'activity' ? 'on' : ''} onClick={() => setTab('activity')}>Activity trail</button>
-          </div>
-        </div>
-        <BackupStatus />
-      </div>
-      {tab === 'versions' && (
-        <div className="card">
-          <div className="cap" style={{ fontWeight: 700, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-            <span>Version history <span style={{ fontWeight: 400 }}>· {clState === 'ok' ? `${versions.length} releases · ` : ''}current <b>v{APP_VERSION}</b></span></span>
-            {clState === 'err' && <button className="set-add" onClick={loadChangelog}>↻ Retry</button>}
-          </div>
-          {clState === 'loading' && <Spinner label="Loading version history…" />}
-          {clState === 'err' && (
-            <div className="cap" style={{ padding: '4px 2px 8px', lineHeight: 1.5 }}>
-              Couldn't load the changelog. This usually means the page is running an older cached build after a fresh
-              deploy - the version file it points to has rotated. <b>Hard-refresh</b> the app (Cmd/Ctrl+Shift+R), or
-              <button className="btn-ghost sm" style={{ margin: '0 4px' }} onClick={() => window.location.reload()}>reload now</button>
-              then reopen this panel.
-            </div>
-          )}
-          <div className="logs-ver">
-            {versions.map((v) => (
-              <div className="logs-verrow" key={v.version}>
-                <div className="logs-vermeta">
-                  <span className="logs-ver">{v.version}</span>
-                  {v.date && <span className="logs-verdate">{fmtDMY(v.date)}</span>}
-                  {v.status && <span className={`logs-verstat ${/pending/i.test(v.status) ? 'pend' : 'live'}`}>{/pending/i.test(v.status) ? 'PENDING' : v.status}</span>}
-                </div>
-                <div className="logs-verbody">
-                  <div className="logs-vertitle">{v.title}</div>
-                  {v.bullets.length > 0 && <ul>{v.bullets.map((b, i) => <li key={i}>{b}</li>)}</ul>}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-      {tab === 'activity' && (
-        <>
-          <div className="card">
-            <div className="u-head-row">
-              <div>
-                <h3 style={{ margin: 0 }}>Activity trail</h3>
-                <p className="cap terms-reg-intro" style={{ margin: '4px 0 0', maxWidth: 760 }}>
-                  Where each person went and how long they stayed - views, clients and tabs. Navigation only: within-page
-                  clicks aren&rsquo;t recorded. Kept for 90 days. Disclosed in clause 6 of the terms everyone signs.
-                </p>
-              </div>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                <select className="inp sm" value={aUser} onChange={(e) => setAUser(e.target.value)} title="Filter to one person">
-                  <option value="">Everyone</option>
-                  {(audit.data && audit.data.summary || []).map((u) => <option key={u.user} value={u.user}>{u.name || u.user}</option>)}
-                </select>
-                <div className="chan-toggle">
-                  {[1, 7, 30].map((d) => <button key={d} className={aDays === d ? 'on' : ''} onClick={() => setADays(d)}>{d}d</button>)}
-                </div>
-                <button className="btn-ghost sm" onClick={loadAudit}>Refresh</button>
-              </div>
-            </div>
-            {audit.status === 'loading' ? <Spinner label="Loading the trail…" />
-              : audit.status === 'err' ? <p className="cap">Couldn&rsquo;t load the activity trail.</p>
-                : !(audit.data && audit.data.summary || []).length ? <p className="cap">Nothing recorded yet. Activity appears here as people use the app.</p>
-                  : (
-                    <div className="table-wrap" style={{ marginTop: 12 }}><table className="mini-tbl appt-tbl users-tbl">
-                      <thead><tr><th className="lft">Person</th><th className="lft">Role</th><th className="lft">Views</th><th className="lft">Time</th><th className="lft">Accounts opened</th><th className="lft">Last seen</th></tr></thead>
-                      <tbody>{(audit.data.summary || []).map((u) => (
-                        <tr key={u.user} className="terms-row" onClick={() => setAUser(u.user === aUser ? '' : u.user)} title="Filter the timeline to this person">
-                          <td className="lft">{u.name || u.user}<small style={{ display: 'block', color: 'var(--faint)' }}>{u.user}</small></td>
-                          <td className="lft"><span className={`u-role-tag r-${u.role}`}>{roleLabelOf(u) || '-'}</span></td>
-                          <td className="lft">{u.views}</td>
-                          <td className="lft">{auditMins(Math.round(u.ms / 60000))}</td>
-                          <td className="lft" title={(u.clientList || []).map(nameOf).join(', ')}>{u.clients || '-'}</td>
-                          <td className="lft">{auditAgo(u.last) || '-'}</td>
-                        </tr>
-                      ))}</tbody>
-                    </table></div>
-                  )}
-          </div>
-          {audit.status === 'ok' && (audit.data.entries || []).length ? (
-            <div className="card">
-              <div className="cap" style={{ fontWeight: 700, marginBottom: 8 }}>
-                Timeline{aUser ? ` · ${aUser}` : ''} · {audit.data.count} event{audit.data.count === 1 ? '' : 's'} over {aDays}d
-                {audit.data.count > (audit.data.entries || []).length ? ` · showing the most recent ${(audit.data.entries || []).length}` : ''}
-              </div>
-              <div className="table-wrap"><table className="mini-tbl appt-tbl logs-tbl">
-                <thead><tr><th className="lft">When</th><th className="lft">Person</th><th className="lft">Where</th><th className="lft">Account</th><th className="lft">Stayed</th></tr></thead>
-                <tbody>{(audit.data.entries || []).map((e, i) => (
-                  <tr key={i}>
-                    <td className="lft">{new Date(e.t).toLocaleString('en-AU', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}</td>
-                    <td className="lft logs-who">{e.userName || e.user || <span className="cap">-</span>}{e.userRole ? <small>{ROLE_LABEL[e.userRole] || e.userRole}</small> : null}</td>
-                    <td className="lft">{VIEW_LABEL[e.view] || e.view}{e.tab ? <span className="aud-tab">{(TAB_OPTIONS.find((t) => t.id === e.tab) || {}).label || e.tab}</span> : null}</td>
-                    <td className="lft">{e.client ? nameOf(e.client) : <span className="cap">-</span>}</td>
-                    <td className="lft">{e.ms > 1000 ? (e.ms >= 60000 ? auditMins(Math.round(e.ms / 60000)) : `${Math.round(e.ms / 1000)}s`) : '-'}{e.ref === 'close' ? <small>left</small> : null}</td>
-                  </tr>
-                ))}</tbody>
-              </table></div>
-            </div>
-          ) : null}
-        </>
-      )}
-      {tab === 'failures' && (
-        <div className="card">
-          <div className="logs-head" style={{ marginBottom: 8 }}>
-            <div className="cap" style={{ fontWeight: 700 }}>Reliability log <span style={{ fontWeight: 400 }}>· failures &amp; slow builds (&gt;6s), newest first</span></div>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              <div className="chan-toggle">{[1, 3, 7, 14].map((d) => <button key={d} className={days === d ? 'on' : ''} onClick={() => setDays(d)}>{d}d</button>)}</div>
-              <button className="set-add" onClick={loadLog}>↻ Refresh</button>
-              <button className="set-add" onClick={() => exportLog('json')} disabled={!canExport} title={canExport ? 'Download the log as JSON (best for sharing / diagnosis)' : 'Nothing to export yet'}>⭳ Export JSON</button>
-              <button className="set-add" onClick={() => exportLog('csv')} disabled={!canExport} title={canExport ? 'Download the log as CSV (opens in Excel/Sheets)' : 'Nothing to export yet'}>⭳ CSV</button>
-            </div>
-          </div>
-          {log.status === 'loading' && <Spinner label="Loading reliability log…" />}
-          {log.status === 'err' && <div className="cap">Couldn't load the log: {log.data && log.data.error}</div>}
-          {log.status === 'ok' && (log.data.count === 0
-            ? <div className="empty-deep" style={{ padding: '26px 10px' }}><div className="big">✓</div><b>No failures or slow builds in the last {days} day{days === 1 ? '' : 's'}.</b><p className="cap">Everything served within budget. Entries appear here automatically when something times out, errors, or runs slow.</p></div>
-            : (<>
-              <div className="logs-summary">{Object.entries(log.data.summary || {}).sort((a, b) => b[1] - a[1]).map(([k, n]) => { const [sev, scope] = k.split('|'); const sm = sevMeta[sev] || ['•', '', sev]; return <span key={k} className={`logs-chip ${sm[1]}`}>{sm[0]} {scope} <b>{n}</b></span> })}</div>
-              {/* Who was hit. One person dominating the list usually means their
-                  session, client mix or filters - not a system-wide fault. */}
-              {(() => {
-                const by = new Map()
-                for (const e of (log.data.entries || [])) {
-                  const k = e.user || null
-                  const cur = by.get(k) || { n: 0, name: e.userName || e.user || null }
-                  cur.n++; by.set(k, cur)
-                }
-                const rows = [...by.entries()].sort((a, b) => b[1].n - a[1].n)
-                if (rows.length < 2 && rows[0] && rows[0][0] == null) return null
-                return <div className="logs-summary logs-who-sum">{rows.map(([k, v]) => (
-                  <span key={k || 'system'} className="logs-chip" title={k || 'Scheduled jobs, warmers and unauthenticated requests'}>👤 {k ? (v.name || k) : 'system'} <b>{v.n}</b></span>
-                ))}</div>
-              })()}
-              <div className="table-wrap"><table className="mini-tbl logs-tbl">
-                <thead><tr><th className="lft">When</th><th className="lft">Type</th><th className="lft">Scope</th><th className="lft">Client</th><th className="lft">Who</th><th>ms</th><th className="lft">Detail</th></tr></thead>
-                <tbody>{log.data.entries.map((e, i) => { const sm = sevMeta[e.sev] || ['•', '', e.sev]; return (
-                  <tr key={i}>
-                    <td className="lft logs-when">{new Date(e.t).toLocaleString('en-AU')}</td>
-                    <td className="lft"><span className={`logs-chip ${sm[1]}`}>{sm[0]} {sm[2]}</span></td>
-                    <td className="lft">{e.scope}</td>
-                    <td className="lft">{nameOf(e.client)}</td>
-                    <td className="lft logs-who" title={e.user ? `${e.user}${e.userRole ? ` · ${ROLE_LABEL[e.userRole] || e.userRole}` : ''}` : 'No signed-in user - a scheduled job, a warmer, or a request made before sign-in'}>
-                      {e.user ? <>{e.userName || e.user}{e.userRole ? <small>{ROLE_LABEL[e.userRole] || e.userRole}</small> : null}</> : <span className="cap">system</span>}
-                    </td>
-                    <td>{e.ms != null ? fmtNumber(e.ms) : '-'}</td>
-                    <td className="lft logs-detail">{e.error || (e.sev === 'slow' ? 'Slow build (approaching the 10s function limit)' : '')}{e.ageMs != null ? ` · served cached ${Math.round(e.ageMs / 60000)}m old` : ''}{e.where ? <span className="logs-where"> · {e.where}</span> : ''}{e.q ? <span className="logs-where"> · {e.q}</span> : ''}</td>
-                  </tr>
-                ) })}</tbody>
-              </table></div>
-              <Caveat style={{ marginTop: 10 }}>Rolling log, ~400 entries/day, kept ~60 days. <b>Slow</b> = a build over 6s (close to the 10s function ceiling - a caching candidate). <b>Error (served cached)</b> = a rebuild failed but the user still saw the last good data instead of an error.</Caveat>
-            </>))}
-        </div>
-      )}
-    </div>
-  )
-}
-function SettingsPage({ config, enabled, setEnabled, restricted = {}, setRestricted, currency, authUser, authEnabled, theme, setTheme, onPick }) {
-  const [filter, setFilter] = useState('active')
-  const [q, setQ] = useState('')
-  const [editing, setEditing] = useState(null) // client being configured (modal)
-  const [adding, setAdding] = useState(false)   // add/edit-client explorer modal (true = new, client = edit)
-  const [autoOnboard, setAutoOnboard] = useState(false) // auto-onboard matcher modal
-  const role = authEnabled && authUser ? authUser.role : 'admin' // legacy/basic = full admin
-  const isAdmin = isAdminishFE(role)
-  const isSuper = !authEnabled || role === 'superadmin' // legacy/basic = super
-  // Sections this person can actually reach - a deep link to one they can't
-  // would otherwise render an empty page.
-  const allowedSections = [
-    ...(isAdmin ? ['clients', 'fatigue', 'socialkpis', 'dailyperf'] : []),
-    ...((!authEnabled || isAdmin) ? ['team'] : []),
-    ...(authEnabled ? ['account'] : []),
-    'appearance',
-    ...(isSuper && authEnabled ? ['terms'] : []),
-    ...(isSuper ? ['logs'] : []),
-  ]
-  const defaultSection = isAdmin ? 'clients' : 'account'
-  const sectionFromUrl = () => { const want = readNavUrl().s; return want && allowedSections.includes(want) ? want : defaultSection }
-  const [section, setSectionRaw] = useState(sectionFromUrl)
-  // Pushed, not replaced, so Back steps through the sections you visited.
-  const setSection = (v) => { setSectionRaw(v); writeNavUrl({ s: v }, true) }
-  // Back / Forward, and a first load that arrived with ?s= already set.
-  useEffect(() => {
-    // Back to a URL with no ?s means the default section, not whichever one
-    // happened to be open - otherwise Back appears to do nothing.
-    const sync = () => setSectionRaw(sectionFromUrl())
-    sync()
-    window.addEventListener('popstate', sync)
-    return () => window.removeEventListener('popstate', sync)
-    /* eslint-disable-next-line */
-  }, [])
-  const names = useDiscoverNames()
-  const nm = (kind, id) => (names && id ? names[kind][normId(id)] : null)
-  if (!config) return <div className="card"><Spinner label="Loading settings…" /></div>
-  const w = config.availableAccounts?.windsor || {}
-  const isOn = (c) => enabled[c.id] !== false
-  const isRestr = (c) => !!(restricted && restricted[c.id])
-  const toggleRestr = (c) => setRestricted && setRestricted((s) => ({ ...(s || {}), [c.id]: !((s || {})[c.id]) }))
-  // Non-super admins never see Super-Admin-only clients in the Settings list either.
-  const liveClients = config.clients.filter((c) => !isClientDeleted(c.id) && (isSuper || !isRestr(c)))
-  const activeCount = liveClients.filter(isOn).length
-  // Deleted clients (base or UI-added) for the Deleted filter / restore.
-  const deletedList = Object.entries(SETTINGS.clients || {}).filter(([, v]) => v && v._deleted).map(([id, v]) => ({ id, name: (config.clients.find((c) => c.id === id) || {}).name || v.name || id, industry: v.industry || null })).sort((a, b) => String(a.name).localeCompare(String(b.name)))
-  const term = q.trim().toLowerCase()
-  const list = (filter === 'deleted' ? [] : liveClients).filter((c) => {
-    if (filter === 'active' && !isOn(c)) return false
-    if (filter === 'inactive' && isOn(c)) return false
-    if (term && !(`${c.name} ${c.industry || ''}`.toLowerCase().includes(term))) return false
-    return true
-  }).sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base' }))
-  return (
-    <div className="settings-page">
-      <div className="set-sections">
-        {isAdmin && <button className={section === 'clients' ? 'on' : ''} onClick={() => setSection('clients')}>Clients</button>}
-        {isAdmin && <button className={section === 'fatigue' ? 'on' : ''} onClick={() => setSection('fatigue')}>Creative fatigue</button>}
-        {isAdmin && <button className={section === 'socialkpis' ? 'on' : ''} onClick={() => setSection('socialkpis')}>Organic KPIs</button>}
-        {isAdmin && <button className={section === 'dailyperf' ? 'on' : ''} onClick={() => setSection('dailyperf')}>Daily performance</button>}
-        {(!authEnabled || isAdmin) && <button className={section === 'team' ? 'on' : ''} onClick={() => setSection('team')}>Team &amp; access</button>}
-        {authEnabled && <button className={section === 'account' ? 'on' : ''} onClick={() => setSection('account')}>Your account</button>}
-        <button className={section === 'appearance' ? 'on' : ''} onClick={() => setSection('appearance')}>Appearance</button>
-        {isSuper && authEnabled && <button className={section === 'terms' ? 'on' : ''} onClick={() => setSection('terms')}>Terms of use</button>}
-        {isSuper && <button className={section === 'logs' ? 'on' : ''} onClick={() => setSection('logs')}>Logs</button>}
-      </div>
-      {/* Super-Admin only: the document itself, and the register of who signed it.
-          Both hold the legal record, so neither is shown to Admins. */}
-      {isSuper && authEnabled && section === 'terms' && <><TermsRegister /><TermsAdmin authUser={authUser} /></>}
-      {isSuper && section === 'logs' && <LogsPanel clients={config.clients} />}
-      {section === 'appearance' && (
-        <div className="card">
-          <h3 style={{ marginTop: 0 }}>Appearance</h3>
-          <p className="cap" style={{ marginTop: -4 }}>Choose how Caalano360 looks. Saved to this browser.</p>
-          <div className="theme-choose">
-            <button className={theme === 'light' ? 'on' : ''} onClick={() => setTheme && setTheme('light')}>☀ Light</button>
-            <button className={theme === 'dark' ? 'on' : ''} onClick={() => setTheme && setTheme('dark')}>☾ Dark</button>
-          </div>
-          {isSuper ? <AnnotationToggle /> : null}
-        </div>
-      )}
-      {isAdmin && section === 'fatigue' && <FatigueSettings />}
-      {isAdmin && section === 'socialkpis' && <SocialKpiSettings clients={config.clients} />}
-      {isAdmin && section === 'dailyperf' && <DailyPerfSettings clients={config.clients} />}
-      {section === 'team' && (!authEnabled || isAdmin) && <UsersAdmin authUser={authUser} authEnabled={authEnabled} clients={(config.clients || []).map((c) => ({ id: c.id, name: c.name, meta: c.meta || null, google: c.google || null, ga4: c.ga4 || null, ghl: c.ghl || null }))} />}
-      {authEnabled && section === 'account' && (
-        <div className="card">
-          <h3 style={{ marginTop: 0 }}>Your account</h3>
-          <p className="cap" style={{ marginTop: -4 }}>Signed in as <b>{authUser ? (authUser.name || authUser.email) : ''}</b>{authUser ? ` · ${roleLabelOf(authUser)}` : ''}. Change your password below.</p>
-          <ChangePasswordCard />
-          <SignOutEverywhereCard />
-        </div>
-      )}
-      {isAdmin && section === 'clients' && (<>
-      <div className="set-stats">
-        <div className="set-stat"><div className="v">{liveClients.length}</div><div className="l">Clients</div></div>
-        <div className="set-stat"><div className="v">{activeCount}</div><div className="l">Active</div></div>
-        <div className="set-stat"><div className="v">{liveClients.length - activeCount}</div><div className="l">Inactive</div></div>
-        <div className="set-stat"><div className="v">{w.facebook ?? '-'}</div><div className="l">Meta accounts</div></div>
-        <div className="set-stat"><div className="v">{w.google_ads ?? '-'}</div><div className="l">Google accounts</div></div>
-        <div className="set-stat"><div className="v">{w.gohighlevel ?? '-'}</div><div className="l">Caalano Systems</div></div>
-      </div>
-      <div className="set-toolbar">
-        <div className="chan-toggle">{SET_FILTERS.filter(([k]) => k !== 'deleted' || deletedList.length).map(([k, lbl]) => <button key={k} className={filter === k ? 'on' : ''} onClick={() => setFilter(k)}>{lbl}{k === 'active' ? ` · ${activeCount}` : k === 'inactive' ? ` · ${liveClients.length - activeCount}` : k === 'deleted' ? ` · ${deletedList.length}` : ''}</button>)}</div>
-        <input className="set-search" placeholder="Search clients…" value={q} onChange={(e) => setQ(e.target.value)} />
-        {isSuper && <button className="set-add" onClick={() => setAutoOnboard(true)} title="Auto-match every unlinked Caalano Systems location to its Meta & Google accounts">✨ Auto-onboard</button>}
-        {isSuper && <button className="set-add" onClick={() => setAdding(true)}>+ Add client</button>}
-        <LogoSyncButton />
-        <span className="set-saved">✓ Saved to server · shared across your team</span>
-      </div>
-      <div className="set-legend">
-        <span>Setup:</span>
-        <span className="lg"><img src={FAVICON('meta.com')} alt="" width="14" height="14" /> Meta</span><span className="lg"><img src={FAVICON('ads.google.com')} alt="" width="14" height="14" /> Google</span><span className="lg"><img src={CRM_LOGO} alt="" width="14" height="14" /> CRM</span><span className="lg"><b>🎯</b> Key events</span><span className="lg"><b>📅</b> Calendars</span><span className="lg"><b>📝</b> Forms</span><span className="lg"><b>📊</b> KPIs</span><span className="lg"><b>📡</b> Diagnostics</span>
-        <span className="lg-sep">·</span><span className="lg"><span className="sth-mk ok">✓</span> done</span><span className="lg"><span className="sth-mk warn">●</span> attention</span><span className="lg"><span className="sth-mk bad">✗</span> missing</span>
-      </div>
-      {filter === 'deleted' && (
-        <div className="set-grid">
-          {deletedList.map((c) => (
-            <div className="set-card is-off" key={c.id}>
-              <div className="set-card-head">
-                <Avatar id={c.id} name={c.name} i={config.clients.indexOf(c)} className="is-muted" />
-                <div className="sc-id"><div className="nm">{c.name}</div><div className="ver">Deleted{c.industry ? ` · ${c.industry}` : ''}</div></div>
-              </div>
-              <div className="set-card-actions">
-                <button className="set-expand" onClick={() => restoreClient(c.id)} title="Restore this client to the dashboard">↩ Restore</button>
-              </div>
-            </div>
-          ))}
-          {!deletedList.length && <div className="card empty-deep"><div className="big">🗑</div><b>No deleted clients.</b></div>}
-        </div>
-      )}
-      {filter !== 'deleted' && <div className="set-grid">
-        {list.map((c) => {
-          const on = isOn(c)
-          return (
-            <div className={`set-card ${on ? '' : 'is-off'} ${isRestr(c) ? 'is-restr' : ''}`} key={c.id}>
-              <div className="set-card-head">
-                <Avatar id={c.id} name={c.name} i={config.clients.indexOf(c)} />
-                <div className="sc-id"><div className="nm">{c.name}{isRestr(c) ? <span className="restr-badge" title="Super-Admin only - hidden from the rest of the team">🔒</span> : null}</div><div className="ver">{c.industry || (c.deep ? 'Deep dashboards' : 'Summary only')}</div></div>
-                <div className={`toggle ${on ? 'on' : ''}`} title={on ? 'Active - click to hide from the dashboard' : 'Inactive - click to show'} onClick={() => setEnabled((s) => ({ ...s, [c.id]: s[c.id] === false ? true : false }))}><span className="knob" /></div>
-              </div>
-              <HealthStrip c={c} />
-              <div className="set-card-actions">
-                <button className="set-expand" onClick={() => setEditing(c)}>✎ Edit</button>
-                {isSuper && <button className={`set-restr-btn ${isRestr(c) ? 'on' : ''}`} onClick={() => toggleRestr(c)} title={isRestr(c) ? 'Visible to Super Admins only - click to show the whole team' : 'Restrict to Super Admins only'}>{isRestr(c) ? '🔒 Super-Admin only' : '🔓 Visible to team'}</button>}
-              </div>
-            </div>
-          )
-        })}
-        {!list.length && <div className="card empty-deep"><div className="big">🔍</div><b>No clients match.</b></div>}
-      </div>}
-      </>)}
-      {editing && <SettingsEditModal client={editing} names={names} currency={currency} canManageAccounts={isSuper} onClose={() => setEditing(null)} onOpen={() => { const cc = editing; setEditing(null); onPick(cc) }} onRelink={() => { const cc = editing; setEditing(null); setAdding(cc) }} />}
-      {adding && <AddClientModal existing={config.clients} editClient={typeof adding === 'object' ? adding : null} onClose={() => setAdding(false)} />}
-      {autoOnboard && <AutoOnboardModal existing={config.clients} onClose={() => setAutoOnboard(false)} />}
-    </div>
-  )
-}
-// Per-client configuration in a modal with horizontal tabs (like the client
-// view). Summary edits name / industry / linked accounts; the other tabs open
-// each editor full-width underneath. "Open Client View" jumps to the workspace.
-// Sales-cycle / data-maturity control. Shows the CRM's calculated average time
-// to close a deal and lets you override it. Everything downstream (the "Still
-// maturing" badges) adds a 20% buffer on top of whichever value applies.
-// Per-client brand-logo control: shows the resolved avatar, where it came from
-// (manual / Caalano Systems logo / website favicon), and lets you paste a manual
-// override URL or clear it back to the auto-detected source.
-function LogoField({ clientId, name }) {
-  useSettingsSync()
-  const rec = loadLogo(clientId)
-  const [val, setVal] = useState(rec.logo || '')
-  useEffect(() => { setVal(loadLogo(clientId).logo || '') }, [clientId, SETTINGS.loaded])
-  const src = clientLogoSrc(clientId, 64)
-  const source = rec.logo ? 'Manual override' : rec.logoUrl ? 'Caalano Systems logo' : rec.website ? `Favicon · ${domainOf(rec.website)}` : 'None found - showing initials'
-  const save = () => saveLogo(clientId, { logo: val.trim() || null })
-  return (
-    <div className="set-cycle">
-      <div className="set-sec-t">Business logo</div>
-      <div className="set-logo-row">
-        {src ? <span className="avatar avatar-img"><img src={src} alt="" /></span> : <span className="avatar" style={{ background: acolor(0) }}>{initials(name)}</span>}
-        <div className="set-logo-meta"><span className="cap">{source}</span>{rec.website ? <a className="cap" href={/^https?:/i.test(rec.website) ? rec.website : 'https://' + rec.website} target="_blank" rel="noreferrer">{rec.website}</a> : null}</div>
-      </div>
-      <div className="set-field"><label>Override logo URL <span className="cap">· optional - paste a direct image link to force a specific logo</span></label>
-        <div className="set-logo-in"><input value={val} onChange={(e) => setVal(e.target.value)} placeholder="https://…/logo.png" /><button className="btn-ghost sm" onClick={save} disabled={val === (rec.logo || '')}>Save</button>{rec.logo ? <button className="btn-ghost sm" onClick={() => { setVal(''); saveLogo(clientId, { logo: null }) }}>Clear</button> : null}</div>
-      </div>
-    </div>
-  )
-}
-// Everything about WHEN for one client, in one place: which clock the CRM
-// runs on, how long a deal takes, which hours count as working, and - read
-// straight off those - which date ranges are old enough to trust for won and
-// revenue figures.
-function TimingSettings({ clientId, hasMeta }) {
-  useSettingsSync()
-  const ov = loadCloseOverride(clientId)
-  const ranges = [['last_7d', 'Last 7 days'], ['last_14d', 'Last 14 days'], ['last_30d', 'Last 30 days'], ['last_60d', 'Last 60 days'], ['last_90d', 'Last 90 days'], ['this_month', 'This month']]
-  return (
-    <div className="tm-wrap">
-      <div className="set-sec-t">Timezone</div>
-      <TimezoneBadge clientId={clientId} hasMeta={hasMeta} />
-      <div className="set-sec-t" style={{ marginTop: 18 }}>Sales cycle</div>
-      <SalesCycleField clientId={clientId} />
-      <div className="set-sec-t" style={{ marginTop: 18 }}>Work hours <span className="cap" style={{ textTransform: 'none', letterSpacing: 0, fontWeight: 400 }}>· speed to lead is measured inside these, so an overnight lead answered at 9am is not a 10-hour response</span></div>
-      <ActiveHoursField clientId={clientId} />
-      <div className="set-sec-t" style={{ marginTop: 18 }}>Data maturity <span className="cap" style={{ textTransform: 'none', letterSpacing: 0, fontWeight: 400 }}>· which ranges are old enough to trust for won and revenue</span></div>
-      {ov != null && ov > 0 ? (
-        <div className="tm-mat">
-          {ranges.map(([id, label]) => { const m = rangeMaturity(ov, presetRange(id)); return (
-            <div className={`tm-mat-row${m && m.maturing ? ' maturing' : ' ok'}`} key={id}>
-              <span className="tm-mat-l">{label}</span>
-              <span className="tm-mat-v">{m && m.maturing ? `⏳ still maturing · ${m.shortfall} day${m.shortfall === 1 ? '' : 's'} short` : '✓ mature'}</span>
-            </div>
-          ) })}
-          <HelpNote>A range needs to be about 20% longer than the sales cycle ({ov} days → {Math.round(ov * 1.2)} days) before most of its deals have had time to close. Shorter ranges show the amber ⏳ badge on the client's header and read low on Won, Revenue and ROAS - not because performance is worse, but because the deals are not in yet.</HelpNote>
-        </div>
-      ) : <HelpNote>Set the sales cycle above (or let the CRM average stand) and this shows which date ranges are mature. Without a figure, the app uses the CRM's own create → won average when it has one.</HelpNote>}
-    </div>
-  )
-}
-function SalesCycleField({ clientId }) {
-  const [crm, setCrm] = useState(undefined) // undefined = loading, null = none
-  const [ov, setOv] = useState(() => { const v = loadCloseOverride(clientId); return v == null ? '' : String(v) })
-  const [saved, setSaved] = useState(false)
-  useEffect(() => {
-    let alive = true; setCrm(undefined)
-    const r = presetRange('last_90d')
-    dedupeFetch(`/.netlify/functions/windsor?client=${clientId}&channel=blend&${rangeQuery(r)}`)
-      .then((x) => (x.ok ? x.json() : Promise.reject(new Error('http'))))
-      .then((j) => { if (alive) setCrm(j && j.blend && j.blend.wonClosed && j.blend.wonClosed.avgCloseDays != null ? j.blend.wonClosed.avgCloseDays : null) })
-      .catch(() => { if (alive) setCrm(null) })
-    return () => { alive = false }
-  }, [clientId])
-  const eff = ov !== '' && Number(ov) > 0 ? Number(ov) : (crm || null)
-  const buffered = eff ? Math.round(eff * 1.2) : null
-  const save = (val) => { setOv(val); saveCloseOverride(clientId, val === '' ? null : Number(val)); setSaved(true); setTimeout(() => setSaved(false), 1200) }
-  return (
-    <div className="set-cycle">
-      <div className="set-sec-t">Data maturity - average time to close</div>
-      <HelpNote>Calculated automatically by the CRM from your won deals (average days from lead created to won). A <b>20% buffer</b> is added, and any date range shorter than that shows a <b>“Still maturing”</b> flag - a reminder that recent leads haven’t had time to convert yet, so Won / Revenue / ROAS understate the true result. This is never shown on the dashboards as a metric.</HelpNote>
-      <div className="set-cycle-grid">
-        <div className="set-cycle-stat"><span className="cap">CRM average</span><b>{crm === undefined ? '…' : crm == null ? 'No won deals yet' : `${crm} days`}</b></div>
-        <div className="set-cycle-stat"><span className="cap">With 20% buffer</span><b>{buffered ? `${buffered} days` : '-'}</b></div>
-        <div className="set-field set-cycle-in"><label>Manual override (days)</label><input type="number" min="0" value={ov} onChange={(e) => save(e.target.value)} placeholder={crm != null ? `${crm} (CRM)` : 'e.g. 40'} />{saved && <span className="set-saved-tick">✓</span>}</div>
-      </div>
-      <HelpNote>⚠ Leave blank to use the CRM figure. Only override if you know the true sales cycle (e.g. the CRM history is too short) - the 20% buffer is still applied on top of whatever you enter.</HelpNote>
-    </div>
-  )
-}
-// Working-hours editor. Auto-detects from the client's calendars, and lets you
-// override the days + open/close time. Drives the Speed to Lead measurement so
-// after-hours gaps aren't counted as slow responses.
-function ActiveHoursField({ clientId }) {
-  const saved = loadHours(clientId) // DEFAULT_HOURS when unset; null only if explicitly off
-  const init = saved || DEFAULT_HOURS
-  const [enabled, setEnabled] = useState(() => !!saved)
-  const [days, setDays] = useState(() => init.days)
-  const [start, setStart] = useState(() => hhmm(init.startMin))
-  const [end, setEnd] = useState(() => hhmm(init.endMin))
-  const [detected, setDetected] = useState(undefined)
-  const [tick, setTick] = useState(false)
-  useEffect(() => {
-    let a = true; setDetected(undefined)
-    fetch(`/.netlify/functions/windsor?scope=hours&client=${clientId}`).then((r) => (r.ok ? r.json() : null)).then((j) => { if (a) setDetected(j && j.days ? j : null) }).catch(() => { if (a) setDetected(null) })
-    return () => { a = false }
-  }, [clientId])
-  const toMin = (s) => { const [h, m] = String(s).split(':').map(Number); return (h || 0) * 60 + (m || 0) }
-  const flash = () => { setTick(true); setTimeout(() => setTick(false), 1200) }
-  const persist = (en, d, s, e) => { saveHours(clientId, en ? { days: d, startMin: toMin(s), endMin: toMin(e) } : null); flash() }
-  const toggleDay = (i) => { const nd = days.includes(i) ? days.filter((x) => x !== i) : [...days, i].sort((a, b) => a - b); setDays(nd); if (enabled) persist(true, nd, start, end) }
-  const onStart = (v) => { setStart(v); if (enabled) persist(true, days, v, end) }
-  const onEnd = (v) => { setEnd(v); if (enabled) persist(true, days, start, v) }
-  const onEnable = (v) => { setEnabled(v); persist(v, days, start, end) }
-  const useDetected = () => { if (!detected) return; const s = hhmm(detected.startMin), e = hhmm(detected.endMin); setDays(detected.days); setStart(s); setEnd(e); setEnabled(true); persist(true, detected.days, s, e) }
-  return (
-    <div className="set-cycle">
-      <div className="set-sec-t">Working hours <span className="cap" style={{ textTransform: 'none', letterSpacing: 0, fontWeight: 400 }}>· for Speed to Lead</span>{tick && <span className="set-saved-tick" style={{ position: 'static', marginLeft: 8 }}>✓ saved</span>}</div>
-      <HelpNote>When on, Speed to Lead counts only <b>business minutes</b> - a lead that arrives at 11pm and gets a reply at 9am is a fast response, not a 10-hour one.</HelpNote>
-      <label className="set-hours-en"><input type="checkbox" checked={enabled} onChange={(e) => onEnable(e.target.checked)} /> Measure Speed to Lead within working hours</label>
-      <div className={`set-hours ${enabled ? '' : 'off'}`}>
-        <div className="set-hours-days">{DOW_LABELS.map((lbl, i) => <button key={i} className={days.includes(i) ? 'on' : ''} onClick={() => toggleDay(i)} disabled={!enabled}>{lbl}</button>)}</div>
-        <div className="set-hours-times">
-          <label>Open <input type="time" value={start} onChange={(e) => onStart(e.target.value)} disabled={!enabled} /></label>
-          <label>Close <input type="time" value={end} onChange={(e) => onEnd(e.target.value)} disabled={!enabled} /></label>
-        </div>
-      </div>
-      <div className="set-hours-detect">
-        {detected === undefined ? <span className="cap">Detecting hours from calendars…</span>
-          : detected && detected.detected ? <>Detected from {detected.calendars} calendar{detected.calendars === 1 ? '' : 's'}: <b>{fmtHours({ days: detected.days, startMin: detected.startMin, endMin: detected.endMin })}</b> <button className="set-relink" style={{ padding: '4px 10px', marginLeft: 6 }} onClick={useDetected}>Use detected</button></>
-          : <span className="cap">Couldn't auto-detect hours from calendars - set them manually above.</span>}
-      </div>
-    </div>
-  )
-}
-// Per-client Meta conversion picker: loads the conversion events that actually
-// fired for the account and lets an admin choose a primary result + secondaries.
-function MetaConversionsEditor({ clientId, currency }) {
-  const [st, setSt] = useState({ status: 'loading', actions: [] })
-  const [cfg, setCfg] = useState(() => loadMetaConv(clientId))
-  const [saved, setSaved] = useState(false)
-  const [addName, setAddName] = useState('')
-  const [added, setAdded] = useState([])
-  const [probe, setProbe] = useState({ status: 'idle' })
-  const [dbg, setDbg] = useState(false)
-  const findCustom = () => {
-    const ev = addName.trim(); if (!ev) return
-    setProbe({ status: 'loading' })
-    fetch(`/.netlify/functions/windsor?scope=metaprobe&client=${clientId}&event=${encodeURIComponent(ev)}`)
-      .then((r) => r.json())
-      .then((j) => {
-        const found = (j && j.found) || []
-        setProbe({ status: found.length ? 'ok' : 'none' })
-        if (found.length) { setAdded((a) => { const seen = new Set(a.map((x) => x.id)); return [...a, ...found.filter((f) => !seen.has(f.id))] }); setAddName('') }
-      })
-      .catch(() => setProbe({ status: 'err' }))
-  }
-  useEffect(() => {
-    let alive = true; setSt({ status: 'loading', actions: [] })
-    // Auto-detect: read the account's optimisation event + every firing conversion.
-    fetch(`/.netlify/functions/windsor?scope=metadetect&client=${clientId}`)
-      .then((r) => r.json())
-      .then((j) => { if (alive) setSt({ status: j && j.error ? 'err' : 'ok', actions: (j && j.actions) || [], error: j && j.error, spend: j && j.spend, suggest: j && j.suggest, goal: j && j.goal, evNames: (j && j.evNames) || [], tried: (j && j.tried) || [], customIds: (j && j.customIds) || [], promoted: j && j.promoted, acceptedFields: (j && j.acceptedFields) || [] }) })
-      .catch((e) => { if (alive) setSt({ status: 'err', actions: [], error: String((e && e.message) || e) }) })
-    return () => { alive = false }
-  }, [clientId])
-  const isPrimary = (id) => (cfg.primary || []).includes(id)
-  const togglePrimary = (id) => setCfg((c) => { const has = (c.primary || []).includes(id); return { primary: has ? c.primary.filter((p) => p !== id) : [...(c.primary || []), id], secondary: (c.secondary || []).filter((s) => s !== id) } })
-  const addPrimary = (id) => setCfg((c) => ((c.primary || []).includes(id) ? c : { primary: [...(c.primary || []), id], secondary: (c.secondary || []).filter((s) => s !== id) }))
-  const toggleSecondary = (id) => setCfg((c) => { const has = (c.secondary || []).includes(id); return { ...c, secondary: has ? c.secondary.filter((s) => s !== id) : [...(c.secondary || []), id] } })
-  const save = () => { saveMetaConv(clientId, cfg); setSaved(true); setTimeout(() => setSaved(false), 1500) }
-  const money = (v) => fmtCurrency(v, currency)
-  const known = st.actions || []
-  // Merge, de-duplicated by id: discovered events + probed custom events + any saved
-  // choice not otherwise present. Custom events keep their probed label / count.
-  const byId = new Map()
-  for (const a of [...known, ...added]) if (!byId.has(a.id)) byId.set(a.id, a)
-  for (const id of [...(cfg.primary || []), ...(cfg.secondary || [])].filter(Boolean)) if (!byId.has(id)) byId.set(id, { id, label: id, count: 0, costPer: null })
-  const list = [...byId.values()]
-  const labelOf = (id) => (byId.get(id) || {}).label || id
-  return (
-    <div className="mconv">
-      <p className="cap" style={{ marginTop: 0 }}>Tick the conversion(s) this client optimises to as its <b>primary result</b> - the headline result &amp; cost-per on the Meta tab, Monthly Report and Daily Performance is the <b>sum</b> of every primary you tick. Tick any <b>secondary</b> events to show alongside (not counted in the headline). Standard + previously-fired custom events are listed; add any other <b>custom conversion</b> by name below.</p>
-      <div className="mconv-add">
-        <input type="text" placeholder="Add a custom conversion by name (e.g. B_Page_View)" value={addName} onChange={(e) => setAddName(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') findCustom() }} />
-        <button className="btn-ghost sm" onClick={findCustom} disabled={probe.status === 'loading' || !addName.trim()}>{probe.status === 'loading' ? 'Finding…' : 'Find + add'}</button>
-        {probe.status === 'none' ? <span className="cap">No data for that event name in the last 90 days - check the exact custom-conversion name in Ads Manager.</span>
-          : probe.status === 'err' ? <span className="cap">Probe failed - try again.</span>
-            : probe.status === 'ok' ? <span className="cap" style={{ color: '#16a34a' }}>✓ Added - tick it Primary below.</span> : null}
-      </div>
-      {st.status === 'ok' ? (
-        <div className="mconv-dbg">
-          <button className="linker-toggle" onClick={() => setDbg((d) => !d)}>{dbg ? '▾' : '▸'} Not seeing your custom conversion?</button>
-          {dbg ? (
-            <div className="mconv-dbg-body cap">
-              <div>Detected optimisation goal: <b>{st.goal ? String(st.goal).replace(/_/g, ' ').toLowerCase() : '-'}</b></div>
-              {st.evNames && st.evNames.length ? <div>Event names on the ad sets: <b>{st.evNames.join(', ')}</b></div> : null}
-              {st.customIds && st.customIds.length ? <div>Custom-conversion IDs found: <b>{st.customIds.join(', ')}</b></div> : null}
-              {st.promoted ? <div>Ad-set promoted object: <code style={{ fontSize: 10 }}>{typeof st.promoted === 'string' ? st.promoted : JSON.stringify(st.promoted)}</code></div> : null}
-              <div style={{ marginTop: 4 }}>Windsor <b>accepts</b> these result fields (valid on this account): <code style={{ fontSize: 10 }}>{(st.acceptedFields || []).length ? st.acceptedFields.join(', ') : 'none of the custom / native `results` variants'}</code></div>
-              <div style={{ marginTop: 4 }}>Custom conversions are counted only if Windsor exposes the exact field. We probed <b>{(st.tried || []).length}</b> field names. If your event still isn't listed, its Windsor field id is non-standard - send the goal / IDs / promoted-object above to your Caalano admin to hard-map it.</div>
-            </div>
-          ) : null}
-        </div>
-      ) : null}
-      {st.status === 'loading' ? <Spinner label="Loading Meta conversions…" />
-        : st.status === 'err' ? <div className="cap">Couldn’t load conversions{st.error ? ` - ${st.error}` : ''}.</div>
-          : !list.length ? (
-            <div className="mconv-empty">
-              <div className="cap">No Meta conversions were detected firing for this account.{st.spend ? ` (${money(st.spend)} spent in the last 30 days.)` : ''}</div>
-              {(st.goal || (st.evNames && st.evNames.length)) ? <div className="cap" style={{ marginTop: 6 }}>Detected optimisation goal: <b>{st.goal ? String(st.goal).replace(/_/g, ' ').toLowerCase() : '-'}</b>{st.evNames && st.evNames.length ? <> · event(s) named on the ad sets: <b>{st.evNames.join(', ')}</b></> : null}. If your custom conversion (e.g. from Ads Manager’s Results column) should be here but isn’t, its Windsor field name differs from what we tried - send this to your Caalano admin: <code style={{ fontSize: 10 }}>{(st.tried || []).slice(0, 8).join(', ')}{(st.tried || []).length > 8 ? '…' : ''}</code></div> : null}
-            </div>
-          )
-            : <>
-              {st.suggest && !isPrimary(st.suggest) ? (
-                <div className="mconv-auto">
-                  <span>🎯 Auto-detected optimisation event: <b>{labelOf(st.suggest)}</b>{st.goal ? <span className="cap"> · goal: {String(st.goal).replace(/_/g, ' ').toLowerCase()}</span> : null}</span>
-                  <button className="btn-ghost sm" onClick={() => addPrimary(st.suggest)}>{(cfg.primary || []).length ? 'Add as primary' : 'Use as primary'}</button>
-                </div>
-              ) : null}
-              <div className="table-wrap"><table className="mini-tbl mconv-tbl">
-                <thead><tr><th className="lft">Conversion event</th><th>Count · 90d</th><th>Cost / action</th><th>Primary</th><th>Secondary</th></tr></thead>
-                <tbody>{list.map((a) => (
-                  <tr key={a.id} className={isPrimary(a.id) ? 'row-sel' : ''}>
-                    <td className="lft">{a.label}</td>
-                    <td>{fmtNumber(a.count)}</td>
-                    <td>{a.costPer != null ? money(a.costPer) : '-'}</td>
-                    <td><input type="checkbox" checked={isPrimary(a.id)} onChange={() => togglePrimary(a.id)} /></td>
-                    <td><input type="checkbox" checked={(cfg.secondary || []).includes(a.id)} disabled={isPrimary(a.id)} onChange={() => toggleSecondary(a.id)} /></td>
-                  </tr>
-                ))}</tbody>
-              </table></div>
-              <div className="mconv-foot">
-                <button className="btn-primary" onClick={save}>{saved ? '✓ Saved' : 'Save conversions'}</button>
-                {(cfg.primary || []).length ? <button className="btn-ghost sm" onClick={() => setCfg({ primary: [], secondary: [] })}>Clear</button> : null}
-                <span className="cap">{(cfg.primary || []).length ? `Primary: ${cfg.primary.map(labelOf).join(' + ')}${(cfg.secondary || []).length ? ` · ${cfg.secondary.length} secondary` : ''}${cfg.primary.length > 1 ? ' · headline = their sum' : ''}` : 'No primary set - the Meta tab shows Leads by default.'}</span>
-              </div>
-            </>}
-    </div>
-  )
-}
-// Client Brand Profile editor (Settings → Overview). A structured "everything
-// about this brand" file that feeds the AI features. Auto-saves on blur.
-function ClientProfileEditor({ clientId }) {
-  useSettingsSync()
-  const [form, setForm] = useState(() => loadProfile(clientId))
-  const [tick, setTick] = useState(false)
-  useEffect(() => { setForm(loadProfile(clientId)) }, [clientId])
-  const set = (k, v) => setForm((f) => ({ ...f, [k]: v }))
-  const persist = () => { saveProfile(clientId, form); setTick(true); setTimeout(() => setTick(false), 1200) }
-  const filled = PROFILE_FIELDS.reduce((n, f) => n + (String(form[f.k] || '').trim() ? 1 : 0), 0)
-  return (
-    <div className="prof">
-      <p className="cap" style={{ marginTop: 0 }}>Capture everything about this brand: what they do, who they sell to, their voice, offers, proof, objections and the words that work. This becomes the client's context file - the <b>Creative Curator</b> reads it in Client deep-dive mode, and more AI features will use it. Saved to the server and shared with your team.{tick && <span className="set-saved-tick" style={{ position: 'static', marginLeft: 8 }}>✓ saved</span>}</p>
-      <div className="prof-meter"><span className="prof-meter-fill" style={{ width: `${Math.round((filled / PROFILE_FIELDS.length) * 100)}%` }} /></div>
-      <div className="prof-meter-lab cap">{filled} / {PROFILE_FIELDS.length} sections filled</div>
-      <div className="prof-grid">
-        {PROFILE_FIELDS.map((f) => (
-          <div className={`prof-field${f.area ? ' prof-field-wide' : ''}`} key={f.k}>
-            <label>{f.label}</label>
-            {f.area
-              ? <textarea rows={3} placeholder={f.ph} value={form[f.k] || ''} onChange={(e) => set(f.k, e.target.value)} onBlur={persist} />
-              : <input type="text" placeholder={f.ph} value={form[f.k] || ''} onChange={(e) => set(f.k, e.target.value)} onBlur={persist} />}
-          </div>
-        ))}
-      </div>
-    </div>
-  )
-}
-// Composes a client's custom dashboard from the module registry: pick, order,
-// retitle, save. The result appears as a tab on the client's workspace, Super
-// Admin only. Presets give a starting point; nothing here computes a figure.
-function DashboardBuilder({ client: c }) {
-  useSettingsSync()
-  const blank = { name: 'Client view', chan: 'all', audience: 'super', modules: [] }
-  const [d, setD] = useState(() => loadDashboard(c.id) || blank)
-  const [dirty, setDirty] = useState(false)
-  const [savedAt, setSavedAt] = useState(0)
-  const [pick, setPick] = useState('')
-  const up = (patch) => { setD((x) => ({ ...x, ...patch })); setDirty(true) }
-  const avail = DASH_MODULES.filter((m) => dashModuleFits(m, c))
-  const used = new Set(d.modules.filter((m) => !(DASH_MODULES.find((x) => x.type === m.type) || {}).multi).map((m) => m.type))
-  const groups = [...new Set(avail.map((m) => m.group))]
-  const move = (i, dir) => { const arr = [...d.modules]; const j = i + dir; if (j < 0 || j >= arr.length) return; const t = arr[i]; arr[i] = arr[j]; arr[j] = t; up({ modules: arr }) }
-  const remove = (i) => up({ modules: d.modules.filter((_, k) => k !== i) })
-  const add = (type) => { if (!type || used.has(type)) return; up({ modules: [...d.modules, { type }] }); setPick('') }
-  const isHeading = (m) => m.type === 'heading'
-  const setTitle = (i, title) => up({ modules: d.modules.map((m, k) => (k === i ? { ...m, title: title || undefined } : m)) })
-  const preset = (key) => { const p = DASH_PRESETS.find((x) => x.key === key); if (!p) return; up({ modules: p.types.filter((t) => avail.some((m) => m.type === t)).map((type) => ({ type })) }) }
-  const save = () => { if (!d.modules.length) return; saveDashboard(c.id, { ...d, name: (d.name || '').trim() || 'Client view', updatedAt: new Date().toISOString() }); setDirty(false); setSavedAt(Date.now()) }
-  const clear = () => { if (!window.confirm('Remove this client’s custom dashboard? The tab disappears from the workspace.')) return; saveDashboard(c.id, null); setD(blank); setDirty(false) }
-  const saved = loadDashboard(c.id)
-  return (
-    <div className="dash-builder">
-      <p className="cap" style={{ margin: 0 }}>Pick the modules this client should see, in order. Every module is the same component the tabs use, reading the same figures, so the custom view reconciles with the tabs to the number. The dashboard appears as a <b>{d.name || 'Client view'}</b> tab on the client's workspace, next to Caalano360.</p>
-      <div className="dash-add">
-        <span className="cap">Who can see it</span>
-        <span className="chan-toggle sm">
-          {DASH_AUD.map((a) => <button key={a} type="button" className={dashAudience(d) === a ? 'on' : ''} onClick={() => up({ audience: a })}>{a === 'super' ? 'Super Admins only' : a === 'admin' ? 'Admin' : a === 'user' ? 'User' : 'Viewer'}</button>)}
-        </span>
-        {(() => {
-          const a = dashAudience(d)
-          if (a === 'viewer') return <span className="cap">Open to <b>everyone</b>: every staff role sees the tab, and it appears as a <b>Custom dashboard</b> tick box in each viewer's allocation for this client - a viewer sees it only once their box is ticked. Modules marked agency-internal are hidden from viewers automatically.</span>
-          if (a === 'user') return <span className="cap">Open to <b>Users, Admins and Super Admins</b>. Viewers (clients) do not see it.</span>
-          if (a === 'admin') return <span className="cap">Open to <b>Admins and Super Admins</b>. Users and viewers do not see it.</span>
-          return <span className="cap">Only Super Admins see the tab. Staff and viewers see nothing new.</span>
-        })()}
-      </div>
-      <div className="dash-add">
-        <label className="dash-name">Tab name <input value={d.name || ''} onChange={(e) => up({ name: e.target.value })} placeholder="Client view" maxLength={32} /></label>
-        <span className="cap">Channel</span>
-        <span className="chan-toggle sm">{CC_CHANS.map(([kk, lbl]) => <button key={kk} type="button" className={(d.chan || 'all') === kk ? 'on' : ''} onClick={() => up({ chan: kk })}>{lbl}</button>)}</span>
-      </div>
-      <div className="dash-presets"><span className="cap">Start from</span>{DASH_PRESETS.map((p) => <button key={p.key} type="button" onClick={() => preset(p.key)}>{p.label}</button>)}</div>
-      {d.modules.length ? d.modules.map((m, i) => {
-        const def = DASH_MODULES.find((x) => x.type === m.type) || { label: m.type }
-        return <div className={`dash-row${isHeading(m) ? ' dash-row-h' : ''}`} key={`${m.type}:${i}`}>
-          <span className="dash-n">{i + 1}</span>
-          <div className="dash-lab"><b>{def.label}{def.internal ? <span className="dash-int">agency-internal · hidden from viewers</span> : null}</b>{def.hint ? <small>{def.hint}</small> : null}<input value={m.title || ''} onChange={(e) => setTitle(i, e.target.value)} placeholder={isHeading(m) ? 'Section title, e.g. Sales performance' : `Title shown to the client (default: ${def.label})`} maxLength={60} /></div>
-          <div className="dash-btns"><button type="button" onClick={() => move(i, -1)} disabled={i === 0} title="Move up">▲</button><button type="button" onClick={() => move(i, 1)} disabled={i === d.modules.length - 1} title="Move down">▼</button><button type="button" onClick={() => remove(i)} title="Remove">✕</button></div>
-        </div>
-      }) : <div className="cap">No modules yet. Add one below, or start from a preset.</div>}
-      <div className="dash-add">
-        <select value={pick} onChange={(e) => setPick(e.target.value)}>
-          <option value="">Add a module…</option>
-          {groups.map((g) => <optgroup key={g} label={g}>{avail.filter((m) => m.group === g).map((m) => <option key={m.type} value={m.type} disabled={used.has(m.type)}>{m.label}{used.has(m.type) ? ' (added)' : ''}</option>)}</optgroup>)}
-        </select>
-        <button type="button" className="set-relink" onClick={() => add(pick)} disabled={!pick || used.has(pick)}>Add</button>
-      </div>
-      <div className="dash-add">
-        <button type="button" className="set-open" onClick={save} disabled={!dirty || !d.modules.length}>{saved ? 'Save changes' : 'Create dashboard'}</button>
-        {saved ? <button type="button" className="set-relink" onClick={clear}>Remove dashboard</button> : null}
-        {savedAt && !dirty ? <span className="cap">Saved. Open the client view and pick the <b>{d.name || 'Client view'}</b> tab.</span> : dirty ? <span className="cap">Unsaved changes.</span> : null}
-      </div>
-    </div>
-  )
-}
-function SettingsEditModal({ client: c, names, currency, canManageAccounts, onClose, onOpen, onRelink }) {
-  const canLink = (c.meta || c.google) && c.ghl
-  const nm = (kind, id) => (names && id ? names[kind][normId(id)] : null)
-  useSettingsSync()
-  const bizType = loadBizType(c.id)
-  const [cashOn, setCashOn] = useState(() => loadCashOn(c.id))
-  const [name, setName] = useState(c.name || '')
-  const [industry, setIndustry] = useState(c.industry || '')
-  const [savedDetails, setSavedDetails] = useState(false)
-  const [confirmDel, setConfirmDel] = useState(false)
-  const doDelete = () => { deleteClient(c.id); onClose() }
-  const dirty = name.trim() !== (c.name || '') || industry !== (c.industry || '')
-  const saveDetails = () => {
-    if (!name.trim()) return
-    saveCustomClient(c.id, {
-      name: name.trim(), industry: industry.trim() || null,
-      meta: c.meta || null, google: c.google || null, ghl: c.ghl || null, ga4: c.ga4 || null,
-      metaName: nm('meta', c.meta) || c.metaName || null, googleName: nm('google', c.google) || c.googleName || null, ghlName: nm('ghl', c.ghl) || c.ghlName || null,
-    })
-    setSavedDetails(true); setTimeout(() => setSavedDetails(false), 1500)
-  }
-  // Cache-buster tied to the linked accounts, so relinking a client bypasses
-  // the 10-min CDN cache on the blend/attribution/calendar responses.
-  const sig = normId(c.ghl) + '-' + normId(c.meta) + '-' + normId(c.google)
-  // The brand-profile editor ("Overview") is hidden from the tab strip. Its
-  // component stays, since the Creative Cockpit still reads what was filled in;
-  // it just no longer earns a tab nobody opened.
-  // Grouped, so eleven destinations read as four ideas rather than a strip
-  // that wraps onto two lines. Each entry: [key, label, group, hint].
-  const tabs = [['summary', 'Summary', 'Account', 'Name, linked accounts, logo']]
-  if (c.ghl) tabs.push(['timing', 'Timing', 'Account', 'Timezone, sales cycle, work hours, maturity'])
-  if (canManageAccounts) tabs.push(['dashboard', 'Custom dashboard', 'Account', 'Compose a view from existing modules'])
-  if (c.ghl) tabs.push(['keyevents', 'Key events', 'Tracking', 'The stages and calendars that count as progress'])
-  if (c.meta) tabs.push(['metaconv', 'Meta conversions', 'Tracking', 'Which Meta result counts as a lead'])
-  if (canLink) tabs.push(['links', 'Campaign links', 'Tracking', 'Campaign → pipeline'])
-  if (canLink) tabs.push(['aliases', 'UTM aliases', 'Tracking', 'Renamed campaigns, ad sets, creatives'])
-  if (c.ghl) tabs.push(['qualstage', 'Qualified lead', 'Tracking', 'The stage that means qualified'])
-  if (c.ghl) tabs.push(['forms', 'Forms', 'Tracking', 'Form → pipeline, and notes'])
-  if (c.meta || c.google || c.ghl) tabs.push(['kpis', 'KPI targets', 'Targets', 'Budget, funnel and efficiency targets'])
-  if (c.ghl) tabs.push(['geo', 'Catchment', 'Targets', 'Where the leads should come from'])
-  if (c.ghl) tabs.push(['goals', 'Goals', 'Targets', 'Business, pipeline and rep targets'])
-  if (c.ghl && bizType === 'clinic') tabs.push(['clinic', 'Clinic', 'Operations', 'Practitioners and appointment types'])
-  tabs.push(['optlog', 'Optimisation Log', 'Operations', 'The Google Sheet of changes made'])
-  if (c.ghl && (c.meta || c.google)) tabs.push(['diagnostics', 'Diagnostics', 'Operations', 'Is tracking actually working'])
-  const groups = [...new Set(tabs.map((t) => t[2]))]
-  // The last tab opened for this client is where it reopens: someone setting
-  // KPI targets across ten clients should not land on Summary ten times.
-  const tabKey = `caalano_set_tab:${c.id}`
-  const [tab, setTabRaw] = useState(() => { try { const t = localStorage.getItem(tabKey); return t && tabs.some((x) => x[0] === t) ? t : 'summary' } catch { return 'summary' } })
-  const setTab = (t) => { setTabRaw(t); try { localStorage.setItem(tabKey, t) } catch { /* private mode */ } }
-  // ↑ / ↓ move through the list, so the whole of a client's setup can be
-  // walked without reaching for the mouse.
-  const onNavKey = (e) => {
-    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return
-    e.preventDefault()
-    const i = tabs.findIndex((x) => x[0] === tab)
-    const n = tabs[(i + (e.key === 'ArrowDown' ? 1 : tabs.length - 1)) % tabs.length]
-    if (n) setTab(n[0])
-  }
-  return (
-    <div className="modal-bg" onClick={onClose}>
-      <div className="modal set-modal" onClick={(e) => e.stopPropagation()}>
-        <div className="m-head">
-          <div className="set-modal-title"><Avatar id={c.id} name={name || c.name} i={0} sm /><div><h3>{name || c.name}</h3><span className="cap">{industry || (c.custom ? 'Added client' : 'Configuration')}</span></div></div>
-          <div className="set-modal-actions">
-            <button className="set-open" onClick={onOpen} title="Open this client's performance workspace">Open Client View ↗</button>
-            <button className="icon-btn" onClick={onClose}>✕</button>
-          </div>
-        </div>
-        <div className="set-split">
-          <nav className="set-nav" aria-label="Client settings" onKeyDown={onNavKey}>
-            {groups.map((g) => (
-              <div className="set-nav-grp" key={g}>
-                <div className="set-nav-glab">{g}</div>
-                {tabs.filter((t) => t[2] === g).map(([k, lbl, , hint]) => (
-                  <button key={k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>
-                    <span className="set-nav-l">{lbl}</span><span className="set-nav-h">{hint}</span>
-                  </button>
-                ))}
-              </div>
-            ))}
-          </nav>
-          <select className="set-nav-select" value={tab} onChange={(e) => setTab(e.target.value)} aria-label="Client settings section">
-            {groups.map((g) => <optgroup key={g} label={g}>{tabs.filter((t) => t[2] === g).map(([k, lbl]) => <option key={k} value={k}>{lbl}</option>)}</optgroup>)}
-          </select>
-        <div className="m-body set-tabbody">
-          {tab === 'summary' && <div className="set-summary">
-            <div className="set-details">
-              <div className="set-field"><label>Client name</label><input value={name} onChange={(e) => setName(e.target.value)} /></div>
-              <div className="set-field"><label>Description / Industry</label><input value={industry} onChange={(e) => setIndustry(e.target.value)} placeholder="e.g. Pool builder (trades, high-ticket)" /></div>
-              <div className="set-field set-field-sm"><label>Type of business</label>
-                <select value={bizType} onChange={(e) => saveBizType(c.id, e.target.value)} title="Clinic shows the Clinic tab here and in the client view; the rest are descriptive">
-                  {BIZ_TYPES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-                </select></div>
-              <div className="set-field set-field-sm"><label>Cash collected</label>
-                <label className="set-check" title="Reads the numeric opportunity field named 'Cash Collected' in Caalano Systems - a running total of what each won deal has paid. Shows cash collected, cash ROAS, paid in full and outstanding on Caalano360.">
-                  <input type="checkbox" checked={cashOn} onChange={(e) => { saveCashOn(c.id, e.target.checked); setCashOn(e.target.checked) }} /> Show cash position on Caalano360
-                </label></div>
-              <button className="set-details-save" disabled={!dirty || !name.trim()} onClick={saveDetails}>{savedDetails ? '✓ Saved' : 'Save details'}</button>
-            </div>
-            <div className="set-sec-t">Linked accounts</div>
-            <div className="set-linked">
-              <div className="set-linked-row"><span className="set-linked-l"><span className="ov-pd meta">Meta</span></span><span className="set-linked-v">{c.meta ? <><b>{nm('meta', c.meta) || c.metaName || 'Linked'}</b> <code>{c.meta}</code></> : <span className="cap">Not linked</span>}</span></div>
-              <div className="set-linked-row"><span className="set-linked-l"><span className="ov-pd google">Google</span></span><span className="set-linked-v">{c.google ? <><b>{nm('google', c.google) || c.googleName || 'Linked'}</b> <code>{c.google}</code></> : <span className="cap">Not linked</span>}</span></div>
-              <div className="set-linked-row"><span className="set-linked-l"><span className="ov-pd" style={{ background: '#12b886' }}>CRM</span></span><span className="set-linked-v">{c.ghl ? <><b>{nm('ghl', c.ghl) || c.ghlName || 'Linked'}</b> <code>{c.ghl}</code></> : <span className="cap">Not linked</span>}</span></div>
-            </div>
-            {canManageAccounts ? <button className="set-relink" onClick={onRelink} title="Change which Caalano Systems / Meta / Google accounts this client links to">✎ Edit linked accounts</button> : <p className="cap" style={{ margin: '4px 0 0' }}>🔒 Only a Super Admin can change or remove the linked accounts.</p>}
-            <LogoField clientId={c.id} name={name || c.name} />
-            {canManageAccounts && (
-              <div className="set-danger">
-                <div className="set-sec-t">Delete client</div>
-                <p className="cap" style={{ marginTop: 0 }}>Removes <b>{c.name}</b> from every list - the dashboard, sidebar, Settings and agency aggregates. Its per-client settings (key events, KPIs, notes) are kept in case you re-add it later.{c.custom ? '' : ' This account is defined in the app; deleting hides it everywhere (a Super Admin can restore it).'}</p>
-                {confirmDel
-                  ? <div className="set-danger-confirm"><span>Delete <b>{c.name}</b>?</span><button className="set-del-yes" onClick={doDelete}>Yes, delete</button><button className="btn-ghost sm" onClick={() => setConfirmDel(false)}>Cancel</button></div>
-                  : <button className="set-del-btn" onClick={() => setConfirmDel(true)}>🗑 Delete client</button>}
-              </div>
-            )}
-          </div>}
-          {tab === 'keyevents' && <div className="set-tabpane"><div className="set-sec-t">Key events</div><KeyEventsEditor clientId={c.id} embedded nonce={sig} /></div>}
-          {tab === 'timing' && <div className="set-tabpane"><TimingSettings clientId={c.id} hasMeta={!!c.meta} /></div>}
-          {tab === 'dashboard' && canManageAccounts && <div className="set-tabpane"><div className="set-sec-t">Custom dashboard</div><DashboardBuilder client={c} /></div>}
-          {tab === 'geo' && <GeoSettings clientId={c.id} />}
-          {tab === 'goals' && <div className="set-tabpane"><div className="set-sec-t">Goals - business, pipeline and rep targets</div><GoalsEditor clientId={c.id} currency={c.currency} /></div>}
-          {tab === 'clinic' && <ClinicSettings clientId={c.id} nonce={sig} />}
-          {tab === 'metaconv' && <div className="set-tabpane"><div className="set-sec-t">Meta conversions - primary &amp; secondary results</div><MetaConversionsEditor clientId={c.id} currency={currency} /></div>}
-          {tab === 'links' && <div className="set-tabpane"><div className="set-sec-t">Link campaigns to pipelines</div><CampaignLinker clientId={c.id} embedded nonce={sig} /></div>}
-          {tab === 'kpis' && <div className="set-tabpane"><div className="set-sec-t">KPI targets</div><KpiEditor clientId={c.id} embedded nonce={sig} /></div>}
-          {tab === 'forms' && <div className="set-tabpane"><div className="set-sec-t">Forms - link to a pipeline &amp; add notes</div><p className="cap" style={{ marginTop: 0 }}>Set each form's pipeline and notes here. The client's Forms tab shows these (and its full performance).</p><FormsSettingsTab clientId={c.id} /></div>}
-          {tab === 'aliases' && <div className="set-tabpane"><div className="set-sec-t">UTM aliases - link renamed campaigns / ad sets / creatives</div><AliasEditor clientId={c.id} nonce={sig} /></div>}
-          {tab === 'qualstage' && <div className="set-tabpane"><div className="set-sec-t">Qualified lead - stage per pipeline</div><QualStageEditor clientId={c.id} nonce={sig} /></div>}
-          {tab === 'optlog' && <div className="set-tabpane"><div className="set-sec-t">Optimisation Log - Google Sheet</div><OptLogSettings clientId={c.id} /></div>}
-          {tab === 'diagnostics' && <div className="set-tabpane"><ClientTrackingDiagnostics clientId={c.id} currency={currency} embedded nonce={sig} /></div>}
-        </div>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// Catches render errors in a view so one bad client/component shows a message
-// with a way back instead of blanking the whole app to a white screen.
 class ErrorBoundary extends React.Component {
   constructor(p) { super(p); this.state = { err: null } }
   static getDerivedStateFromError(err) { return { err } }
@@ -19962,7 +16227,7 @@ function saveAnnot(on) {
   SETTINGS.annotations = { on: !!on }
   writeLS(ANNOT_KEY, SETTINGS.annotations); saveSettingsRemote({ annotations: { on: !!on } }); bumpSettings()
 }
-function Caveat({ extra, children, ...rest }) {
+export function Caveat({ extra, children, ...rest }) {
   const isSuper = React.useContext(SuperCtx)
   useSettingsSync()
   if (!isSuper || !loadAnnot()) return null
@@ -19971,7 +16236,7 @@ function Caveat({ extra, children, ...rest }) {
 // Super-Admin-only switch for the methodology prose. The value is stored
 // globally, but the prose only ever renders for a Super Admin, so in practice
 // this is a switch on your own view - nobody else's screen changes when it moves.
-function AnnotationToggle() {
+export function AnnotationToggle() {
   useSettingsSync()
   const on = loadAnnot()
   return (
@@ -20003,7 +16268,7 @@ function AuthShell({ children }) {
 }
 // Frontend mirror of the server permission helpers (UI gating only - the API
 // enforces the same rules server-side). A null user = legacy/basic-auth = full.
-const isAdminishFE = (r) => r === 'admin' || r === 'superadmin'
+export const isAdminishFE = (r) => r === 'admin' || r === 'superadmin'
 const RANK_FE = { superadmin: 3, admin: 2, user: 1, viewer: 0 }
 const rankOfFE = (r) => (RANK_FE[r] != null ? RANK_FE[r] : 0)
 // Can an actor with this role manage a target of that role? (mirrors the server)
@@ -20017,7 +16282,7 @@ function canSeeClientFE(user, id) {
 // Five tiers, named the way the CRM names them. The two client-side tiers
 // ("account_*") are where the old code said "viewer"; that name is still
 // accepted from older records and means Account Admin.
-const isClientRoleFE = (r) => r === 'account_admin' || r === 'account_user' || r === 'viewer'
+export const isClientRoleFE = (r) => r === 'account_admin' || r === 'account_user' || r === 'viewer'
 function allowedTabsFE(user, offered) {
   if (!user) return offered
   if (user.role === 'account_user') { const only = offered.filter((t) => t.id === 'actions'); return only.length ? only : offered.slice(0, 1) }
@@ -20026,9 +16291,9 @@ function allowedTabsFE(user, offered) {
   const keep = offered.filter((t) => user.tabs.includes(t.id))
   return keep.length ? keep : offered.slice(0, 1)
 }
-const ROLE_LABEL = { superadmin: 'Super Admin', admin: 'Agency Admin', user: 'Agency User', account_admin: 'Account Admin', viewer: 'Account Admin', account_user: 'Account User' }
+export const ROLE_LABEL = { superadmin: 'Super Admin', admin: 'Agency Admin', user: 'Agency User', account_admin: 'Account Admin', viewer: 'Account Admin', account_user: 'Account User' }
 const isAccountUser = (u) => !!(u && u.role === 'account_user')
-const roleLabelOf = (u) => (u ? (ROLE_LABEL[u.role] || u.role) : '')
+export const roleLabelOf = (u) => (u ? (ROLE_LABEL[u.role] || u.role) : '')
 // Super Admin only: pick a person, or a role, and see the app as they do. The
 // people come from the same users list Settings shows; the two role presets
 // stand in for "a typical viewer" and "a typical admin" when no one specific
@@ -20202,7 +16467,7 @@ function AcceptInvite({ token, onSignedIn }) {
 // Team & access manager, shown inside Settings for admins.
 // What a newly invited client starts with. Everything else is a deliberate tick.
 const VIEWER_DEFAULT_TABS = ['users']
-const TAB_OPTIONS = [
+export const TAB_OPTIONS = [
   { id: 'overall', label: 'Caalano360' }, { id: 'custom', label: 'Custom dashboard' }, { id: 'meta', label: 'Meta Ads' }, { id: 'google', label: 'Google Ads' },
   { id: 'analytics', label: 'Analytics' }, { id: 'cohorts', label: 'Cohorts' }, { id: 'users', label: 'Users' },
   { id: 'calls', label: 'Call Reporting' }, { id: 'forms', label: 'Forms' }, { id: 'location', label: 'Location' },
@@ -20520,7 +16785,7 @@ function UserAccessModal({ user, clients, authUser, onClose, onChanged }) {
     </div>
   )
 }
-function UsersAdmin({ authUser, authEnabled, clients }) {
+export function UsersAdmin({ authUser, authEnabled, clients }) {
   const [state, setState] = useState({ status: 'loading', users: [] })
   const [modal, setModal] = useState(null) // { user } to edit, { invite: true } to invite
   // Team table sort - defaults to Role in order of access (Super Admin first).
@@ -20668,7 +16933,7 @@ function UsersAdmin({ authUser, authEnabled, clients }) {
 // Sign out of every device. The response to a lost laptop or a session you
 // think has been copied - without it, a stolen cookie stays valid for its full
 // two-week life no matter what you change.
-function SignOutEverywhereCard() {
+export function SignOutEverywhereCard() {
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState(null)
   const go = async () => {
@@ -21013,7 +17278,7 @@ const bumpVersion = (v) => {
   return parts.join('.')
 }
 
-function TermsAdmin({ authUser }) {
+export function TermsAdmin({ authUser }) {
   const [st, setSt] = useState({ status: 'loading' })
   const [draft, setDraft] = useState(null)
   const [resign, setResign] = useState(false)
@@ -21187,7 +17452,7 @@ function TermsAdmin({ authUser }) {
 
 /* The signed register - who accepted, when, on what version, and the signature
    they gave. This is the artefact the whole feature exists to produce. */
-function TermsRegister() {
+export function TermsRegister() {
   const [st, setSt] = useState({ status: 'loading', rows: [], current: null })
   const [open, setOpen] = useState(null)
   const load = () => {
@@ -21357,7 +17622,7 @@ function TermsRecordModal({ rec, onClose }) {
     </div>
   )
 }
-function ChangePasswordCard() {
+export function ChangePasswordCard() {
   const [f, setF] = useState({ current: '', next: '', next2: '' })
   const [msg, setMsg] = useState(null)
   const [busy, setBusy] = useState(false)
@@ -21387,12 +17652,12 @@ function ChangePasswordCard() {
 // creative styles (instant, deterministic) or from AI (bespoke). Save the good
 // ones to a per-client (or general Research) board. This is v1 - deliberately a
 // strong foundation to build on.
-const CC_FORMATS = [
+export const CC_FORMATS = [
   { id: 'video', label: 'Video', emoji: '🎬', hint: 'Short-form vertical - Reels / Stories / TikTok' },
   { id: 'image', label: 'Image', emoji: '🖼️', hint: 'Single static graphic or photo' },
   { id: 'carousel', label: 'Carousel', emoji: '🎠', hint: 'Multi-card swipe (great for steps / proof)' },
 ]
-const CC_CTAS = [
+export const CC_CTAS = [
   { id: 'book', label: 'Book a call', line: 'Book your free consult', verb: 'book a free call' },
   { id: 'magnet', label: 'Lead magnet', line: 'Download the free guide', verb: 'grab the free guide' },
   { id: 'enquiry', label: 'Enquiry / quote', line: 'Get your free quote', verb: 'request a quote' },
@@ -21401,7 +17666,7 @@ const CC_CTAS = [
   { id: 'event', label: 'Webinar / event', line: 'Save your seat', verb: 'register' },
   { id: 'visit', label: 'Learn more', line: 'See how it works', verb: 'learn more' },
 ]
-const CC_ANGLES = [
+export const CC_ANGLES = [
   { id: 'pain', label: 'Pain-led', desc: 'Lead with the problem / frustration' },
   { id: 'aspiration', label: 'Aspirational', desc: 'Paint the dream outcome' },
   { id: 'authority', label: 'Authority', desc: 'Expertise, credentials, method' },
@@ -21411,9 +17676,9 @@ const CC_ANGLES = [
   { id: 'contrarian', label: 'Contrarian', desc: 'Challenge a common belief' },
   { id: 'education', label: 'Educational', desc: 'Teach something useful first' },
 ]
-const CC_AUD_SUGGEST = ['Cold / new', 'Warm / retargeting', 'Homeowners', 'Business owners', 'Parents', 'Local area', 'High-intent', 'Budget-conscious', 'Premium buyers']
+export const CC_AUD_SUGGEST = ['Cold / new', 'Warm / retargeting', 'Homeowners', 'Business owners', 'Parents', 'Local area', 'High-intent', 'Budget-conscious', 'Premium buyers']
 // The researched library of paid-social creative styles for service / lead-gen.
-const CC_STYLES = [
+export const CC_STYLES = [
   { id: 'before-after', name: 'Before & After', emoji: '🔄', desc: 'Show the transformation: the old / broken state, then the finished result.', why: 'Transformation is the most scroll-stopping proof a service can show.', formats: ['video', 'image', 'carousel'], ctas: ['enquiry', 'book', 'magnet'], angles: ['aspiration', 'proof', 'curiosity'], hooks: ["You won't believe what this looked like 6 weeks ago…", 'From this… to THIS.', "{aud} thought it couldn't be saved. Watch."], structure: ['Open on the raw "before"', 'Fast cuts of the work in progress', 'Reveal the finished "after"', 'Name the timeframe + result', 'CTA: {cta}'] },
   { id: 'face-camera', name: 'Face to Camera (UGC)', emoji: '🗣️', desc: 'Founder or happy customer talking straight down the lens, phone-shot, authentic.', why: 'Feels like a friend\'s recommendation, not an ad - beats polished production for cold traffic.', formats: ['video'], ctas: ['book', 'enquiry', 'magnet', 'message'], angles: ['authority', 'pain', 'education'], hooks: ['If you\'re {aud}, stop scrolling - this is for you.', 'Three things I wish every client knew before they started.', 'I need to be honest about something in our industry.'], structure: ['Pattern-interrupt hook, straight to camera', 'One clear problem it solves', 'Proof or quick example', 'What to do next', 'CTA: {cta}'] },
   { id: 'podcast', name: 'Podcast Clip', emoji: '🎙️', desc: 'A short, punchy clip framed like a podcast / interview moment with captions.', why: 'Conversational authority - feels like earned media, not an ad. Highly bingeable.', formats: ['video'], ctas: ['book', 'magnet', 'visit'], angles: ['authority', 'contrarian', 'education'], hooks: ['"Most {aud} get this completely wrong."', '"Here\'s what nobody tells you about…"', '"The biggest mistake I see every week is…"'], structure: ['Cold open on a bold spoken claim', 'Two-shot / mic-in-frame podcast look', 'One insight, told as a story', 'Big captioned takeaway line', 'CTA: {cta}'] },
@@ -21435,11 +17700,11 @@ const CC_STYLES = [
   { id: 'offer', name: 'Offer / Promo', emoji: '🏷️', desc: 'A clear, time-bound offer or seasonal hook.', why: 'Direct-response workhorse for warm audiences and seasonal pushes.', formats: ['image', 'video', 'carousel'], ctas: ['enquiry', 'book', 'event'], angles: ['urgency', 'aspiration'], hooks: ['This month only: {offer}.', '{Season} is coming - book before it\'s gone.', 'We\'ve got {n} spots left this {period}.'], structure: ['Lead with the offer', 'What\'s included / the value', 'The deadline / scarcity', 'Reassure (guarantee / proof)', 'CTA: {cta}'] },
   { id: 'stat', name: 'Stat / Data-led', emoji: '📊', desc: 'A surprising statistic anchors the message.', why: 'A sharp number earns instant credibility and curiosity.', formats: ['image', 'video', 'carousel'], ctas: ['magnet', 'book', 'visit'], angles: ['authority', 'curiosity', 'education'], hooks: ['87% of {aud} don\'t know this.', '{Big number} - here\'s what it means for you.', 'The number that should worry every {aud}.'], structure: ['Reveal the stat', 'Why it matters to them', 'What it means for their decision', 'CTA: {cta}'] },
 ]
-const ccFindF = (id) => CC_FORMATS.find((x) => x.id === id)
-const ccFindC = (id) => CC_CTAS.find((x) => x.id === id)
-const ccFindA = (id) => CC_ANGLES.find((x) => x.id === id)
+export const ccFindF = (id) => CC_FORMATS.find((x) => x.id === id)
+export const ccFindC = (id) => CC_CTAS.find((x) => x.id === id)
+export const ccFindA = (id) => CC_ANGLES.find((x) => x.id === id)
 const ccFill = (str, audience, ctaId) => { const aud = (audience && audience.trim()) || 'the right people'; const c = ccFindC(ctaId); return String(str || '').replace(/\{aud\}/g, aud).replace(/\{cta\}/g, c ? c.verb : 'take the next step') }
-function ccBuild({ format, style, cta, audience, angle }, n = 6) {
+export function ccBuild({ format, style, cta, audience, angle }, n = 6) {
   let pool = style ? CC_STYLES.filter((s) => s.id === style)
     : CC_STYLES.filter((s) => (!format || s.formats.includes(format)) && (!cta || s.ctas.includes(cta)) && (!angle || s.angles.includes(angle)))
   if (!pool.length) pool = style ? CC_STYLES.filter((s) => s.id === style) : CC_STYLES
@@ -21453,10 +17718,10 @@ function ccBuild({ format, style, cta, audience, angle }, n = 6) {
   return out
 }
 // Curator board persistence (server-synced like every other setting).
-function loadBoard(key) { return (SETTINGS.curator && SETTINGS.curator[key]) || [] }
-function saveBoard(key, list) { SETTINGS.curator = { ...(SETTINGS.curator || {}), [key]: list }; writeLS(CURATOR_KEY, SETTINGS.curator); saveSettingsRemote({ curator: { [key]: list } }); bumpSettings() }
+export function loadBoard(key) { return (SETTINGS.curator && SETTINGS.curator[key]) || [] }
+export function saveBoard(key, list) { SETTINGS.curator = { ...(SETTINGS.curator || {}), [key]: list }; writeLS(CURATOR_KEY, SETTINGS.curator); saveSettingsRemote({ curator: { [key]: list } }); bumpSettings() }
 
-function CcChips({ options, value, onChange, anyLabel = 'Any' }) {
+export function CcChips({ options, value, onChange, anyLabel = 'Any' }) {
   return (
     <div className="cc-chips">
       <button className={`cc-chip${value == null ? ' on' : ''}`} onClick={() => onChange(null)}>{anyLabel}</button>
@@ -21464,7 +17729,7 @@ function CcChips({ options, value, onChange, anyLabel = 'Any' }) {
     </div>
   )
 }
-function CcConceptCard({ c, saved, onSave }) {
+export function CcConceptCard({ c, saved, onSave }) {
   const f = ccFindF(c.format), ct = ccFindC(c.cta), an = ccFindA(c.angle)
   return (
     <div className="cc-card">
@@ -21484,3153 +17749,29 @@ function CcConceptCard({ c, saved, onSave }) {
     </div>
   )
 }
-function CreativeCuratorPage({ clients }) {
-  useSettingsSync()
-  const [scope, setScope] = useState('research')
-  const [clientId, setClientId] = useState(() => (clients[0] && clients[0].id) || null)
-  const client = clients.find((c) => c.id === clientId) || null
-  const boardKey = scope === 'client' && clientId ? `c:${clientId}` : 'research'
-  const board = loadBoard(boardKey)
-  const savedIds = new Set(board.map((b) => b.id))
-  const [format, setFormat] = useState(null)
-  const [styleId, setStyleId] = useState(null)
-  const [cta, setCta] = useState(null)
-  const [angle, setAngle] = useState(null)
-  const [audience, setAudience] = useState('')
-  const [concepts, setConcepts] = useState([])
-  const [ai, setAi] = useState({ status: 'idle', text: null, error: null, at: null })
-  const [libOpen, setLibOpen] = useState(false)
-  const gen = () => setConcepts(ccBuild({ format, style: styleId, cta, audience, angle }, 6))
-  const genAI = async () => {
-    setAi({ status: 'loading', text: null, error: null, at: null })
-    try {
-      const sObj = CC_STYLES.find((s) => s.id === styleId)
-      const payload = { mode: 'creative-curator', scope, clientName: client && scope === 'client' ? client.name : null, industry: (client && (client.industry || client.vertical)) || null,
-        clientContext: scope === 'client' && clientId ? [profileText(clientId), loadClientCtx(clientId)].filter((s) => s && s.trim()).join('\n\n') : '',
-        format: format ? ccFindF(format).label : null, style: sObj ? sObj.name : null, cta: cta ? ccFindC(cta).label : null, audience: audience.trim() || null, angle: angle ? ccFindA(angle).label : null,
-        avoid: board.map((b) => `${b.styleName}: ${b.hook}`).slice(0, 12) }
-      const r = await fetch('/.netlify/functions/insights', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) })
-      const j = await r.json().catch(() => ({}))
-      if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`)
-      setAi({ status: 'ok', text: j.insights, error: null, at: j.generatedAt || new Date().toISOString() })
-    } catch (e) { setAi({ status: 'err', text: null, error: String(e.message || e), at: null }) }
-  }
-  const save = (c) => { if (savedIds.has(c.id)) return; saveBoard(boardKey, [{ ...c, savedAt: Date.now() }, ...board]) }
-  const removeSaved = (id) => saveBoard(boardKey, board.filter((b) => b.id !== id))
-  return (
-    <>
-      <div className="lvl-title">Creative Curator <span className="sub">· strategise new creatives from Format × Style × CTA × Audience × Angle · {scope === 'client' && client ? client.name : 'general research'}</span></div>
-      <div className="cc-modebar">
-        <div className="chan-toggle sm">
-          <button className={scope === 'research' ? 'on' : ''} onClick={() => setScope('research')}>🔎 Research</button>
-          <button className={scope === 'client' ? 'on' : ''} onClick={() => setScope('client')}>🎯 Client deep-dive</button>
-        </div>
-        {scope === 'client' && <select className="cc-client-sel" value={clientId || ''} onChange={(e) => setClientId(e.target.value)}>{clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select>}
-        <span className="cap">{scope === 'research' ? 'General ideas for a service / lead-gen business. Board saved under Research.'
-          : clientId && profileFilled(clientId) ? `AI uses this client's brand profile (${profileFilled(clientId)}/${PROFILE_FIELDS.length} sections filled).`
-            : 'Ideas are general until a brand profile is filled in for this client.'}</span>
-      </div>
-      <div className="card cc-builder">
-        <div className="cc-row"><span className="cc-row-l">Format</span><CcChips options={CC_FORMATS} value={format} onChange={setFormat} /></div>
-        <div className="cc-row"><span className="cc-row-l">Style</span><CcChips options={CC_STYLES} value={styleId} onChange={setStyleId} /></div>
-        <div className="cc-row"><span className="cc-row-l">Call to action</span><CcChips options={CC_CTAS} value={cta} onChange={setCta} /></div>
-        <div className="cc-row"><span className="cc-row-l">Angle</span><CcChips options={CC_ANGLES} value={angle} onChange={setAngle} /></div>
-        <div className="cc-row"><span className="cc-row-l">Audience</span><div className="cc-aud"><input className="cc-aud-in" placeholder="e.g. Sydney homeowners with a tired old pool" value={audience} onChange={(e) => setAudience(e.target.value)} /><div className="cc-chips">{CC_AUD_SUGGEST.map((a) => <button key={a} className="cc-chip sm" onClick={() => setAudience(a)}>{a}</button>)}</div></div></div>
-        <div className="cc-actions">
-          <button className="cc-gen" onClick={gen}>✨ Generate ideas</button>
-          <button className="cc-gen cc-gen-ai" onClick={genAI} disabled={ai.status === 'loading'}>{ai.status === 'loading' ? <><span className="spin sm" /> Thinking…</> : '🤖 Generate with AI'}</button>
-          {(format || styleId || cta || angle || audience) && <button className="cc-clear" onClick={() => { setFormat(null); setStyleId(null); setCta(null); setAngle(null); setAudience('') }}>Clear</button>}
-        </div>
-      </div>
-      {ai.status === 'err' && <div className="card"><p className="cap" style={{ margin: 0 }}>AI couldn’t generate this time: {ai.error}. The instant library still works - hit “Generate ideas”.</p></div>}
-      {ai.status === 'ok' && ai.text && <div className="card cc-ai"><div className="cc-ai-h">🤖 AI concepts <span className="cap">· {scope === 'client' && client ? client.name : 'research'}</span></div><MdText text={ai.text} /></div>}
-      {concepts.length > 0 && <>
-        <div className="lvl-title" style={{ marginTop: 16 }}>Concepts <span className="sub">· from the library · click ☆ to save to your board</span></div>
-        <div className="cc-grid">{concepts.map((c) => <CcConceptCard key={c.id} c={c} saved={savedIds.has(c.id)} onSave={save} />)}</div>
-      </>}
-      {concepts.length === 0 && ai.status === 'idle' && <div className="card cc-empty"><div className="big">🎨</div><b>Pick any mix of Format · Style · CTA · Angle · Audience</b><p style={{ maxWidth: 520, margin: '8px auto 0' }}>…then hit <b>Generate ideas</b> for instant concept briefs from the library, or <b>Generate with AI</b> for bespoke ones. Leave anything on “Any” to range wider. Star the good ones to build your board.</p></div>}
-      <div className="lvl-title" style={{ marginTop: 18 }}>★ Saved board <span className="sub">· {scope === 'client' && client ? client.name : 'Research'} · {board.length} concept{board.length === 1 ? '' : 's'}</span></div>
-      {board.length === 0 ? <div className="card"><p className="cap" style={{ margin: 0 }}>Nothing saved yet. Star concepts above to collect them here - the board is saved and shared with your team.</p></div>
-        : <div className="cc-grid">{board.map((c) => <div className="cc-card cc-card-saved" key={c.id}>
-            <div className="cc-card-h"><span className="cc-card-style">{c.emoji} {c.styleName}</span><button className="cc-star on" title="Remove from board" onClick={() => removeSaved(c.id)}>✕ Remove</button></div>
-            <div className="cc-badges">{ccFindF(c.format) && <span className="cc-badge">{ccFindF(c.format).emoji} {ccFindF(c.format).label}</span>}{ccFindC(c.cta) && <span className="cc-badge cc-badge-cta">{ccFindC(c.cta).label}</span>}{ccFindA(c.angle) && <span className="cc-badge cc-badge-ang">{ccFindA(c.angle).label}</span>}{c.audience && <span className="cc-badge cc-badge-aud">{c.audience}</span>}</div>
-            <div className="cc-hook"><span className="cc-lab">Hook</span>{c.hook}</div>
-            <div className="cc-struct"><span className="cc-lab">Structure</span><ol>{(c.structure || []).map((b, i) => <li key={i}>{b}</li>)}</ol></div>
-          </div>)}</div>}
-      <div className="lvl-title" style={{ marginTop: 18 }}><button className="cc-liblink" onClick={() => setLibOpen((o) => !o)}>{libOpen ? '▾' : '▸'} Creative style library <span className="sub">· {CC_STYLES.length} researched styles · what they are & when to use them</span></button></div>
-      {libOpen && <div className="cc-lib">{CC_STYLES.map((s) => <div className="cc-lib-item" key={s.id}>
-        <div className="cc-lib-h">{s.emoji} <b>{s.name}</b></div>
-        <p className="cc-lib-desc">{s.desc}</p>
-        <p className="cc-lib-why">💡 {s.why}</p>
-        <div className="cc-lib-meta"><span>Best formats: {s.formats.map((f) => ccFindF(f).label).join(', ')}</span><span>Pairs with: {s.ctas.map((c) => ccFindC(c).label).join(', ')}</span></div>
-      </div>)}</div>}
-    </>
-  )
-}
+// ---- Creative Cockpit, Meta Insights and Client Update: src/views/creative.jsx, loaded on first open ----
+const MetaInsightsPage = lazyView(() => import('./views/creative.jsx'), 'MetaInsightsPage')
+const CreativeCockpitPage = lazyView(() => import('./views/creative.jsx'), 'CreativeCockpitPage')
+const ClientUpdatePage = lazyView(() => import('./views/creative.jsx'), 'ClientUpdatePage')
 
-/* ============ Shell ============ */
-/* ============ Creative Cockpit ============ */
-// A hub for creative insight, performance and strategy: every Meta creative in
-// one grid, with fillable categorisation columns (awareness stage, persona,
-// angle, format, destination, CTA, copy) that save to the client and feed
-// reusable dropdowns, joined to the real lead funnel behind each ad so we can
-// see what's working and build more like it.
-const AWARENESS_OPTS = ['Unaware', 'Problem-aware', 'Solution-aware', 'Product-aware', 'Most-aware']
-const DEST_DEFAULTS = ['Landing page', 'Meta Lead Form', 'Schedule page', 'Caalano Systems landing', 'Website']
-
-function useCreatives(clientId, range, nonce = 0) {
-  const [st, setSt] = useState({ status: 'loading', data: null })
-  const q = rangeQuery(range)
-  useEffect(() => {
-    let alive = true; setSt({ status: 'loading', data: null })
-    fetch(`/.netlify/functions/windsor?scope=creatives&client=${clientId}&${q}${nonce ? `&_r=${nonce}` : ''}`)
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error('http'))))
-      .then((j) => { if (alive) setSt({ status: j && j.error ? 'err' : 'ok', data: j }) })
-      .catch(() => { if (alive) setSt({ status: 'err', data: null }) })
-    return () => { alive = false }
-  }, [clientId, q, nonce])
-  return st
-}
-
-// Creative-fatigue signal fetch (agency Meta Fatigue tab), one client per call.
-function useFatigue(clientId, range, nonce = 0) {
-  const [st, setSt] = useState({ status: 'loading', data: null })
-  const q = rangeQuery(range)
-  useEffect(() => {
-    let alive = true; setSt({ status: 'loading', data: null })
-    fetch(`/.netlify/functions/windsor?scope=fatigue&client=${clientId}&${q}${nonce ? `&_r=${nonce}` : ''}`)
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error('http'))))
-      .then((j) => { if (alive) setSt({ status: j && j.error ? 'err' : 'ok', data: j }) })
-      .catch(() => { if (alive) setSt({ status: 'err', data: null }) })
-    return () => { alive = false }
-  }, [clientId, q, nonce])
-  return st
-}
-
-// Meta anomaly / delivery-health signal fetch, one client per call.
-function useAnomalies(clientId, range, nonce = 0) {
-  const [st, setSt] = useState({ status: 'loading', data: null })
-  const q = rangeQuery(range)
-  useEffect(() => {
-    let alive = true; setSt({ status: 'loading', data: null })
-    fetch(`/.netlify/functions/windsor?scope=anomalies&client=${clientId}&${q}${nonce ? `&_r=${nonce}` : ''}`)
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error('http'))))
-      .then((j) => { if (alive) setSt({ status: j && j.error ? 'err' : 'ok', data: j }) })
-      .catch(() => { if (alive) setSt({ status: 'err', data: null }) })
-    return () => { alive = false }
-  }, [clientId, q, nonce])
-  return st
-}
-
-// Meta's own creative-fatigue verdicts (pushed to the webhook, stored in Blobs).
-function useFatigueWebhook(clientId, range, nonce = 0) {
-  const [st, setSt] = useState({ status: 'loading', data: null })
-  const q = rangeQuery(range)
-  useEffect(() => {
-    let alive = true; setSt({ status: 'loading', data: null })
-    fetch(`/.netlify/functions/windsor?scope=fatiguewebhook&client=${clientId}&${q}${nonce ? `&_r=${nonce}` : ''}`)
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error('http'))))
-      .then((j) => { if (alive) setSt({ status: j && j.error ? 'err' : 'ok', data: j }) })
-      .catch(() => { if (alive) setSt({ status: 'err', data: null }) })
-    return () => { alive = false }
-  }, [clientId, q, nonce])
-  return st
-}
-
-// Small fatigue chip. Low = no chip (only surface what needs attention).
-function FatigueBadge({ fat }) {
-  if (!fat || fat.level === 'Low') return null
-  const cls = fat.level === 'High' ? 'fat-high' : 'fat-med'
-  return <span className={`fat-badge ${cls}`} title={(fat.reasons || []).join(' · ') || 'Creative fatigue'}>{fat.level === 'High' ? '🔥 Fatiguing' : '👀 Watch'}</span>
-}
-
-// Left-nav wrapper: pick a client, then show its cockpit. Placement is global
-// (a top-level menu item) but the data stays per-client.
-/* ============ Meta Creative Fatigue (agency-wide) ============ */
-// One card per active Meta client, each lazily pulling its own fatigue read
-// (frequency + CTR decline + quality ranking). Clients with a live signal float
-// to the top. Thresholds are shared and edited in Settings.
-function FatigueClientCard({ client, currency, range, nonce, onSummary }) {
-  const st = useFatigue(client.id, range, nonce)
-  const money = (v) => fmtCurrency(v, currency)
-  const d = st.data
-  const sum = (d && d.summary) || null
-  useEffect(() => { onSummary(client.id, sum) }, [sum && sum.high, sum && sum.medium, sum && sum.total])
-  const flagged = ((d && d.creatives) || []).filter((c) => c.level !== 'Low')
-  return (
-    <div className="card fat-card">
-      <div className="fat-card-h">
-        <div className="fat-card-nm">{client.name}</div>
-        {st.status === 'loading' ? <span className="cap">Checking…</span>
-          : sum ? <div className="fat-counts"><span className="fat-c fat-high">{fmtNumber(sum.high)} 🔥</span><span className="fat-c fat-med">{fmtNumber(sum.medium)} 👀</span><span className="fat-c fat-low">{fmtNumber(sum.low)} ok</span></div>
-            : <span className="cap">No data</span>}
-      </div>
-      {st.status === 'loading' ? <Spinner label="" />
-        : st.status === 'err' ? <div className="cap" style={{ color: 'var(--neg)' }}>Couldn’t load.</div>
-          : !flagged.length ? <div className="cap">No creatives showing fatigue in this window. 🎉</div>
-            : <div className="tbl-scroll"><table className="mini-tbl users-tbl cc-tbl">
-              <thead><tr><th className="lft">Creative</th><th className="lft">Signal</th><th>Spend</th><th>Freq</th><th>CTR trend</th><th>Quality</th></tr></thead>
-              <tbody>{flagged.map((c, i) => <tr key={c.name + i}>
-                <td className="lft"><ThumbZoom src={c.thumb} /> <span className="cc-nm" title={c.name}>{c.name}<span className="cap"> · {c.adset || c.campaign}</span></span></td>
-                <td className="lft"><FatigueBadge fat={c} /></td>
-                <td>{money(c.spend)}</td>
-                <td>{c.frequency != null ? `${c.frequency}x` : '-'}</td>
-                <td>{c.ctrDrop != null ? <span className={c.ctrDrop > 0 ? 'fat-down' : 'fat-up'}>{c.ctrDrop > 0 ? '▼' : '▲'} {Math.abs(c.ctrDrop)}%</span> : '-'}</td>
-                <td>{c.quality && c.quality !== 'UNKNOWN' ? titleCaseWord(c.quality) : '-'}</td>
-              </tr>)}</tbody>
-            </table></div>}
-    </div>
-  )
-}
-const titleCaseWord = (s) => String(s || '').toLowerCase().replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
-
-function MetaFatiguePage({ clients, currency, range, nonce }) {
-  const metaClients = [...clients].filter((c) => c.meta).sort((a, b) => a.name.localeCompare(b.name))
-  const [sums, setSums] = useState({})
-  const onSummary = React.useCallback((id, s) => setSums((p) => (p[id] === s ? p : { ...p, [id]: s })), [])
-  if (!metaClients.length) return <div className="card empty-deep"><div className="big">🔥</div><b>No clients with a Meta account yet.</b></div>
-  const agg = Object.values(sums).reduce((a, s) => s ? { high: a.high + s.high, medium: a.medium + s.medium, total: a.total + s.total } : a, { high: 0, medium: 0, total: 0 })
-  // Show clients with a live signal first, then the rest alphabetically.
-  const ordered = [...metaClients].sort((a, b) => { const sa = sums[a.id], sb = sums[b.id]; const wa = sa ? sa.high * 2 + sa.medium : -1, wb = sb ? sb.high * 2 + sb.medium : -1; return wb - wa || a.name.localeCompare(b.name) })
-  return (
-    <>
-      <div className="lvl-title">Meta Creative Fatigue <span className="sub">· {rangeLabel(range)} · {metaClients.length} active Meta clients</span></div>
-      <div className="scorecard">
-        <Sc label="Fatiguing (High)" value={fmtNumber(agg.high)} />
-        <Sc label="Watch (Medium)" value={fmtNumber(agg.medium)} />
-        <Sc label="Creatives scanned" value={fmtNumber(agg.total)} />
-      </div>
-      <Caveat>A creative-fatigue proxy computed live from Meta delivery: frequency (impressions ÷ reach), CTR decline across the first vs second half of the window, and Meta’s quality ranking. Scored to <b>High 🔥</b> (refresh now), <b>Medium 👀</b> (watch) or ok. Thresholds are shared across clients and set in <b>Settings → Creative fatigue</b>. Not Meta’s official webhook signal (that needs a Meta App with App Review) - this is our best on-platform read of the same signals.</Caveat>
-      <div className="fat-grid">{ordered.map((c) => <FatigueClientCard key={c.id} client={c} currency={currency} range={range} nonce={nonce} onSummary={onSummary} />)}</div>
-    </>
-  )
-}
-
-/* ============ Meta anomaly / delivery-health (agency-wide) ============ */
-const SEV_ICON = { high: '🔴', med: '🟠', good: '🟢' }
-function AnomalyClientCard({ client, currency, range, nonce, onSummary }) {
-  const st = useAnomalies(client.id, range, nonce)
-  const money = (v) => fmtCurrency(v, currency)
-  const d = st.data
-  const sum = (d && d.summary) || null
-  useEffect(() => { onSummary(client.id, sum) }, [sum && sum.high, sum && sum.med, sum && sum.good])
-  const alerts = (d && d.alerts) || []
-  const m = d && d.metrics
-  const pctChip = (metric) => { // cur vs prev change for the metric strip
-    if (!m || !m.prev) return null
-    const cur = m.cur[metric], prev = m.prev[metric]
-    if (cur == null || prev == null || !prev) return null
-    const ch = Math.round(((cur - prev) / prev) * 100)
-    if (ch === 0) return <span className="cap"> · flat</span>
-    const goodDown = metric === 'cpl' || metric === 'freq'
-    const good = goodDown ? ch < 0 : ch > 0
-    return <span className={good ? 'fat-up' : 'fat-down'}> · {ch > 0 ? '▲' : '▼'}{Math.abs(ch)}%</span>
-  }
-  const fmtCtr = (v) => v == null ? '-' : `${(v * 100).toFixed(2)}%`
-  return (
-    <div className="card fat-card">
-      <div className="fat-card-h">
-        <div className="fat-card-nm">{client.name}</div>
-        {st.status === 'loading' ? <span className="cap">Checking…</span>
-          /* A failed check returns a zeroed summary, which rendered a green
-             "all steady" directly above the "Couldn't load." message below. */
-          : st.status === 'err' || (d && d.error) ? <span className="al-count warn">not checked</span>
-            : sum ? <div className="fat-counts">{sum.high ? <span className="fat-c fat-high">{sum.high} 🔴</span> : null}{sum.med ? <span className="fat-c fat-med">{sum.med} 🟠</span> : null}{sum.good ? <span className="fat-c fat-low">{sum.good} 🟢</span> : null}{!sum.high && !sum.med && !sum.good ? <span className="fat-c fat-low">all steady</span> : null}</div>
-              : <span className="cap">No data</span>}
-      </div>
-      {st.status === 'loading' ? <Spinner label="" />
-        : st.status === 'err' || d.meta === false ? <div className="cap">{d && d.meta === false ? 'No Meta account mapped.' : 'Couldn’t load.'}</div>
-          : <>
-            {m && <div className="anom-strip">
-              <span>Spend <b>{money(m.cur.spend)}</b>{pctChip('spend')}</span>
-              <span>Leads <b>{fmtNumber(m.cur.leads)}</b>{pctChip('leads')}</span>
-              <span>CPL <b>{m.cur.cpl != null ? money(m.cur.cpl) : '-'}</b>{pctChip('cpl')}</span>
-              <span>CTR <b>{fmtCtr(m.cur.ctr)}</b>{pctChip('ctr')}</span>
-              <span>Freq <b>{m.cur.freq != null ? `${m.cur.freq.toFixed(1)}x` : '-'}</b>{pctChip('freq')}</span>
-            </div>}
-            {!alerts.length ? <div className="cap" style={{ marginTop: 8 }}>No anomalies in this window - delivery looks steady. ✅</div>
-              : <div className="anom-list">{alerts.map((a, i) => <div key={i} className={`anom-row anom-${a.severity}`}>
-                <span className="anom-ic">{SEV_ICON[a.severity]}</span>
-                <span className="anom-txt"><b>{a.title}</b> - {a.detail}</span>
-              </div>)}</div>}
-            {d.zeroLeadAds && d.zeroLeadAds.length ? <div className="anom-ads">
-              <div className="cap" style={{ marginBottom: 4 }}>Spending with no leads:</div>
-              {d.zeroLeadAds.map((a, i) => <div key={i} className="anom-ad"><ThumbZoom src={a.thumb} /> <span className="cc-nm" title={a.name}>{a.name}</span> <span className="cap">· {money(a.spend)} · 0 leads</span></div>)}
-            </div> : null}
-          </>}
-    </div>
-  )
-}
-function MetaAnomaliesPage({ clients, currency, range, nonce }) {
-  const metaClients = [...clients].filter((c) => c.meta).sort((a, b) => a.name.localeCompare(b.name))
-  const [sums, setSums] = useState({})
-  const onSummary = React.useCallback((id, s) => setSums((p) => (p[id] === s ? p : { ...p, [id]: s })), [])
-  if (!metaClients.length) return <div className="card empty-deep"><div className="big">📡</div><b>No clients with a Meta account yet.</b></div>
-  const agg = Object.values(sums).reduce((a, s) => s ? { high: a.high + s.high, med: a.med + s.med } : a, { high: 0, med: 0 })
-  const ordered = [...metaClients].sort((a, b) => { const sa = sums[a.id], sb = sums[b.id]; const wa = sa ? sa.high * 2 + sa.med : -1, wb = sb ? sb.high * 2 + sb.med : -1; return wb - wa || a.name.localeCompare(b.name) })
-  return (
-    <>
-      <div className="lvl-title">Delivery health &amp; anomalies <span className="sub">· {rangeLabel(range)} · vs the prior equal window</span></div>
-      <div className="scorecard">
-        <Sc label="Urgent (🔴)" value={fmtNumber(agg.high)} />
-        <Sc label="Watch (🟠)" value={fmtNumber(agg.med)} />
-        <Sc label="Meta clients" value={fmtNumber(metaClients.length)} />
-      </div>
-      <Caveat>Each active Meta client compared to the equal prior window: cost per lead, click-through rate, frequency, and spend-vs-leads movement, plus delivery stalls and any ad spending with zero leads. Computed live from Meta delivery data - no Meta App required. Clients needing attention float to the top.</Caveat>
-      <div className="fat-grid">{ordered.map((c) => <AnomalyClientCard key={c.id} client={c} currency={currency} range={range} nonce={nonce} onSummary={onSummary} />)}</div>
-    </>
-  )
-}
-
-/* ====== Meta's own creative-fatigue verdicts (webhook-fed, agency-wide) ====== */
-function FatigueWebhookCard({ client, range, nonce, onStatus }) {
-  const st = useFatigueWebhook(client.id, range, nonce)
-  const d = st.data
-  const connected = !!(d && d.connected)
-  const creatives = (d && d.creatives) || []
-  useEffect(() => { onStatus(client.id, { connected, count: creatives.length }) }, [connected, creatives.length])
-  if (st.status === 'loading') return <div className="card fat-card"><div className="fat-card-h"><div className="fat-card-nm">{client.name}</div><span className="cap">Checking…</span></div></div>
-  if (!connected) return null // hidden until this account is subscribed and sends events
-  return (
-    <div className="card fat-card">
-      <div className="fat-card-h">
-        <div className="fat-card-nm">{client.name}</div>
-        {d.summary ? <div className="fat-counts"><span className="fat-c fat-high">{d.summary.high} High</span><span className="fat-c fat-med">{d.summary.medium} Med</span><span className="fat-c fat-low">{d.summary.low} Low</span></div> : null}
-      </div>
-      {!creatives.length ? <div className="cap">Connected - waiting for Meta’s first fatigue event on this account.</div>
-        : <div className="tbl-scroll"><table className="mini-tbl users-tbl cc-tbl">
-          <thead><tr><th className="lft">Creative</th><th className="lft">Meta verdict</th><th className="lft">Updated</th></tr></thead>
-          <tbody>{creatives.map((c) => <tr key={c.adId}>
-            <td className="lft"><ThumbZoom src={c.thumb} /> <span className="cc-nm" title={c.name || c.adId}>{c.name || `Ad ${c.adId}`}</span></td>
-            <td className="lft"><span className={`fat-badge ${c.level === 'High' ? 'fat-high' : c.level === 'Medium' ? 'fat-med' : ''}`}>{c.level === 'High' ? '🔥 High' : c.level === 'Medium' ? '👀 Medium' : `✅ ${c.level}`}</span></td>
-            <td className="lft cap">{c.ts ? new Date(c.ts).toLocaleDateString('en-AU') : '-'}</td>
-          </tr>)}</tbody>
-        </table></div>}
-    </div>
-  )
-}
-// Live connection status: proves the receiver is wired up the moment any event
-// (test or real) lands, even before accounts are mapped to clients.
-function WebhookStatusPanel({ nonce }) {
-  const [st, setSt] = useState({ status: 'loading', data: null })
-  const [open, setOpen] = useState(false)
-  useEffect(() => {
-    let alive = true
-    fetch(`/.netlify/functions/windsor?scope=webhookstatus${nonce ? `&_r=${nonce}` : ''}`).then((r) => r.json()).then((j) => { if (alive) setSt({ status: 'ok', data: j }) }).catch(() => { if (alive) setSt({ status: 'err', data: null }) })
-    return () => { alive = false }
-  }, [nonce])
-  const d = st.data
-  const ever = d && d.everReceived
-  const n = (d && d.events && d.events.length) || 0
-  return (
-    <div className="card wh-status">
-      <div className="wh-status-h" onClick={() => setOpen((o) => !o)} style={{ cursor: n ? 'pointer' : 'default' }}>
-        {n ? <span className="u-chev">{open ? '▾' : '▸'}</span> : null}
-        <span className={`wh-dot ${ever ? 'on' : ''}`} />
-        <b>Webhook receiver</b>
-        <span className="cap">· endpoint live at <code>/.netlify/functions/meta-webhook</code></span>
-        {st.status === 'loading' ? <span className="cap">· checking…</span> : ever ? <span className="wh-ok">· ✓ events received</span> : <span className="cap">· no events received yet</span>}
-        {n ? <span className="cap">· {n} recent{open ? '' : ' · click to view'}</span> : null}
-      </div>
-      {open && n ? <div className="wh-events">
-        <div className="cap" style={{ marginBottom: 4 }}>Last {n} event{n === 1 ? '' : 's'} Meta sent us:</div>
-        <table className="mini-tbl users-tbl"><thead><tr><th className="lft">When</th><th className="lft">Account</th><th className="lft">Field</th><th className="lft">Ad</th><th className="lft">Verdict</th></tr></thead>
-          <tbody>{d.events.map((e, i) => <tr key={i}><td className="lft cap">{e.ts ? new Date(e.ts).toLocaleString('en-AU') : '-'}</td><td className="lft">{e.client || e.acct || '-'}</td><td className="lft">{e.field || '-'}</td><td className="lft">{e.adId || '-'}</td><td className="lft">{e.level || '-'}</td></tr>)}</tbody>
-        </table>
-      </div> : null}
-    </div>
-  )
-}
-function MetaFatigueWebhookPage({ clients, range, nonce }) {
-  const metaClients = [...clients].filter((c) => c.meta).sort((a, b) => a.name.localeCompare(b.name))
-  const [status, setStatus] = useState({})
-  const onStatus = React.useCallback((id, s) => setStatus((p) => ({ ...p, [id]: s })), [])
-  const anyConnected = Object.values(status).some((s) => s && s.connected)
-  const connectedCount = Object.values(status).filter((s) => s && s.connected).length
-  return (
-    <>
-      <div className="lvl-title">Creative fatigue · Meta’s signal <span className="sub">· official webhook verdicts</span></div>
-      <WebhookStatusPanel nonce={nonce} />
-      {!anyConnected && <div className="card mi-setup">
-        <div className="mi-setup-h">🔌 No per-account verdicts yet</div>
-        <p>This tab shows Meta’s <b>own</b> Low/Med/High creative-fatigue verdict - pushed by webhook, not computed. Once an ad account is <b>subscribed</b> (see the setup doc) and Meta detects fatigue on a live creative, its verdict appears here as a per-account card.</p>
-        <p className="cap">Test events from Meta’s dashboard show in the receiver panel above (proving the pipe works) but won’t map to a client card - they carry a placeholder account id. Setup + subscription commands: <code>META-WEBHOOK-SETUP.md</code>. Meanwhile the <b>Creative fatigue · proxy</b> tab covers every client live.</p>
-      </div>}
-      {anyConnected && <Caveat>Meta’s official verdicts for the {connectedCount} account{connectedCount === 1 ? '' : 's'} that have sent events so far. A card appears once Meta pushes its first event for an account; verdicts fill in as creatives tire. Compare against the proxy tab, which explains the “why”.</Caveat>}
-      <div className="fat-grid">{metaClients.map((c) => <FatigueWebhookCard key={c.id} client={c} range={range} nonce={nonce} onStatus={onStatus} />)}</div>
-      {(() => {
-        // Meta clients that have resolved but sent no events yet - surfaced so
-        // subscribed-but-quiet accounts are visible rather than silently hidden.
-        const awaiting = metaClients.filter((c) => status[c.id] && !status[c.id].connected)
-        if (!awaiting.length) return null
-        return <div className="card mi-await">
-          <b>Awaiting Meta’s first event · {awaiting.length}</b>
-          <p className="cap" style={{ margin: '4px 0 8px' }}>Set up, but Meta hasn’t pushed anything for these yet - they’ll move up as cards the moment it does (fatigue events are sparse and event-driven). If one never appears, re-check that its ad account is subscribed (<code>subscribed_apps</code>).</p>
-          <div className="mi-await-list">{awaiting.map((c) => <span key={c.id} className="mi-await-chip">{c.name}</span>)}</div>
-        </div>
-      })()}
-    </>
-  )
-}
-
-/* ============ Meta ad recommendations (webhook-fed, agency-wide) ============ */
-function useRecommendations(nonce = 0) {
-  const [st, setSt] = useState({ status: 'loading', data: null })
-  useEffect(() => {
-    let alive = true; setSt({ status: 'loading', data: null })
-    fetch(`/.netlify/functions/windsor?scope=recommendations${nonce ? `&_r=${nonce}` : ''}`).then((r) => r.json()).then((j) => { if (alive) setSt({ status: j && j.error ? 'err' : 'ok', data: j }) }).catch(() => { if (alive) setSt({ status: 'err', data: null }) })
-    return () => { alive = false }
-  }, [nonce])
-  return st
-}
-function RecommendationsPage({ clients, nonce }) {
-  const st = useRecommendations(nonce)
-  const nameById = {}; for (const c of clients) nameById[c.id] = c.name
-  const d = st.data
-  const groups = (d && d.groups) || []
-  return (
-    <>
-      <div className="lvl-title">Ad recommendations · Meta’s signal <span className="sub">· pushed by webhook</span></div>
-      <Caveat>Meta’s own optimisation recommendations, delivered by webhook as they’re issued (the <code>ad_recommendations</code> field, per subscribed account). Each entry flags that Meta has a suggestion for an ad or account - open Ads Manager for the full write-up. Newest first.</Caveat>
-      {st.status === 'loading' ? <div className="card"><Spinner label="Loading recommendations…" /></div>
-        : !groups.length ? <div className="card empty-deep"><div className="big">💡</div><b>No recommendations received yet.</b><p style={{ maxWidth: 460, margin: '8px auto 0' }}>They’ll appear here as Meta pushes them for your subscribed accounts. Make sure the <code>ad_recommendations</code> field is subscribed for each account.</p></div>
-          : <div className="fat-grid">{groups.map((g, i) => (
-            <div className="card fat-card" key={i}>
-              <div className="fat-card-h"><div className="fat-card-nm">{nameById[g.client] || g.client || `Account ${g.acct}`}</div><span className="fat-c fat-low">{g.count} recommendation{g.count === 1 ? '' : 's'}</span></div>
-              <div className="rec-list">{g.items.map((it, j) => (
-                <div className="rec-row" key={j}>
-                  <div className="rec-when cap">{it.ts ? new Date(it.ts).toLocaleString('en-AU') : '-'}</div>
-                  <div className="rec-body">
-                    {it.detail && it.detail.type ? <span className="rec-type">{it.detail.type}</span> : null}
-                    {it.detail && it.detail.message ? <span className="rec-msg">{it.detail.message}</span> : <span className="cap">Meta flagged a recommendation{it.adId ? ` for ad ${it.adId}` : ''} - open Ads Manager for the detail.</span>}
-                    {it.detail && it.detail.extra && it.detail.extra.length ? <div className="cap rec-extra">{it.detail.extra.join(' · ')}</div> : null}
-                  </div>
-                </div>
-              ))}</div>
-            </div>
-          ))}</div>}
-    </>
-  )
-}
-
-/* ============ Meta opportunity score (Graph API, agency-wide) ============ */
-function useOpportunity(clientId, nonce = 0) {
-  const [st, setSt] = useState({ status: 'loading', data: null })
-  useEffect(() => {
-    let alive = true; setSt({ status: 'loading', data: null })
-    fetch(`/.netlify/functions/windsor?scope=opportunity&client=${clientId}${nonce ? `&_r=${nonce}` : ''}`).then((r) => r.json()).then((j) => { if (alive) setSt({ status: 'ok', data: j }) }).catch(() => { if (alive) setSt({ status: 'err', data: null }) })
-    return () => { alive = false }
-  }, [clientId, nonce])
-  return st
-}
-function OpportunityCard({ client, nonce, onConfig }) {
-  const st = useOpportunity(client.id, nonce)
-  const d = st.data
-  useEffect(() => { onConfig(client.id, d ? { configured: d.configured !== false, meta: d.meta !== false } : null) }, [d && d.configured, d && d.meta])
-  if (st.status === 'loading') return <div className="card fat-card"><div className="fat-card-h"><div className="fat-card-nm">{client.name}</div><span className="cap">Loading…</span></div></div>
-  if (!d || d.meta === false || d.configured === false) return null
-  const score = d.score
-  const cls = score == null ? '' : score >= 80 ? 'opp-good' : score >= 60 ? 'opp-mid' : 'opp-low'
-  return (
-    <div className="card fat-card">
-      <div className="fat-card-h"><div className="fat-card-nm">{client.name}</div>{score != null ? <div className={`opp-score ${cls}`}>{score}<span>/100</span></div> : <span className="cap">no score returned</span>}</div>
-      {d.error ? <div className="cap" style={{ color: 'var(--neg)' }}>Meta: {d.error}</div>
-        : !d.recommendations || !d.recommendations.length ? <div className="cap">No open recommendations - Meta considers this account well optimised. ✅</div>
-          : <div className="opp-list">{d.recommendations.map((r, i) => (
-            <div className="opp-row" key={i}>
-              <span className={`opp-pts ${r.points ? '' : 'opp-pts-0'}`}>{r.points ? `+${r.points}` : '·'}</span>
-              <div className="opp-body">
-                <div>{r.body || prettyOppType(r.type)}</div>
-                {r.lift ? <div className="cap">{r.lift}{r.stage === 'mid_flight_recommendation' ? ' · on a live campaign' : ''}</div> : null}
-                {r.url ? <a className="cap opp-link" href={r.url} target="_blank" rel="noreferrer">Open in Ads Manager ↗</a> : null}
-              </div>
-            </div>
-          ))}</div>}
-    </div>
-  )
-}
-const prettyOppType = (t) => String(t || 'Recommendation').replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
-function OpportunityPage({ clients, nonce }) {
-  const metaClients = [...clients].filter((c) => c.meta).sort((a, b) => a.name.localeCompare(b.name))
-  const [cfg, setCfg] = useState({})
-  const onConfig = React.useCallback((id, s) => setCfg((p) => ({ ...p, [id]: s })), [])
-  const resolved = Object.values(cfg).filter(Boolean)
-  const tokenMissing = resolved.length > 0 && resolved.every((s) => s.configured === false)
-  return (
-    <>
-      <div className="lvl-title">Opportunity score · Meta’s signal <span className="sub">· 0–100 account health + recommendations</span></div>
-      {tokenMissing
-        ? <div className="card mi-setup"><div className="mi-setup-h">🔌 Meta token not configured</div>
-          <p>The opportunity score is pulled live from Meta’s Graph API, which needs your <b>System User token</b> stored on the server. Add an env var <code>META_SYSTEM_TOKEN</code> in Netlify (Site configuration → Environment variables) with the token you generated, then redeploy.</p>
-          <p className="cap">It’s used for read-only calls only. Full steps are in <code>META-WEBHOOK-SETUP.md</code>.</p></div>
-        : <Caveat>Meta’s own 0–100 opportunity score per account, with its top recommendations ranked by expected <b>point lift</b>. Pulled live from the Graph API - higher means better aligned with Meta’s best practices. This is account-level, never per-campaign.</Caveat>}
-      <div className="fat-grid">{metaClients.map((c) => <OpportunityCard key={c.id} client={c} nonce={nonce} onConfig={onConfig} />)}</div>
-    </>
-  )
-}
-
-/* ============ Meta Insights - hub for everything Meta-derived ============ */
-// Sub-tabbed like the client workspace. Fatigue + Anomalies ship today (computed
-// from Windsor data); the Meta-App-gated reads (opportunity score, benchmarks,
-// recommendations, Ad Library) are listed as coming so the roadmap is visible.
-const META_INSIGHTS_TABS = [
-  { id: 'anomalies', label: 'Delivery health', ready: true },
-  { id: 'fatigue', label: 'Creative fatigue · proxy', ready: true },
-  { id: 'fatigue-webhook', label: 'Creative fatigue · Meta', ready: true },
-  { id: 'recommendations', label: 'Ad recommendations', ready: true },
-  { id: 'opportunity', label: 'Opportunity score', ready: true },
-  { id: 'benchmarks', label: 'Benchmarks', ready: false },
-  { id: 'library', label: 'Ad Library', ready: false },
-]
-function MetaInsightsPage({ clients, currency, range, nonce }) {
-  const [tab, setTab] = useState('anomalies')
-  const cur = META_INSIGHTS_TABS.find((t) => t.id === tab) || META_INSIGHTS_TABS[0]
-  return (
-    <>
-      <div className="subtabs">{META_INSIGHTS_TABS.map((t) => <button key={t.id} className={tab === t.id ? 'active' : ''} onClick={() => setTab(t.id)}>{t.label}{!t.ready ? <span className="mi-soon">soon</span> : null}</button>)}</div>
-      {tab === 'anomalies' && <MetaAnomaliesPage clients={clients} currency={currency} range={range} nonce={nonce} />}
-      {tab === 'fatigue' && <MetaFatiguePage clients={clients} currency={currency} range={range} nonce={nonce} />}
-      {tab === 'fatigue-webhook' && <MetaFatigueWebhookPage clients={clients} range={range} nonce={nonce} />}
-      {tab === 'recommendations' && <RecommendationsPage clients={clients} nonce={nonce} />}
-      {tab === 'opportunity' && <OpportunityPage clients={clients} nonce={nonce} />}
-      {!cur.ready && <div className="card mi-soon-card">
-        <div className="big">🔒</div>
-        <b>{cur.label} needs a Meta App connection.</b>
-        <p style={{ maxWidth: 520, margin: '8px auto 0' }}>{tab === 'fatigue-webhook' ? 'Meta’s official creative-fatigue signal is push-only - it arrives via webhook, not a query. It needs a Meta App (System User token + App Review) that subscribes each client ad account. Once connected, Meta’s Low/Med/High verdict shows here beside our proxy read on the other tab.' : tab === 'benchmarks' ? 'Meta computes industry and auction benchmarks from cross-advertiser data we can’t replicate locally - this needs a Meta App with a System User token.' : tab === 'opportunity' ? 'The 0–100 opportunity score and Meta’s own recommendations are generated by Meta and require a direct Graph API connection (Meta App).' : 'Searching any advertiser’s live ads for inspiration needs the public Ad Library API, which requires a verified Meta App.'} Once the Meta App is set up, this tab lights up automatically.</p>
-      </div>}
-    </>
-  )
-}
-
-function CreativeCockpitPage({ clients, currency, range, nonce, authUser }) {
-  const list = [...clients].sort((a, b) => a.name.localeCompare(b.name))
-  // Seed the picked client from the URL (?c=) so a shared Cockpit link opens
-  // straight on that client; fall back to the first client otherwise.
-  const [selId, setSelId] = useState(() => {
-    const c = readNavUrl().c
-    return (c && list.some((x) => x.id === c)) ? c : (list[0] ? list[0].id : null)
-  })
-  const [sub, setSub] = useState('breakdown')
-  const sel = list.find((c) => c.id === selId) || list[0]
-  // Mirror the picked client into the URL (?c=) so the current selection is always
-  // linkable - replace (not push) so it doesn't spam the browser history.
-  const pickClient = (id) => { setSelId(id); writeNavUrl({ c: id }, false) }
-  // Keep the URL in sync when the effective client falls back (e.g. deep-linked id
-  // isn't in this user's list), so the link reflects what's actually shown.
-  useEffect(() => { if (sel && sel.id !== readNavUrl().c) writeNavUrl({ c: sel.id }, false) }, [sel && sel.id])
-  if (!list.length) return <div className="card empty-deep"><div className="big">🎬</div><b>No clients with a Meta account yet.</b></div>
-  // Creative Curator is temporarily hidden (flip CURATOR_ENABLED back to true to
-  // resurface its subtab). While off, the Cockpit shows only Creative Breakdown
-  // with no subtab bar.
-  const showCurator = CURATOR_ENABLED && sub === 'curator'
-  return (
-    <>
-      {CURATOR_ENABLED && (
-        <div className="subtabs">
-          <button className={sub === 'breakdown' ? 'active' : ''} onClick={() => setSub('breakdown')}>Creative Breakdown</button>
-          <button className={sub === 'curator' ? 'active' : ''} onClick={() => setSub('curator')}>Creative Curator</button>
-        </div>
-      )}
-      {!showCurator ? <>
-        <div className="c360-head" style={{ marginTop: 0 }}>
-          <div className="pipe-sel"><label>Client</label>
-            <select value={(sel && sel.id) || ''} onChange={(e) => pickClient(e.target.value)}>{list.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
-          </div>
-        </div>
-        {sel ? <CreativeCockpit key={sel.id} client={sel} currency={currency} range={range} nonce={nonce} authUser={authUser} /> : null}
-      </> : <CreativeCuratorPage clients={list} />}
-    </>
-  )
-}
-
-// A single reusable combobox: native input + datalist so you can pick a saved
-// value or type a new one (which is then remembered for next time).
-function TagCombo({ value, onChange, options, listId, placeholder }) {
-  return (
-    <>
-      <input className="cc-in" list={listId} value={value || ''} placeholder={placeholder} onChange={(e) => onChange(e.target.value)} />
-      <datalist id={listId}>{options.map((o) => <option key={o} value={o} />)}</datalist>
-    </>
-  )
-}
-
-function CreativeCockpit({ client, currency, range, nonce }) {
-  useSettingsSync()
-  const st = useCreatives(client.id, range, nonce)
-  // The CRM funnel behind each creative (green Caalano360 key-event columns) comes
-  // from the attribution build (byCreative, joined by utm_content) - same source
-  // the Meta Ads view + Monthly Report use, so the numbers line up across screens.
-  const attr = useAttribution(client.id, range, nonce)
-  const money = (v) => fmtCurrency(v, currency)
-  const tags = loadCreativeMeta(client.id)
-  const tax = loadCreativeTax(client.id)
-  const personaOpts = tax.persona || []
-  const angleOpts = tax.angle || []
-  const destOpts = [...new Set([...DEST_DEFAULTS, ...(tax.dest || [])])]
-  const [sort, setSort] = useState({ key: 'spend', dir: -1 })
-  const [f, setF] = useState({ aware: '', persona: '', angle: '', format: '', dest: '', fat: '', q: '' })
-  const [dim, setDim] = useState('angle') // "what's working" rollup dimension
-  const [open, setOpen] = useState(() => new Set())
-  const set = (patch) => setF((p) => ({ ...p, ...patch }))
-  const [strat, setStrat] = useState(() => loadInsights(client.id + ':cockpit'))
-  const [stratBusy, setStratBusy] = useState(false)
-  const [stratErr, setStratErr] = useState(null)
-  useEffect(() => { setStrat(loadInsights(client.id + ':cockpit')); setStratErr(null) }, [client.id])
-
-  if (st.status === 'loading') return <div className="card"><Spinner label="Loading creatives…" /></div>
-  const d = st.data
-  if (st.status === 'err' || !d) return <div className="card empty-deep"><div className="big">⚠️</div><b>Couldn’t load creatives.</b></div>
-  if (d.meta === false) return <div className="card empty-deep"><div className="big">🎬</div><b>No Meta account mapped for {client.name}.</b></div>
-  const all = d.creatives || []
-  if (!all.length) return <div className="card empty-deep"><div className="big">🎬</div><b>No creatives ran in this period.</b></div>
-  // Fatigue signal keyed by creative (ad) name, so each row can badge itself.
-  const fatBy = {}; for (const fc of ((d.fatigue && d.fatigue.creatives) || [])) fatBy[fc.name] = fc
-  const fatSum = (d.fatigue && d.fatigue.summary) || null
-
-  // Green Caalano360 key-event columns behind each creative (booked / shown /
-  // stage reach / won per the client's configured key events), joined to the ad by
-  // utm_content - the same funnel the Meta Ads view + Monthly Report show. Computed
-  // BEFORE the rows so each creative carries its per-event fields: the grid then
-  // sorts by any green column, and the What's-working rollup totals each event.
-  // Built from the attribution fetch (independent of the creatives load), so the
-  // columns fill in a moment after the grid first paints; tag editing is unchanged.
-  const hasCrm = d.hasCrm
-  const A = attr && attr.data && attr.data.attribution
-  const stagePos = A ? stagePosMap([...(A.allPipelines || []), ...((A.channels && A.channels.all && A.channels.all.pipelines) || [])]) : null
-  const calNames = new Map(((A && A.appointments && A.appointments.byCalendar) || []).map((cc) => [cc.id, cc.name]))
-  // Each creative belongs to a pipeline (via its campaign → Settings link / name
-  // match), so the green key-event columns - and the personas / angles that go with
-  // them - are scoped PER PIPELINE. A multi-pipeline client is split into one
-  // labelled section per pipeline, each with only that pipeline's creatives + key
-  // events, so the columns line up (no duplicate "15 Minute Call" from two pipelines)
-  // and the What's-working rollup only ranks personas that actually ran in it.
-  const allPipes = (A && A.allPipelines) || []
-  const rawKe = hasCrm ? loadKeyEvents(client.id) : []
-  const _colsCache = {}
-  const colsForPipe = (pid) => { const k = pid || '_all'; if (!(k in _colsCache)) _colsCache[k] = (hasCrm && A) ? buildO360Cols(keyEventsForPipe(rawKe, pid || 'all'), stagePos, calNames) : null; return _colsCache[k] }
-  const oCre = (hasCrm && A) ? aliasedOutcomeMap(client.id, 'content', A.byCreative) : null
-  const pipeOfCre = (c) => (allPipes.length ? pipeOfCampaign(client.id, c.campaign, allPipes) : null)
-  const keLeft = hasCrm ? 10 : 8 // leading (non-green) grid column count, for the banner + expand colSpan
-
-  // Attach saved tags + the per-creative key-event fields. Each creative's green
-  // fields use ITS pipeline's key events (so a creative in Pipeline A never shows
-  // counts under Pipeline B's events). Spread first so tag / perf fields always win.
-  const rows = all.map((c) => {
-    const t = tags[c.id] || {}
-    const crm = c.crm || {}
-    const fat = fatBy[c.name] || null
-    const pid = pipeOfCre(c)
-    const cols = colsForPipe(pid)
-    const leads360 = crm.leads != null ? crm.leads : c.leads
-    const f360 = cols ? o360Fields(oCre && oCre.get(unorm(c.name)), c.spend, leads360, cols) : null
-    return { ...c, ...(f360 || {}), _pid: pid, t, fat, fatLevel: fat ? fat.level : null, fatScore: fat ? fat.score : -1, aware: t.aware || '', persona: t.persona || '', angle: t.angle || '', dest: t.dest || c.autoDest || '', cta: t.cta || c.autoCta || '', copy: t.copy || c.autoCopy || '', notes: t.notes || '', ql: crm.qualified || 0, bk: crm.booked || 0, wn: crm.won || 0, rev: crm.revenue || 0, cpq: crm.costPerQualified, cpb: crm.costPerBooked, cpw: crm.costPerWon }
-  })
-  const setKey = (k) => setSort((s) => ({ key: k, dir: s.key === k ? -s.dir : -1 }))
-  const Th = ({ k, children, l }) => <th className={l ? 'lft' : 'num'} onClick={() => setKey(k)} style={{ cursor: 'pointer' }}>{children}{sort.key === k ? (sort.dir < 0 ? ' ↓' : ' ↑') : ''}</th>
-  const tot = rows.reduce((a, c) => ({ spend: a.spend + c.spend, leads: a.leads + (c.crm ? c.crm.leads : c.leads), bk: a.bk + c.bk, tagged: a.tagged + (c.aware || c.persona || c.angle ? 1 : 0) }), { spend: 0, leads: 0, bk: 0, tagged: 0 })
-
-  // "What's working" - rank the chosen dimension's values by cost per booked call,
-  // totalling each key event (count) + cost per event. Parameterised by a row subset
-  // + that subset's pipeline columns, so each pipeline section rolls up on its own.
-  const dimFn = { aware: (c) => c.aware, persona: (c) => c.persona, angle: (c) => c.angle, format: (c) => c.format, dest: (c) => c.dest }[dim]
-  const buildRollup = (rowsIn, cols, fn) => {
-    const evFirstCols = cols ? cols.cols.filter((c) => c.gfirst) : []
-    const m = new Map()
-    for (const c of rowsIn) {
-      const k = fn(c); if (!k) continue
-      const e = m.get(k) || { key: k, n: 0, spend: 0, leads: 0, bk: 0, wn: 0, ev: evFirstCols.map(() => 0) }
-      e.n++; e.spend += c.spend; e.leads += (c.crm ? c.crm.leads : c.leads); e.bk += c.bk; e.wn += c.wn
-      evFirstCols.forEach((col, i) => { e.ev[i] += (col ? (c[col.key] || 0) : 0) })
-      m.set(k, e)
-    }
-    return [...m.values()].map((e) => ({ ...e, cpb: e.bk ? Math.round(e.spend / e.bk) : null, evCost: e.ev.map((v) => (v ? Math.round(e.spend / v) : null)) })).sort((a, b) => (a.cpb == null ? 1 : b.cpb == null ? -1 : a.cpb - b.cpb))
-  }
-  // Split into labelled per-pipeline sections when the client runs more than one
-  // pipeline AND the creatives actually span 2+ of them; otherwise one flat section.
-  const pipeGroups = (() => {
-    if (!hasCrm || allPipes.length < 2) return [{ pid: null, name: null, cols: colsForPipe('all'), rows }]
-    const by = new Map()
-    for (const c of rows) { const k = c._pid || '__none__'; if (!by.has(k)) by.set(k, []); by.get(k).push(c) }
-    const named = allPipes.filter((p) => by.has(p.id)).map((p) => ({ pid: p.id, name: p.name, cols: colsForPipe(p.id), rows: by.get(p.id) }))
-    const none = by.get('__none__')
-    if (none && none.length) named.push({ pid: null, name: 'Unattributed (no pipeline link)', cols: colsForPipe('all'), rows: none })
-    return named.length >= 2 ? named : [{ pid: null, name: null, cols: colsForPipe('all'), rows }]
-  })()
-
-  // AI creative strategy over the tagged + performance set.
-  const rollupBy = (fn) => buildRollup(rows, colsForPipe('all'), fn)
-  const genStrategy = async () => {
-    if (stratBusy) return
-    setStratBusy(true); setStratErr(null)
-    try {
-      const slim = (c) => ({ name: c.name, format: c.format, angle: c.angle, persona: c.persona, spend: c.spend, leads: c.crm ? c.crm.leads : c.leads, booked: c.bk, cpb: c.cpb })
-      const ranked = [...rows].filter((c) => c.spend > 0).sort((a, b) => (a.cpb == null ? 1 : b.cpb == null ? -1 : a.cpb - b.cpb))
-      const payload = { mode: 'creative-strategy', clientName: client.name, period: rangeLabel(range),
-        rollups: { angle: rollupBy((c) => c.angle), persona: rollupBy((c) => c.persona), aware: rollupBy((c) => c.aware), format: rollupBy((c) => c.format), dest: rollupBy((c) => c.dest) },
-        top: ranked.slice(0, 6).map(slim), bottom: ranked.slice(-4).map(slim) }
-      const r = await fetch('/.netlify/functions/insights', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) })
-      const j = await r.json().catch(() => ({}))
-      if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`)
-      const rec = { insights: j.insights, period: j.period || rangeLabel(range), generatedAt: j.generatedAt || new Date().toISOString(), model: j.model }
-      saveInsights(client.id + ':cockpit', rec); setStrat(rec)
-    } catch (e) { setStratErr(String(e.message || e)) } finally { setStratBusy(false) }
-  }
-
-  return (
-    <>
-      <div className="lvl-title">Creative Breakdown <span className="sub">· {client.name} · {rangeLabel(range)} · {fmtNumber(all.length)} creatives{hasCrm ? '' : ' · no CRM mapped (paid metrics only)'}</span></div>
-      <div className="scorecard">
-        <Sc label="Creatives" value={fmtNumber(all.length)} />
-        <Sc label="Ad spend" value={money(tot.spend)} />
-        <Sc label="Leads" value={fmtNumber(tot.leads)} />
-        {hasCrm && <Sc label="Booked calls" value={fmtNumber(tot.bk)} />}
-        {fatSum && (fatSum.high + fatSum.medium) > 0 && <Sc label="Fatiguing" value={`${fmtNumber(fatSum.high)} 🔥 · ${fmtNumber(fatSum.medium)} 👀`} />}
-        <Sc label="Tagged" value={`${fmtNumber(tot.tagged)} / ${fmtNumber(all.length)}`} />
-      </div>
-
-      {pipeGroups.length > 1 && <p className="cap" style={{ marginTop: -4 }}>Split by pipeline - each section shows only that pipeline's creatives and its own key events, so the personas / angles and green columns line up.</p>}
-
-      {/* Global filters - apply across every pipeline section. */}
-      <div className="cc-filters">
-        <input className="cc-search" placeholder="Search creative name…" value={f.q} onChange={(e) => set({ q: e.target.value })} />
-        <select value={f.format} onChange={(e) => set({ format: e.target.value })}><option value="">All formats</option><option>Image</option><option>Video</option></select>
-        <select value={f.aware} onChange={(e) => set({ aware: e.target.value })}><option value="">All awareness</option>{AWARENESS_OPTS.map((o) => <option key={o}>{o}</option>)}</select>
-        <select value={f.persona} onChange={(e) => set({ persona: e.target.value })}><option value="">All personas</option>{personaOpts.map((o) => <option key={o}>{o}</option>)}</select>
-        <select value={f.angle} onChange={(e) => set({ angle: e.target.value })}><option value="">All angles</option>{angleOpts.map((o) => <option key={o}>{o}</option>)}</select>
-        <select value={f.dest} onChange={(e) => set({ dest: e.target.value })}><option value="">All destinations</option>{destOpts.map((o) => <option key={o}>{o}</option>)}</select>
-        <select value={f.fat} onChange={(e) => set({ fat: e.target.value })}><option value="">All fatigue</option><option value="High">🔥 Fatiguing</option><option value="Medium">👀 Watch</option><option value="Low">✅ OK</option><option value="None">- No signal</option></select>
-        {(f.aware || f.persona || f.angle || f.format || f.dest || f.fat || f.q) ? <button className="link-btn sm" onClick={() => setF({ aware: '', persona: '', angle: '', format: '', dest: '', fat: '', q: '' })}>Clear</button> : null}
-      </div>
-
-      {/* One section per pipeline (multi-pipeline clients) or a single flat section. */}
-      {pipeGroups.map((g) => {
-        const cols = g.cols
-        const rollup = buildRollup(g.rows, cols, dimFn)
-        const gFiltered = g.rows.filter((c) => (!f.aware || c.aware === f.aware) && (!f.persona || c.persona === f.persona) && (!f.angle || c.angle === f.angle) && (!f.format || c.format === f.format) && (!f.dest || c.dest === f.dest) && (!f.fat || (f.fat === 'None' ? !c.fat : c.fatLevel === f.fat)) && (!f.q || (c.name || '').toLowerCase().includes(f.q.toLowerCase())))
-        const gSorted = [...gFiltered].sort((a, b) => { const av = a[sort.key], bv = b[sort.key]; if (av == null && bv == null) return 0; if (av == null) return 1; if (bv == null) return -1; return typeof av === 'string' ? String(av).localeCompare(String(bv)) * sort.dir : (av - bv) * sort.dir })
-        return (
-          <React.Fragment key={g.pid || 'all'}>
-            {g.name && <div className="lvl-title cc-pipe-lab" style={{ marginTop: 20 }}><span className="c360-dot" /> {g.name} <span className="sub">· {fmtNumber(g.rows.length)} creative{g.rows.length === 1 ? '' : 's'} · {money(g.rows.reduce((s, c) => s + c.spend, 0))}{g.rows.reduce((s, c) => s + c.bk, 0) ? ` · ${fmtNumber(g.rows.reduce((s, c) => s + c.bk, 0))} booked` : ''}</span></div>}
-
-            {/* What's working - dimension rollup ranked by cost per booked call */}
-            <div className="card cc-work">
-              <div className="cc-work-h">What’s working <span className="sub">· ranked by cost / booked call · by</span>
-                <div className="chan-toggle cc-dim">{[['aware', 'Awareness'], ['persona', 'Persona'], ['angle', 'Angle'], ['format', 'Format'], ['dest', 'Destination']].map(([k, l]) => <button key={k} className={dim === k ? 'on' : ''} onClick={() => setDim(k)}>{l}</button>)}</div>
-              </div>
-              {rollup.length ? <PanScroll><table className="mini-tbl users-tbl">
-                <thead>
-                  {cols && <tr className="c360-grp-row"><th className="c360-grp-blank" colSpan={7} aria-hidden="true" />{cols.groups.map((gg, i) => <th key={i} className={`c360-grp${i > 0 ? ' c360-grp-sep' : ''}`} colSpan={2} title={gg.label}>{gg.label}</th>)}</tr>}
-                  <tr><th className="lft">{dim === 'aware' ? 'Awareness' : dim === 'dest' ? 'Destination' : dim.charAt(0).toUpperCase() + dim.slice(1)}</th><th>Creatives</th><th>Spend</th><th>Leads</th>{hasCrm && <th>Booked</th>}{hasCrm && <th>Cost / book</th>}{hasCrm && <th>Won</th>}{cols && cols.groups.map((gg, i) => <React.Fragment key={i}><th className={`c360-col${i === 0 ? ' c360-gfirst' : ''}`} title={`${gg.label} - count`}>Count</th><th className="c360-col" title={`Spend ÷ ${gg.label}`}>Cost</th></React.Fragment>)}</tr>
-                </thead>
-                <tbody>{rollup.map((e) => <tr key={e.key}><td className="lft">{e.key}</td><td>{fmtNumber(e.n)}</td><td>{money(e.spend)}</td><td>{fmtNumber(e.leads)}</td>{hasCrm && <td>{fmtNumber(e.bk)}</td>}{hasCrm && <td>{e.cpb != null ? money(e.cpb) : '-'}</td>}{hasCrm && <td>{fmtNumber(e.wn)}</td>}{cols && e.ev.map((v, i) => <React.Fragment key={i}><td className={`c360-col${i === 0 ? ' c360-gfirst' : ''}`}>{fmtNumber(v)}</td><td className="c360-col">{e.evCost[i] != null ? money(e.evCost[i]) : '-'}</td></React.Fragment>)}</tr>)}</tbody>
-              </table></PanScroll> : <div className="cap">Tag your creatives’ {dim === 'aware' ? 'awareness stage' : dim} to see which performs best.</div>}
-            </div>
-
-            {/* Creative grid */}
-            <PanScroll className="cc-grid-wrap"><table className="mini-tbl users-tbl cc-tbl">
-              <thead>
-                {cols && <C360GrpRow left={keLeft} cols={cols} />}
-                <tr>
-                  <Th k="name" l>Creative</Th><Th k="format" l>Format</Th>
-                  <th className="lft">Awareness</th><th className="lft">Persona</th><th className="lft">Angle</th><Th k="fatScore" l>Fatigue</Th>
-                  <Th k="spend">Spend</Th><Th k="leads">Leads</Th>{hasCrm && <Th k="bk">Booked</Th>}{hasCrm && <Th k="cpb">Cost/book</Th>}
-                  {cols && <O360Head sort={sort} on={setKey} cols={cols} />}
-                </tr>
-              </thead>
-              <tbody>{gSorted.map((c) => <CreativeRow key={c.id} c={c} clientId={client.id} money={money} hasCrm={hasCrm} personaOpts={personaOpts} angleOpts={angleOpts} destOpts={destOpts} o360cols={cols} currency={currency} open={open.has(c.id)} onToggle={() => setOpen((p) => { const n = new Set(p); n.has(c.id) ? n.delete(c.id) : n.add(c.id); return n })} />)}</tbody>
-            </table></PanScroll>
-          </React.Fragment>
-        )
-      })}
-      <Caveat>Every Meta creative in this period, with the real funnel behind it (leads → qualified) joined by <code>utm_content</code>. Format is auto-detected; tag awareness / persona / angle / destination / CTA / copy per creative - values save to {client.name} and feed the dropdowns next time. Click a row to edit its tags and open the ad.{pipeGroups.length > 1 ? ' A creative is placed in the pipeline its campaign is linked to (Settings → link a campaign to a pipeline to move it).' : ''}</Caveat>
-      {d.unmatched && d.unmatched.length ? <p className="cap">{d.unmatched.length} CRM lead source{d.unmatched.length === 1 ? '' : 's'} (utm_content) didn’t match a live ad - likely paused or renamed creatives.</p> : null}
-    </>
-  )
-}
-
-// One creative: a scannable row (thumb, name, format, current tags, performance,
-// and - when the client has key events configured - the green Caalano360 funnel
-// columns behind this ad) that expands to the full tag editor + ad preview link.
-function CreativeRow({ c, clientId, money, hasCrm, personaOpts, angleOpts, destOpts, o360cols, currency, open, onToggle }) {
-  const save = (patch) => saveCreativeMeta(clientId, c.id, patch)
-  const chip = (v) => v ? <span className="cc-chip">{v}</span> : <span className="cc-none">-</span>
-  const [ai, setAi] = useState({ busy: false, err: null, reason: null })
-  const suggest = async () => {
-    if (ai.busy) return
-    setAi({ busy: true, err: null, reason: null })
-    try {
-      const payload = { mode: 'creative-tag', creative: { name: c.name, format: c.format, cta: c.cta, copy: c.copy }, personas: personaOpts, angles: angleOpts }
-      const r = await fetch('/.netlify/functions/insights', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) })
-      const j = await r.json().catch(() => ({}))
-      if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`)
-      const s = j.suggestion || {}
-      const patch = {}; if (s.aware) patch.aware = s.aware; if (s.persona) patch.persona = s.persona; if (s.angle) patch.angle = s.angle
-      if (Object.keys(patch).length) save(patch)
-      setAi({ busy: false, err: null, reason: s.reason || null })
-    } catch (e) { setAi({ busy: false, err: String(e.message || e), reason: null }) }
-  }
-  // The per-creative key-event fields are already merged onto `c` (in the parent's
-  // rows map, so the grid can sort by them), so the green cells read straight off c.
-  return (
-    <React.Fragment>
-      <tr className={open ? 'row-sel' : ''} style={{ cursor: 'pointer' }} onClick={onToggle}>
-        <td className="lft"><span className="u-chev">{open ? '▾' : '▸'}</span> {c.thumb ? <img className="cc-thumb" src={c.thumb} alt="" loading="lazy" /> : <span className="cc-thumb cc-thumb-none" />}<span className="cc-nm" title={c.name}>{c.name}<span className="cap"> · {c.adset || c.campaign}</span></span></td>
-        <td className="lft"><span className={`cc-fmt ${c.format === 'Video' ? 'vid' : 'img'}`}>{c.format}</span></td>
-        <td className="lft">{chip(c.aware)}</td>
-        <td className="lft">{chip(c.persona)}</td>
-        <td className="lft">{chip(c.angle)}</td>
-        <td className="lft">{c.fat ? (c.fat.level === 'Low' ? <span className="fat-ok">✅ OK</span> : <FatigueBadge fat={c.fat} />) : <span className="cc-none">-</span>}</td>
-        <td>{money(c.spend)}</td>
-        <td>{fmtNumber(c.crm ? c.crm.leads : c.leads)}</td>
-        {hasCrm && <td>{fmtNumber(c.bk)}</td>}
-        {hasCrm && <td>{c.cpb != null ? money(c.cpb) : '-'}</td>}
-        {o360cols && o360Cells(c, currency, o360cols)}
-      </tr>
-      {open && <tr className="cc-edit-row"><td colSpan={(hasCrm ? 10 : 8) + (o360cols ? o360cols.cols.length : 0)}>
-        <div className="cc-edit" onClick={(e) => e.stopPropagation()}>
-          <div className="cc-edit-perf">
-            {hasCrm && <><span><b>{fmtNumber(c.bk)}</b> booked</span><span><b>{fmtNumber(c.wn)}</b> won</span><span><b>{money(c.rev)}</b> revenue</span></>}
-            <span><b>{fmtNumber(c.impressions)}</b> impr</span><span><b>{fmtNumber(c.clicks)}</b> clicks</span>
-            <button className="ai-btn sm" onClick={suggest} disabled={ai.busy} title="Let Claude suggest awareness / persona / angle from the copy">{ai.busy ? 'Thinking…' : '✨ Suggest tags'}</button>
-            {c.igUrl && <a className="cc-view" href={c.igUrl} target="_blank" rel="noreferrer">↗ View ad on Instagram</a>}
-          </div>
-          {c.fat && c.fat.level !== 'Low' && <div className="cap cc-fat-reason"><FatigueBadge fat={c.fat} /> {c.fat.frequency != null ? `frequency ${c.fat.frequency}x` : ''}{c.fat.ctrDrop != null ? ` · CTR ${c.fat.ctrDrop >= 0 ? 'down' : 'up'} ${Math.abs(c.fat.ctrDrop)}% over the period` : ''}{(c.fat.reasons && c.fat.reasons.length) ? ` · ${c.fat.reasons.join(' · ')}` : ''} - consider a fresh variation.</div>}
-          {ai.err && <div className="cap" style={{ color: 'var(--neg)' }}>{ai.err}</div>}
-          {ai.reason && <div className="cap cc-ai-reason">✨ {ai.reason} <span className="cc-ai-note">· suggested - edit anything below</span></div>}
-          <div className="cc-fields">
-            <label>Awareness<select value={c.aware} onChange={(e) => save({ aware: e.target.value })}><option value="">-</option>{AWARENESS_OPTS.map((o) => <option key={o}>{o}</option>)}</select></label>
-            <label>Persona<TagCombo value={c.persona} onChange={(v) => save({ persona: v })} options={personaOpts} listId={`cc-persona-${clientId}`} placeholder="e.g. First-home buyer" /></label>
-            <label>Angle<TagCombo value={c.angle} onChange={(v) => save({ angle: v })} options={angleOpts} listId={`cc-angle-${clientId}`} placeholder="e.g. Save on tax" /></label>
-            <label>Destination {c.autoDest && !c.t.dest ? <span className="cc-auto">auto</span> : null}<TagCombo value={c.dest} onChange={(v) => save({ dest: v })} options={destOpts} listId={`cc-dest-${clientId}`} placeholder="Where traffic lands" /></label>
-            <label>CTA button {c.autoCta && !c.t.cta ? <span className="cc-auto">auto</span> : null}<input className="cc-in" value={c.cta} onChange={(e) => save({ cta: e.target.value })} placeholder="e.g. Book Now" /></label>
-          </div>
-          {c.headline && <div className="cap cc-headline"><b>Headline:</b> {c.headline}</div>}
-          <div className="cc-fields2">
-            <label>Ad copy {c.autoCopy && !c.t.copy ? <span className="cc-auto">auto</span> : null}<textarea rows={2} value={c.copy} onChange={(e) => save({ copy: e.target.value })} placeholder="Paste the primary text of the ad…" /></label>
-            <label>Notes<textarea rows={2} value={c.notes} onChange={(e) => save({ notes: e.target.value })} placeholder="What’s the concept / why it works…" /></label>
-          </div>
-        </div>
-      </td></tr>}
-    </React.Fragment>
-  )
-}
-
-/* ============ Client Update generator ============ */
-// Pick a client + date range, pull the computed intelligence for the period, and
-// generate a client-facing account update in two formats: casual (WhatsApp) and
-// formal/structured (email). Australian spelling, no em dashes, from Caalano
-// Digital, addressed by first name. Every figure comes from computed data; the
-// AI only writes it up. The last update is saved per client.
-// Loads every data source behind a client update in one shot (ad platforms +
-// CRM), so the page can both render the supporting dashboard and generate the
-// message from the same numbers.
-function useUpdateData(clientId, range, nonce) {
-  const [st, setSt] = useState({ status: 'idle', data: null })
-  const q = rangeQuery(range)
-  useEffect(() => {
-    if (!clientId) { setSt({ status: 'idle', data: null }); return }
-    let alive = true; setSt({ status: 'loading', data: null })
-    const base = `/.netlify/functions/windsor?client=${clientId}`
-    const g = (s) => fetch(`${base}&scope=${s}&${q}${nonce ? `&_r=${nonce}` : ''}`).then((r) => r.json()).catch(() => ({}))
-    // The CORE numbers (health) are the same consolidated figures the client view
-    // uses; the update is ready as soon as these load. Everything else is optional
-    // enrichment that merges in as it arrives, so a slow / timing-out extra can
-    // never block generating the update.
-    g('health').then((health) => { if (alive) setSt({ status: (health && health.error) ? 'err' : 'ok', data: { health } }) })
-    Promise.all([
-      g('creatives'), g('updateextra'), g('users'),
-      fetch(`${base}&channel=google&${q}${nonce ? `&_r=${nonce}` : ''}`).then((r) => r.json()).catch(() => ({})),
-      g('forms'), g('appts'), g('speed'),
-      fetch(`${base}&scope=cohorts&weeks=12${nonce ? `&_r=${nonce}` : ''}`).then((r) => r.json()).catch(() => ({})),
-    ]).then(([creatives, extra, users, google, forms, appts, speed, cohorts]) => { if (alive) setSt((s) => (s.status === 'ok' ? { ...s, data: { ...s.data, creatives, extra, users, google, forms, appts, speed, cohorts } } : s)) })
-    return () => { alive = false }
-  }, [clientId, q, nonce])
-  return st
-}
-
-// Small thumbnail that pops a larger preview on hover. The preview is
-// position:fixed (positioned from the thumbnail's on-screen rect) so it renders
-// over the table instead of being clipped by the scroll container's overflow.
-function ThumbZoom({ src }) {
-  const ref = useRef(null)
-  const [pos, setPos] = useState(null)
-  if (!src) return <span className="ud-thumb ud-thumb-none" />
-  const show = () => {
-    const r = ref.current && ref.current.getBoundingClientRect(); if (!r) return
-    const W = 240, above = r.top > 260
-    setPos({ left: Math.max(8, Math.min(r.left, window.innerWidth - W - 12)), top: above ? r.top - 8 : r.bottom + 8, above })
-  }
-  return (
-    <span className="ud-thumb" ref={ref} onMouseEnter={show} onMouseLeave={() => setPos(null)}>
-      <img src={src} alt="" loading="lazy" />
-      {pos && <span className="ud-thumb-pop" style={{ position: 'fixed', left: pos.left, top: pos.top, transform: pos.above ? 'translateY(-100%)' : 'none', zIndex: 9999 }}><img src={src} alt="" /></span>}
-    </span>
-  )
-}
-// Campaign / ad-set rows that expand to the ads inside them (with thumbnails).
-function MetaGroupRows({ groups, adsFor, money, level }) {
-  const [open, setOpen] = useState(() => new Set())
-  const toggle = (n) => setOpen((p) => { const s = new Set(p); s.has(n) ? s.delete(n) : s.add(n); return s })
-  const cpr = (spend, n) => (n ? money(Math.round(spend / n)) : '-')
-  return groups.map((g) => {
-    const isOpen = open.has(g.name); const kids = isOpen ? adsFor(g.name) : []
-    return (
-      <React.Fragment key={g.name}>
-        <tr className={isOpen ? 'row-sel' : ''} style={{ cursor: 'pointer' }} onClick={() => toggle(g.name)}>
-          <td className="lft"><span className="u-chev">{isOpen ? '▾' : '▸'}</span> {g.name}</td>
-          <td>{money(g.spend)}</td><td>{fmtNumber(g.leads)}</td><td>{g.booked != null ? fmtNumber(g.booked) : '-'}</td><td>{g.booked ? cpr(g.spend, g.booked) : '-'}</td>
-        </tr>
-        {isOpen && kids.map((a, i) => (
-          <tr className="ud-child" key={a.name + i}>
-            <td className="lft"><ThumbZoom src={a.thumb} /> <span className="cc-nm" title={a.name}>{a.name}</span>{a.previewUrl ? <a className="ud-prev" href={a.previewUrl} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}>↗</a> : null}</td>
-            <td>{money(a.spend)}</td><td>{fmtNumber(a.leads)}</td><td>{fmtNumber(a.booked)}</td><td>{a.booked ? cpr(a.spend, a.booked) : '-'}</td>
-          </tr>
-        ))}
-        {isOpen && !kids.length && <tr className="ud-child"><td colSpan={5} className="cap">No ads found in this {level}.</td></tr>}
-      </React.Fragment>
-    )
-  })
-}
-
-// The read-only dashboard of every figure behind the update: ad-platform results
-// (front of funnel) blended with Caalano Systems bookings, pipeline and wins via
-// UTM. Consolidated summary tables that mirror what the AI writes up.
-function UpdateDataDashboard({ st, currency }) {
-  const money = (v) => fmtCurrency(v, currency)
-  if (st.status === 'loading') return <div className="card"><Spinner label="Loading the numbers behind the update…" /></div>
-  if (st.status !== 'ok' || !st.data) return null
-  const { health, creatives, extra, users, google } = st.data
-  const k = (health && health.kpis) || {}, ch = (health && health.channels) || {}, pls = (health && health.pipelines) || []
-  const adLeads = (ch.metaLeads || 0) + (ch.googleConv || 0)
-  const adCpl = adLeads ? Math.round(k.adSpend / adLeads) : null
-  const twoChannels = (ch.metaSpend || 0) > 0 && (ch.googleSpend || 0) > 0
-  const metaCpl = ch.metaLeads ? Math.round(ch.metaSpend / ch.metaLeads) : null
-  const googCpc = ch.googleConv ? Math.round(ch.googleSpend / ch.googleConv) : null
-  const cre = (creatives && creatives.creatives) || [], segs = (creatives && creatives.segments) || []
-  const ap = extra && extra.appts, lr = (extra && extra.lostReasons) || [], nbn = (extra && extra.nonBookerNotes) || []
-  const us = (users && users.users) || []
-  const gg = google && google.google
-  // Meta campaign rollup from the creatives (UTM-blended bookings).
-  const campMap = new Map()
-  for (const c of cre) { const key = c.campaign || '-'; const e = campMap.get(key) || { name: key, spend: 0, leads: 0, booked: 0 }; e.spend += c.spend || 0; e.leads += (c.crm ? c.crm.leads : c.leads) || 0; e.booked += (c.crm ? c.crm.booked : 0) || 0; campMap.set(key, e) }
-  const metaCamps = [...campMap.values()].sort((a, b) => b.spend - a.spend)
-  const topCre = [...cre].sort((a, b) => ((b.crm ? b.crm.booked : 0) - (a.crm ? a.crm.booked : 0)) || (b.spend - a.spend)).slice(0, 12)
-  const cpr = (spend, n) => (n ? money(Math.round(spend / n)) : '-')
-  // Flat ad rows (per campaign/ad set/creative) for the drill-down.
-  const ads = (creatives && creatives.ads) || []
-  const adsInCampaign = (name) => ads.filter((a) => a.campaign === name).sort((a, b) => b.spend - a.spend)
-  const adsInAdset = (name) => ads.filter((a) => a.adset === name).sort((a, b) => b.spend - a.spend)
-  const bk = (creatives && creatives.bookingsByUtm) || { content: [], medium: [] }
-  const bkContent = bk.content || [], bkMedium = bk.medium || []
-  return (
-    <div className="ud-wrap">
-      <div className="lvl-title" style={{ marginTop: 18 }}>The numbers behind this update <span className="sub">· ad-platform results blended with Caalano Systems bookings &amp; pipeline via UTM</span></div>
-      {/* Scorecards */}
-      <div className="scorecard">
-        <Sc label="Ad spend" value={money(k.adSpend || 0)} />
-        {twoChannels ? <>
-          <Sc label="Meta leads" value={fmtNumber(ch.metaLeads || 0)} />
-          <Sc label="Meta cost/lead" value={metaCpl != null ? money(metaCpl) : '-'} />
-          <Sc label="Google conv." value={fmtNumber(ch.googleConv || 0)} />
-          <Sc label="Google cost/conv" value={googCpc != null ? money(googCpc) : '-'} />
-        </> : <>
-          <Sc label="Leads (ads)" value={fmtNumber(adLeads)} />
-          <Sc label="Cost / lead" value={adCpl != null ? money(adCpl) : '-'} />
-        </>}
-        <Sc label="Booked calls" value={fmtNumber(k.booked || 0)} />
-        <Sc label="Cost / booked" value={k.cpBooked != null ? money(k.cpBooked) : '-'} />
-        <Sc label="Won" value={fmtNumber(k.won || 0)} />
-        <Sc label="Revenue" value={money(k.revenue || 0)} />
-      </div>
-      {twoChannels
-        ? <p className="cap"><b>Two channels are running this period.</b> Meta and Google are shown separately above so each matches its own platform (Meta form/website leads vs Google conversions, which aren’t always the same thing). Combined that’s {fmtNumber(adLeads)} leads at {adCpl != null ? money(adCpl) : '-'} blended. Booked calls and wins are Caalano Systems, attributed to the ads by UTM. The CRM logged {fmtNumber(k.leads || 0)} opportunities across all sources.</p>
-        : <p className="cap">Leads and cost per lead are ad-reported (Meta {fmtNumber(ch.metaLeads || 0)}, Google {fmtNumber(ch.googleConv || 0)}) so they match Ads Manager. Booked calls and wins are Caalano Systems, attributed to the ads by UTM. The CRM logged {fmtNumber(k.leads || 0)} opportunities across all sources.</p>}
-      {ap && <p className="cap">Appointments: {fmtNumber(ap.attended)} attended, {fmtNumber(ap.noShow)} no-shows, {fmtNumber(ap.upcoming)} still upcoming, {fmtNumber(ap.occurred)} calls have happened.{ap.stageOnlyShown > 0 ? ` ${fmtNumber(ap.stageOnlyShown)} advanced past the show stage but weren’t marked attended (reporting gap).` : ''}</p>}
-
-      {/* Pipelines */}
-      {pls.length > 0 && <>
-        <div className="lvl-title" style={{ fontSize: 13, marginTop: 16 }}>Pipeline - where leads are at</div>
-        <div className="ud-pipes">{pls.map((p) => {
-          const maxOpen = Math.max(1, ...(p.stages || []).map((s) => s.open))
-          return (
-            <div className="card ud-pipe" key={p.name}>
-              <div className="ud-pipe-h">{p.name} <span className="sub">· {fmtNumber(p.leads)} leads · {fmtNumber(p.booked)} booked · {fmtNumber(p.won)} won{p.revenue ? ` · ${money(p.revenue)}` : ''}{p.openValue ? ` · ${money(p.openValue)} open` : ''}</span></div>
-              {(p.stages || []).length ? <div className="ud-funnel">{p.stages.map((s) => (
-                <div className="ud-stage" key={s.name}><span className="ud-stage-n">{s.name}</span><span className="ud-stage-bar"><span style={{ width: `${Math.max(4, (s.open / maxOpen) * 100)}%` }} /></span><span className="ud-stage-c">{fmtNumber(s.open)}</span></div>
-              ))}</div> : <div className="cap">No open deals sitting in a stage.</div>}
-            </div>
-          )
-        })}</div>
-      </>}
-
-      {/* Meta Ads - campaign / ad set rows drill into their ads */}
-      {(metaCamps.length > 0 || segs.length > 0) && <>
-        <div className="lvl-title" style={{ fontSize: 13, marginTop: 16 }}>Meta Ads <span className="sub">· click a campaign or ad set to see its ads · hover a thumbnail to enlarge</span></div>
-        <div className="ud-tbls">
-          {metaCamps.length > 0 && <div className="tbl-scroll ud-tbl"><div className="ud-tbl-h">Campaigns</div><table className="mini-tbl users-tbl"><thead><tr><th className="lft">Campaign</th><th>Spend</th><th>Leads</th><th>Booked</th><th>Cost/book</th></tr></thead><tbody><MetaGroupRows groups={metaCamps} adsFor={adsInCampaign} money={money} level="campaign" /></tbody></table></div>}
-          {segs.length > 0 && <div className="tbl-scroll ud-tbl"><div className="ud-tbl-h">Ad sets (segments)</div><table className="mini-tbl users-tbl"><thead><tr><th className="lft">Ad set</th><th>Spend</th><th>Leads</th><th>Booked</th><th>Cost/book</th></tr></thead><tbody><MetaGroupRows groups={segs} adsFor={adsInAdset} money={money} level="ad set" /></tbody></table></div>}
-        </div>
-        {topCre.length > 0 && <div className="tbl-scroll ud-tbl"><div className="ud-tbl-h">Top creatives</div><table className="mini-tbl users-tbl cc-tbl"><thead><tr><th className="lft">Creative</th><th className="lft">Format</th><th>Spend</th><th>Leads</th><th>Cost/lead</th><th>Booked</th><th>Cost/book</th></tr></thead><tbody>{topCre.map((c) => { const cl = c.crm ? c.crm.leads : c.leads, bkd = c.crm ? c.crm.booked : 0; return <tr key={c.id}><td className="lft"><ThumbZoom src={c.thumb} /> <span className="cc-nm" title={c.name}>{c.name}</span></td><td className="lft"><span className={`cc-fmt ${c.format === 'Video' ? 'vid' : 'img'}`}>{c.format}</span></td><td>{money(c.spend)}</td><td>{fmtNumber(cl)}</td><td>{cpr(c.spend, cl)}</td><td>{fmtNumber(bkd)}</td><td>{cpr(c.spend, bkd)}</td></tr> })}</tbody></table></div>}
-      </>}
-
-      {/* Which ads drove the bookings - traced through the lead UTMs */}
-      {(k.booked || 0) > 0 && <>
-        <div className="lvl-title" style={{ fontSize: 13, marginTop: 16 }}>Which ads drove the {fmtNumber(k.booked)} booked calls <span className="sub">· traced through the lead UTMs</span></div>
-        {(bkContent.length > 0 || bkMedium.length > 0) ? <>
-          <p className="cap">Bookings are attributed to each lead's UTMs. Where a <code>utm_content</code> matches a live ad (by name or creative ID) it's named; the rest show the raw UTM value, which reveals how tracking is set (e.g. ad IDs or a different naming scheme) and is why some ads read 0 booked above.</p>
-          <div className="ud-tbls">
-            {bkContent.length > 0 && <div className="tbl-scroll ud-tbl"><div className="ud-tbl-h">By creative (utm_content)</div><table className="mini-tbl users-tbl"><thead><tr><th className="lft">Ad / UTM value</th><th>Booked</th><th>Leads</th><th>Won</th></tr></thead><tbody>{bkContent.map((r, i) => <tr key={i}><td className="lft">{r.matchedAd || r.utm}<span className="cap"> · {r.matchedAd ? 'matched ad' : 'unmatched utm'}</span></td><td>{fmtNumber(r.booked)}</td><td>{fmtNumber(r.leads)}</td><td>{fmtNumber(r.won)}</td></tr>)}</tbody></table></div>}
-            {bkMedium.length > 0 && <div className="tbl-scroll ud-tbl"><div className="ud-tbl-h">By ad set (utm_medium)</div><table className="mini-tbl users-tbl"><thead><tr><th className="lft">Ad set / UTM value</th><th>Booked</th><th>Leads</th><th>Won</th></tr></thead><tbody>{bkMedium.map((r, i) => <tr key={i}><td className="lft">{r.utm}</td><td>{fmtNumber(r.booked)}</td><td>{fmtNumber(r.leads)}</td><td>{fmtNumber(r.won)}</td></tr>)}</tbody></table></div>}
-          </div>
-        </> : <p className="cap">None of the {fmtNumber(k.booked)} booked calls could be traced to an ad: the booked leads carried no <code>utm_content</code> or <code>utm_medium</code>. That means the booking-stage opportunities lost their ad tracking (or came in without it), which is why the per-ad booked figures read 0. Worth checking how UTMs are captured onto the opportunity.</p>}
-      </>}
-
-      {/* Google Ads */}
-      {gg && ((gg.campaigns || []).length > 0 || (gg.adGroups || []).length > 0) && <>
-        <div className="lvl-title" style={{ fontSize: 13, marginTop: 16 }}>Google Ads <span className="sub">· campaign → ad group · ad-reported</span></div>
-        <div className="ud-tbls">
-          {(gg.campaigns || []).length > 0 && <div className="tbl-scroll ud-tbl"><div className="ud-tbl-h">Campaigns</div><table className="mini-tbl users-tbl"><thead><tr><th className="lft">Campaign</th><th>Cost</th><th>Clicks</th><th>Conv.</th></tr></thead><tbody>{gg.campaigns.slice(0, 15).map((c) => <tr key={c.name}><td className="lft">{c.name}</td><td>{money(c.cost)}</td><td>{fmtNumber(c.clicks)}</td><td>{fmtNumber(Math.round(c.conversions))}</td></tr>)}</tbody></table></div>}
-          {(gg.adGroups || []).length > 0 && <div className="tbl-scroll ud-tbl"><div className="ud-tbl-h">Ad groups</div><table className="mini-tbl users-tbl"><thead><tr><th className="lft">Ad group</th><th>Cost</th><th>Clicks</th><th>Conv.</th></tr></thead><tbody>{gg.adGroups.slice(0, 20).map((c) => <tr key={c.campaign + c.name}><td className="lft">{c.name}<span className="cap"> · {c.campaign}</span></td><td>{money(c.cost)}</td><td>{fmtNumber(c.clicks)}</td><td>{fmtNumber(Math.round(c.conversions))}</td></tr>)}</tbody></table></div>}
-        </div>
-      </>}
-
-      {/* Users + lost reasons */}
-      <div className="ud-tbls">
-        {us.length > 0 && <div className="tbl-scroll ud-tbl"><div className="ud-tbl-h">User performance</div><table className="mini-tbl users-tbl"><thead><tr><th className="lft">Rep</th><th>Leads</th><th>Booked</th><th>Won</th><th>Revenue</th></tr></thead><tbody>{[...us].sort((a, b) => b.won - a.won || b.booked - a.booked).slice(0, 12).map((u) => <tr key={u.id}><td className="lft">{u.name}</td><td>{fmtNumber(u.leads)}</td><td>{fmtNumber(u.booked)}</td><td>{fmtNumber(u.won)}</td><td>{money(u.revenue)}</td></tr>)}</tbody></table></div>}
-        {lr.length > 0 && <div className="tbl-scroll ud-tbl"><div className="ud-tbl-h">Lost reasons</div><table className="mini-tbl users-tbl"><thead><tr><th className="lft">Reason</th><th>Count</th></tr></thead><tbody>{lr.map((r) => <tr key={r.reason}><td className="lft">{r.reason}</td><td>{fmtNumber(r.count)}</td></tr>)}</tbody></table></div>}
-      </div>
-
-      {/* Non-booker note themes */}
-      {nbn.length > 0 && <details className="ud-notes"><summary>Notes on {fmtNumber(nbn.length)} leads who didn’t book (the AI uses these for cause detection)</summary>
-        <div className="u-notes" style={{ marginTop: 8 }}>{nbn.map((n, i) => <div className="u-note-item" key={i}><div className="u-note-meta">{n.pipeline}</div><div className="u-note-body">{n.note}</div></div>)}</div>
-      </details>}
-    </div>
-  )
-}
-
-function CopyBtn({ text, label = 'Copy' }) {
-  const [done, setDone] = useState(false)
-  const copy = async () => { try { await navigator.clipboard.writeText(text || ''); setDone(true); setTimeout(() => setDone(false), 1600) } catch { /* clipboard blocked */ } }
-  return <button className="link-btn sm cu-copy" onClick={copy}>{done ? '✓ Copied' : label}</button>
-}
-function ClientUpdatePage({ clients, currency, range, nonce, authUser }) {
-  useSettingsSync()
-  const list = [...clients].sort((a, b) => a.name.localeCompare(b.name))
-  const [selId, setSelId] = useState(list[0] ? list[0].id : null)
-  const sel = list.find((c) => c.id === selId) || list[0]
-  const [firstName, setFirstName] = useState('')
-  const [ctx, setCtx] = useState('')
-  const [rec, setRec] = useState(null)
-  const [busy, setBusy] = useState(false)
-  const [err, setErr] = useState(null)
-  const auDb = useAuDb() // for the geo digest (same postcode/suburb merge as the Location tab)
-  const dataSt = useUpdateData(sel && sel.id, range, nonce)
-  // Load the last saved update, first name and client context on client change.
-  useEffect(() => {
-    if (!sel) return
-    const saved = loadInsights(sel.id + ':update')
-    setRec(saved || null); setFirstName((saved && saved.firstName) || ''); setCtx(loadClientCtx(sel.id)); setErr(null)
-  }, [selId, SETTINGS.loaded])
-  const generate = async () => {
-    if (!sel || busy) return
-    if (dataSt.status !== 'ok' || !dataSt.data) { setErr('The client numbers are still loading, give it a moment and try again.'); return }
-    setBusy(true); setErr(null)
-    try {
-      const { health, creatives = {}, extra = {}, users = {} } = dataSt.data
-      if (!health || health.error) throw new Error((health && health.error) || 'could not load the client data')
-      const topCr = (creatives.creatives || [])
-        .map((c) => ({ name: c.name, format: c.format, spend: c.spend, leads: c.crm ? c.crm.leads : c.leads, booked: c.crm ? c.crm.booked : 0 }))
-        .sort((a, b) => (b.booked - a.booked) || (b.leads - a.leads)).slice(0, 5)
-      // Stalled deals from the Users data: open opportunities that haven't moved
-      // in 30+ days, grouped by stage, so the update can ask informed questions
-      // about where deals are getting stuck.
-      const allOpen = ((users && users.users) || []).flatMap((u) => u.openDeals || [])
-      const stalledBy = {}
-      for (const d of allOpen) { if ((d.ageDays || 0) >= 30) { const s = stalledBy[d.stage] || { stage: d.stage, pipeline: d.pipeline, count: 0, value: 0, maxAge: 0 }; s.count++; s.value += (d.value || 0); s.maxAge = Math.max(s.maxAge, d.ageDays || 0); stalledBy[d.stage] = s } }
-      const stalled = Object.values(stalledBy).sort((a, b) => b.value - a.value).slice(0, 6)
-      // Elapsed days in the selected range, for the "is no-wins expected?" note.
-      const periodDays = Math.max(1, Math.round((new Date(range.to) - new Date(range.from)) / 86400000) + 1)
-      // --- Extra digests (compact) so the update draws on all of the client's data ---
-      // Geo: top regions by leads, merged the same way the Location tab does.
-      const formsArr = (dataSt.data.forms && dataSt.data.forms.forms) || []
-      const allLocs = formsArr.flatMap((f) => f.locations || [])
-      const geo = allLocs.length ? mergeLocations(groupAnswers(allLocs), auDb).slice(0, 5).map((l) => ({ region: l.value, leads: l.leads || 0, booked: l.booked || 0, won: l.won || 0 })) : []
-      // Appointment insights (booking lead time, self vs staff, show rate, downstream win).
-      const ai = (dataSt.data.appts && dataSt.data.appts.channels && dataSt.data.appts.channels.all) || null
-      const apptInsights = ai ? { avgLeadDays: ai.avgLeadDays, avgTimeToBookDays: ai.avgTimeToBookDays, self: ai.self, staff: ai.staff, selfPct: ai.selfPct, showRate: ai.showRate, booked: ai.booked, won: ai.won, winRate: ai.winRate } : null
-      // Speed to lead: typical response time + fast vs slow follow-up book rate.
-      const sp = dataSt.data.speed || null
-      const speed = (sp && sp.measured) ? (() => {
-        const bk = sp.buckets || []
-        const agg = (re) => bk.filter((b) => re.test(b.label)).reduce((a, b) => ({ count: a.count + b.count, booked: a.booked + b.booked }), { count: 0, booked: 0 })
-        const fast = agg(/Under 5|5-15/), slow = agg(/4-24 hrs|Over 24/)
-        return { medianMin: sp.medianMin, avgMin: sp.avgMin, within5Pct: sp.within5Pct, measured: sp.measured, fastCount: fast.count, fastBookRate: fast.count ? Math.round((fast.booked / fast.count) * 100) : null, slowCount: slow.count, slowBookRate: slow.count ? Math.round((slow.booked / slow.count) * 100) : null }
-      })() : null
-      // Cohort trend: recent acquisition weeks (leads -> booked -> won) for a maturation read.
-      const cohortTrend = ((dataSt.data.cohorts && dataSt.data.cohorts.weeks) || []).slice(-6).map((w) => { const a = (w.ch && w.ch.all) || {}; return { week: w.label, leads: a.leads || 0, booked: a.booked || 0, won: a.won || 0 } })
-      // Top forms/offers by submissions, with booked/won where available.
-      const forms = formsArr.slice(0, 3).map((f) => ({ name: f.form, kind: f.kind, leads: f.leads || 0, booked: f.booked || 0, won: f.won || 0 }))
-      const payload = { mode: 'client-update', clientName: sel.name, firstName: firstName.trim(), senderName: (authUser && (authUser.name || authUser.email)) || '', clientContext: [profileText(sel.id), (ctx || '').trim()].filter((s) => s && s.trim()).join('\n\n'), period: rangeLabel(range), periodDays, kpis: health.kpis, channels: health.channels, forecast: health.forecast, pipelines: health.pipelines || [], segments: creatives.segments || [], creatives: topCr, appts: extra.appts || null, lostReasons: extra.lostReasons || [], avgCloseDays: extra.avgCloseDays != null ? extra.avgCloseDays : null, nonBookerNotes: extra.nonBookerNotes || [], stalled, geo, apptInsights, speed, cohortTrend, forms }
-      const r = await fetch('/.netlify/functions/insights', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) })
-      const j = await r.json().catch(() => ({}))
-      if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`)
-      const full = { subject: j.subject || '', email: j.email || '', whatsapp: j.whatsapp || '', firstName: firstName.trim(), period: j.period || rangeLabel(range), generatedAt: j.generatedAt || new Date().toISOString() }
-      saveInsights(sel.id + ':update', full); setRec(full)
-    } catch (e) { setErr(String(e.message || e)) } finally { setBusy(false) }
-  }
-  if (!list.length) return <div className="card empty-deep"><div className="big">✉️</div><b>No clients available.</b></div>
-  return (
-    <>
-      <div className="c360-head" style={{ marginTop: 0 }}>
-        <div className="pipe-sel"><label>Client</label>
-          <select value={(sel && sel.id) || ''} onChange={(e) => setSelId(e.target.value)}>{list.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
-        </div>
-        <div className="pipe-sel"><label>Client first name</label>
-          <input className="cu-name" value={firstName} placeholder="e.g. Jason" onChange={(e) => setFirstName(e.target.value)} />
-        </div>
-        <button className="ai-btn cu-gen" onClick={generate} disabled={busy}>{busy ? 'Generating…' : rec ? '↻ Regenerate update' : '✨ Generate update'}</button>
-      </div>
-      <p className="cap" style={{ marginTop: 2 }}>Pulls this client's computed results for <b>{rangeLabel(range)}</b> (spend, leads, booked calls, revenue, cost per result, best-performing ads) and writes a client-ready update. Set the period with the date range up top. Nothing is invented - it only uses the numbers on the dashboard.</p>
-      <details className="cu-ctx" open={!!ctx}>
-        <summary>Client context &amp; notes {ctx ? <span className="cu-ctx-on">· saved</span> : <span className="cap">· optional background the AI uses for tone &amp; framing</span>}</summary>
-        <textarea className="cu-ctx-ta" rows={4} value={ctx} placeholder="Anything the AI should know about this client: their business, tone to use, what they care about, current focus, sensitivities, offers running, seasonality, relationship notes… This is fed into the update as background (it never invents numbers). Saved to this client and shared with the team." onChange={(e) => setCtx(e.target.value)} onBlur={() => sel && saveClientCtx(sel.id, ctx)} />
-        <div className="cap">Saved to Settings for {sel ? sel.name : 'this client'} and shared across the team. Edited here for convenience.</div>
-      </details>
-      {err && <div className="card empty-deep" style={{ padding: 18 }}><b>Couldn’t generate.</b><p className="cap" style={{ marginTop: 6 }}>{err}</p></div>}
-      {busy && <div className="card"><Spinner label="Pulling the numbers and writing the update…" /></div>}
-      {!busy && rec && (rec.email || rec.whatsapp) && <>
-        <div className="cu-meta cap">{err ? 'Showing your last saved update - the new one didn’t generate (see the error above). ' : ''}Last generated {new Date(rec.generatedAt).toLocaleString('en-AU')} · {rec.period}</div>
-        <div className="cu-grid">
-          <div className="card cu-panel">
-            <div className="cu-panel-h">💬 WhatsApp <span className="sub">· casual</span><CopyBtn text={rec.whatsapp} /></div>
-            <pre className="cu-body">{rec.whatsapp}</pre>
-          </div>
-          <div className="card cu-panel">
-            <div className="cu-panel-h">✉️ Email <span className="sub">· formal</span><CopyBtn text={`Subject: ${rec.subject}\n\n${rec.email}`} label="Copy all" /></div>
-            {rec.subject && <div className="cu-subject"><span className="cu-subj-l">Subject</span>{rec.subject}<CopyBtn text={rec.subject} label="Copy" /></div>}
-            <pre className="cu-body">{rec.email}</pre>
-          </div>
-        </div>
-      </>}
-      {!busy && !rec && !err && <div className="card empty-deep"><div className="big">✉️</div><b>Generate an update for {sel ? sel.name : 'this client'}.</b><p style={{ maxWidth: 460, margin: '8px auto 0' }}>Add the client's first name, pick your date range up top, then Generate. You'll get a casual WhatsApp version and a formal email version, ready to copy and send.</p></div>}
-      <UpdateDataDashboard st={dataSt} currency={currency} />
-    </>
-  )
-}
-
-// ---------------------------------------------------------------------------
-// Monthly Report - a full-page, one-client, one-month slide deck built from a
-// FROZEN snapshot. Wins/revenue are attributed by close month (won date), not
-// lead-created date, so late-closing leads land in the month they closed.
-// Exports via native print (Save-as-PDF) and a direct jsPDF download.
-// ---------------------------------------------------------------------------
-
-// PDF export: standard A4 landscape pages. Each slide is fit to the full page WIDTH
-// (kept readable, never shrunk to fit a whole tall slide onto one page). A slide that
-// fits within one page is centred vertically; a taller slide flows across as many A4
-// pages as it needs, with every page break snapped to a block-level element edge (row
-// / card / section) so nothing is sliced through the middle.
-const A4L_W = 842, A4L_H = 595 // A4 landscape, points
-async function exportSlidesToPdf(slides, fileName) {
-  const [{ default: html2canvas }, { jsPDF }] = await Promise.all([import('html2canvas-pro'), import('jspdf')])
-  const pdf = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' })
-  const bg = getComputedStyle(document.body).backgroundColor || '#ffffff'
-  const buf = document.createElement('canvas'); const bctx = buf.getContext('2d')
-  let started = false
-  const page = () => { if (started) pdf.addPage('a4', 'landscape'); started = true }
-  for (const el of slides) {
-    const top = el.getBoundingClientRect().top
-    const canvas = await html2canvas(el, { scale: 2, backgroundColor: bg, useCORS: true, logging: false })
-    const fit = A4L_W / canvas.width // canvas px -> pt at full page width
-    const fullH = canvas.height * fit
-    if (fullH <= A4L_H + 1) {
-      // Fits one page: place at full width, centred vertically.
-      page()
-      pdf.addImage(canvas.toDataURL('image/jpeg', 0.95), 'JPEG', 0, (A4L_H - fullH) / 2, A4L_W, fullH)
-      continue
-    }
-    // Taller than a page: paginate. Break only at block-level element edges (not inline
-    // text), so table rows / cards aren't cut. Require each page to fill >=50% first.
-    // Re-measure the slide top NOW (after html2canvas) so it matches the descendant
-    // rects measured just below - html2canvas can shift scroll during its async render.
-    const elTop = el.getBoundingClientRect().top
-    const factor = canvas.width / (el.offsetWidth || 1)
-    const cutSet = new Set([canvas.height])
-    const addEdge = (n) => { const r = n.getBoundingClientRect(); if (r.height > 0) cutSet.add(Math.round((r.bottom - elTop) * factor)) }
-    // Table rows / cards / funnel rows are the safe break points - collect them
-    // unconditionally (compressed export rows can be <14px, so no height filter here).
-    el.querySelectorAll('tr, .mr-cre, .card, .kef-row, .mr-block, .pp-block, .mr-cretbl-row').forEach(addEdge)
-    // Plus any other non-inline block with real height, as a fallback for other layouts.
-    el.querySelectorAll('*').forEach((n) => { const r = n.getBoundingClientRect(); if (r.height < 8) return; const d = getComputedStyle(n).display; if (d === 'inline' || d === 'none') return; cutSet.add(Math.round((r.bottom - elTop) * factor)) })
-    const cuts = [...cutSet].filter((v) => v > 0 && v <= canvas.height).sort((a, b) => a - b)
-    const pageHpx = Math.floor(A4L_H / fit) // source px that fill one A4 page
-    let y = 0; buf.width = canvas.width
-    while (y < canvas.height) {
-      let end = Math.min(y + pageHpx, canvas.height)
-      if (end < canvas.height) { const safe = cuts.filter((c) => c > y + pageHpx * 0.5 && c <= end); if (safe.length) end = safe[safe.length - 1] }
-      const h = end - y
-      buf.height = h; bctx.fillStyle = bg; bctx.fillRect(0, 0, buf.width, h); bctx.drawImage(canvas, 0, y, canvas.width, h, 0, 0, canvas.width, h)
-      page()
-      pdf.addImage(buf.toDataURL('image/jpeg', 0.95), 'JPEG', 0, 0, A4L_W, h * fit) // top-aligned
-      y = end
-    }
-  }
-  if (started) pdf.save(fileName)
-}
-
-// Bounds + label for a 'YYYY-MM' month string (UTC-safe).
-function monthBounds(m) {
-  const [y, mo] = m.split('-').map(Number)
-  const from = `${m}-01`
-  const end = new Date(Date.UTC(y, mo, 0)).getUTCDate()
-  const to = `${m}-${String(end).padStart(2, '0')}`
-  const label = new Date(Date.UTC(y, mo - 1, 1)).toLocaleString('en-AU', { month: 'long', year: 'numeric', timeZone: 'UTC' })
-  return { from, to, label }
-}
-const monthShort = (m) => { const [y, mo] = m.split('-').map(Number); return new Date(Date.UTC(y, mo - 1, 1)).toLocaleString('en-AU', { month: 'short', timeZone: 'UTC' }) }
-// A report period spanning one or more months (from month `a` to month `b`).
-function periodOf(a, b) {
-  const lo = a <= b ? a : b, hi = a <= b ? b : a
-  const from = `${lo}-01`, to = monthBounds(hi).to, single = lo === hi
-  const label = single ? monthBounds(lo).label : `${monthBounds(lo).label} – ${monthBounds(hi).label}`
-  return { from, to, label, key: single ? lo : `${lo}_${hi}`, single, lo, hi }
-}
-// Pretty label for a stored snapshot key - a single month ("2026-07") or a
-// range ("2026-06_2026-07"). Used by the reports lists / month pickers.
-function snapLabel(key) {
-  if (!key) return ''
-  const s = String(key)
-  const [lo, hi] = s.includes('_') ? s.split('_') : [s, s]
-  return periodOf(lo, hi).label
-}
-// Default month = last complete calendar month.
-function lastCompleteMonth() {
-  const d = new Date()
-  const first = new Date(Date.UTC(d.getFullYear(), d.getMonth(), 1))
-  first.setUTCDate(0) // → last day of previous month
-  return `${first.getUTCFullYear()}-${String(first.getUTCMonth() + 1).padStart(2, '0')}`
-}
-const MR_MONTHS = (back = 18) => {
-  const out = []; const now = new Date()
-  let y = now.getFullYear(), m = now.getMonth() // 0-based; start at current month, walk back
-  for (let i = 0; i < back; i++) { out.push(`${y}-${String(m + 1).padStart(2, '0')}`); m--; if (m < 0) { m = 11; y-- } }
-  return out
-}
-
+// ---- Monthly Report: src/views/monthly-report.jsx, loaded on first open ----
+const ClientReports = lazyView(() => import('./views/monthly-report.jsx'), 'ClientReports')
+const MonthlyReport = lazyView(() => import('./views/monthly-report.jsx'), 'MonthlyReport')
+const MRCreativeSection = lazyView(() => import('./views/monthly-report.jsx'), 'MRCreativeSection')
 // Display an ISO (YYYY-MM-DD) date as DD/MM/YYYY.
-function fmtDate(s) {
+export function fmtDate(s) {
   if (!s) return '-'
   const p = String(s).slice(0, 10).split('-')
   return (p.length === 3 && p[0]) ? `${p[2]}/${p[1]}/${p[0]}` : String(s)
 }
-
-async function mrFetch(qs) {
+export async function mrFetch(qs) {
   const r = await fetch(`/.netlify/functions/windsor?${qs}`)
   if (!r.ok) { let e; try { e = (await r.json()).error } catch {} throw new Error(e || `HTTP ${r.status}`) }
   return r.json()
 }
-// Resilient fetch for report assembly: retries a section that times out / 429s /
-// returns a soft error, so a cold-cache first "Generate" doesn't freeze a snapshot
-// with missing sections (which is why it used to take a few refreshes). Aborts a
-// hung request so one slow pull can't stall the whole generate.
-async function mrFetchTry(qs, { tries = 3, timeoutMs = 22000 } = {}) {
-  let lastErr = null
-  for (let i = 0; i < tries; i++) {
-    const ctrl = new AbortController()
-    const timer = setTimeout(() => ctrl.abort(), timeoutMs)
-    try {
-      const r = await fetch(`/.netlify/functions/windsor?${qs}`, { signal: ctrl.signal })
-      const j = await r.json().catch(() => null)
-      if (r.ok && j && !j.error) return j
-      lastErr = new Error((j && j.error) || `HTTP ${r.status}`)
-    } catch (e) { lastErr = e }
-    finally { clearTimeout(timer) }
-    if (i < tries - 1) await new Promise((res) => setTimeout(res, 1500 * (i + 1)))
-  }
-  throw lastErr || new Error('failed')
-}
-
-// Pull every scope the deck needs for one client + month, in parallel, and
-// shape the frozen report payload.
-async function assembleMonthlyReport(client, period) {
-  const b = { from: period.from, to: period.to, label: period.label }
-  const q = `client=${encodeURIComponent(client.id)}&${rangeQuery(b)}`
-  // Each section retries before giving up; a section that STILL fails is recorded so
-  // the UI can warn instead of silently freezing an incomplete report.
-  const failed = []
-  const section = (label, want, qs2, pick) => want
-    ? mrFetchTry(qs2).then(pick).catch(() => { failed.push(label); return null })
-    : Promise.resolve(null)
-  const [meta, google, blend, attribution, trendR, dealsR, formsR] = await Promise.all([
-    section('Meta Ads', client.meta, `channel=meta&${q}`, (r) => r.meta),
-    section('Google Ads', client.google, `channel=google&${q}`, (r) => r.google),
-    section('Overview', true, `channel=blend&${q}`, (r) => r.blend),
-    section('CRM attribution', client.ghl, `channel=attribution&${q}`, (r) => r.attribution),
-    section('Meta 6-month trend', client.meta, `scope=monthlytrend&months=6&${q}`, (r) => r.trend),
-    section('CRM deals', client.ghl, `scope=monthlydeals&${q}`, (r) => r.deals),
-    section('Form performance', client.ghl, `scope=forms&${q}`, (r) => ({ forms: r.forms, pipelines: r.pipelines })),
-  ])
-  // Join CRM key-event outcomes (utm_content) onto each Meta creative so the
-  // creative slide can show Leads → Booked → Shown → Won → Revenue per ad, the
-  // same attribution the Meta Ads view uses. Done before the attribution trim.
-  if (meta && Array.isArray(meta.ads) && attribution && Array.isArray(attribution.byCreative)) {
-    const oCre = mkOutcomeMap(attribution.byCreative)
-    for (const a of meta.ads) {
-      const o = oCre.get(unorm(a.name))
-      if (o) a.ke = { leads: o.leads || 0, booked: o.booked || 0, shown: o.shown || 0, won: o.won || 0, revenue: o.revenue || 0 }
-    }
-  }
-  // Trim the heaviest arrays so the frozen blob stays lean, and keep only the
-  // calendar counts the funnel reads from attribution (drops raw opportunity PII).
-  if (google && Array.isArray(google.conversionActions)) google.conversionActions = google.conversionActions.slice(0, 200)
-  const attrTrim = attribution && attribution.appointments ? { appointments: { byCalendar: attribution.appointments.byCalendar || [] } } : null
-  if (meta) delete meta.adDaily
-  // Form performance: compute the client's configured key-event reach PER FORM at
-  // freeze time (same helper the live Forms tab uses), so the report slide matches
-  // the client view - Leads → each key event → Revenue - instead of the generic
-  // booked/shown/won. Store only the counts (not the heavy per-lead people arrays).
-  let formsRich = [], formKe = [], formKeByPipe = null
-  try {
-    const fArr = formsR && Array.isArray(formsR.forms) ? formsR.forms : (Array.isArray(formsR) ? formsR : [])
-    if (fArr.length) {
-      const pipesArr = (formsR && formsR.pipelines) || []
-      const liveForms = fArr.filter((f) => (f.leads || 0) > 0)
-      // Build a Leads → key-event reach block for a pipeline scope. 'all' = the
-      // union across every pipeline (single-pipeline clients / back-compat); a real
-      // pipeline id scopes both the key-event COLUMNS and each form's reach to that
-      // pipeline, so multi-pipeline clients get one clean table per pipeline with no
-      // duplicated columns. pipeLeads = the form's leads whose opp sits in this
-      // pipeline (the denominator for that table); union keeps the raw lead count.
-      const buildBlock = (pipeKey) => {
-        const fke = formKeyEvents(client.id, pipeKey, pipesArr)
-        const evs = fke.events || []
-        const events = evs.map((k) => ({ label: k.label, kind: k.kind || 'stage' }))
-        const forms = liveForms.map((f) => ({
-          form: f.form, kind: f.kind, leads: f.leads || 0, booked: f.booked || 0, shown: f.shown || 0, won: f.won || 0, revenue: f.revenue || 0,
-          ke: evs.map((k) => (f.people || []).reduce((n, p) => n + (fke.reached(p, k) ? 1 : 0), 0)),
-          pipeLeads: pipeKey === 'all' ? (f.leads || 0) : (f.people || []).reduce((n, p) => n + (p && p.pipelineId === pipeKey ? 1 : 0), 0),
-        }))
-        return { events, forms }
-      }
-      const uni = buildBlock('all')
-      formKe = uni.events
-      formsRich = uni.forms.slice(0, 30).map(({ pipeLeads, ...f }) => f)
-      if (pipesArr.length > 1) {
-        formKeByPipe = pipesArr.map((p) => {
-          const b = buildBlock(p.id)
-          const forms = b.forms.filter((f) => f.pipeLeads > 0).sort((a, b2) => b2.pipeLeads - a.pipeLeads).slice(0, 30)
-            .map(({ pipeLeads, ...f }) => ({ ...f, leads: pipeLeads }))
-          return { pipelineId: p.id, pipelineName: p.name, events: b.events, forms }
-        }).filter((blk) => blk.events.length && blk.forms.length)
-        if (formKeByPipe.length < 2) formKeByPipe = null
-      }
-    }
-  } catch { formsRich = []; formKe = []; formKeByPipe = null }
-  return {
-    v: 1, client: { id: client.id, name: client.name, industry: client.industry || null },
-    month: period.key, period: b, currency: undefined,
-    hasMeta: !!client.meta, hasGoogle: !!client.google, hasCrm: !!client.ghl,
-    meta, google, blend, attribution: attrTrim, trend: trendR || [], deals: dealsR || null,
-    // ID→name folds so Google's utm_campaign / utm_content (which carry the numeric
-    // campaign / ad-group ID, not the name) resolve to the live campaign name - the
-    // exact map the Meta/Google views pass to aliasedOutcomeMap. Without it the
-    // report's per-campaign key-event columns show "-" for Google (Meta matches by
-    // name so it was unaffected).
-    campIdMap: (attribution && attribution.campIdMap) || {},
-    mediumIdMap: (attribution && attribution.mediumIdMap) || {},
-    // Per-campaign CRM outcome entities (utm_campaign) so the report can render
-    // the Caalano360 green key-event columns + costings by campaign, same as the
-    // Meta Ads view. Top 40 by leads keeps the frozen blob lean.
-    campOutcomes: (attribution && Array.isArray(attribution.byCampaign)) ? attribution.byCampaign.slice(0, 40) : [],
-    // Per-ad-set / ad-group CRM outcome entities (utm_medium) so the "Key events by
-    // campaign" slide can expand a campaign into its ad sets (Meta) / ad groups
-    // (Google) with the same green key-event columns. Google's utm_medium carries the
-    // numeric ad-group ID, folded to its name via mediumIdMap in aliasedOutcomeMap.
-    medOutcomes: (attribution && Array.isArray(attribution.byMedium)) ? attribution.byMedium.slice(0, 80).map((m) => { const { detail, opps, ...rest } = m; return rest }) : [],
-    // Per-source CRM outcome entities (utm_source) - same key-event fields as the
-    // campaign ones - so the report can break the non-paid "other sources" into
-    // named channels (organic / direct / referral / email / social / CRM). The heavy
-    // nested `detail`/`opps` are dropped to keep the frozen blob lean.
-    srcOutcomes: (attribution && Array.isArray(attribution.bySource)) ? attribution.bySource.slice(0, 40).map((s) => { const { detail, opps, ...rest } = s; return rest }) : [],
-    // Per-creative CRM outcome entities (utm_content) so the creative slide can show
-    // the client's full configured key events per creative, not just leads/booked/won.
-    creOutcomes: (attribution && Array.isArray(attribution.byCreative)) ? attribution.byCreative.slice(0, 120) : [],
-    wonClosed: (blend && blend.wonClosed) || null,
-    // Per-form performance for the Form Performance slide: leads + the client's
-    // configured key-event reach counts per form (formKe = the column labels), top
-    // 30 by leads - so the slide mirrors the live Forms tab.
-    forms: formsRich, formKe, formKeByPipe,
-    generatedAt: new Date().toISOString(),
-    _incomplete: failed, // sections that failed after retries (transient, for a UI warning)
-  }
-}
-
-// --- small presentational pieces -------------------------------------------
-function MRSlide({ n, total, kicker, title, sub, children, tone }) {
-  return (
-    <section className={`mr-slide ${tone ? 'mr-slide-' + tone : ''}`}>
-      <header className="mr-slide-head">
-        <div>
-          {kicker && <div className="mr-kicker">{kicker}</div>}
-          <h3 className="mr-title">{title}</h3>
-          {sub && <p className="mr-sub">{sub}</p>}
-        </div>
-        {n != null && <div className="mr-pageno">{n}{total ? ` / ${total}` : ''}</div>}
-      </header>
-      <div className="mr-slide-body">{children}</div>
-    </section>
-  )
-}
-function MRKpi({ label, value, sub, strong }) {
+export function MRKpi({ label, value, sub, strong }) {
   return <div className={`mr-kpi ${strong ? 'mr-kpi-strong' : ''}`}><span className="mr-kpi-lab">{label}</span><b className="mr-kpi-val">{value}</b>{sub != null && <span className="mr-kpi-sub">{sub}</span>}</div>
 }
-function MRTable({ cols, rows, empty = 'No data for this period.', max, wrapClass = '' }) {
-  const data = max ? rows.slice(0, max) : rows
-  if (!rows || !rows.length) return <div className="mr-empty">{empty}</div>
-  return (
-    <div className={'mr-tablewrap' + (wrapClass ? ' ' + wrapClass : '')}>
-      <table className="mr-table">
-        <thead><tr>{cols.map((c) => <th key={c.k} className={c.align === 'r' ? 'r' : ''}>{c.label}</th>)}</tr></thead>
-        <tbody>{data.map((row, i) => <tr key={i}>{cols.map((c) => <td key={c.k} className={c.align === 'r' ? 'r' : ''}>{c.render ? c.render(row) : row[c.k]}</td>)}</tr>)}</tbody>
-      </table>
-      {max && rows.length > max && <div className="mr-more">+ {rows.length - max} more not shown</div>}
-    </div>
-  )
-}
-// Three compact month-over-month charts (Spend, Leads, CPL) for the Meta slide.
-function MRTrend({ trend, currency }) {
-  if (!trend || trend.length < 2) return <div className="mr-empty">Not enough history yet for a trend - this fills in as months accrue.</div>
-  const money = (v) => fmtCurrency(v, currency)
-  const charts = [
-    { key: 'spend', label: 'Ad spend', kind: 'bar', color: '#6d5efc', fmt: money },
-    { key: 'leads', label: 'Results', kind: 'bar', color: '#22b07d', fmt: (v) => fmtNumber(v) },
-    { key: 'cpl', label: 'Cost per result', kind: 'line', color: '#e0803a', fmt: (v) => (v == null ? '-' : money(v)) },
-  ]
-  return (
-    <div className="mr-trend">
-      {charts.map((c) => (
-        <div className="mr-trend-card" key={c.key}>
-          <div className="mr-trend-lab">{c.label} · last {trend.length} months</div>
-          <ResponsiveContainer width="100%" height={150}>
-            {c.kind === 'bar' ? (
-              <BarChart data={trend} margin={{ top: 6, right: 6, left: 0, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-                <XAxis dataKey="label" tick={{ fontSize: 11, fill: 'var(--muted)' }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fontSize: 10, fill: 'var(--muted)' }} axisLine={false} tickLine={false} width={40} tickFormatter={(v) => fmtCompact(v)} />
-                <Tooltip formatter={(v) => c.fmt(v)} contentStyle={{ fontSize: 12 }} />
-                <Bar dataKey={c.key} fill={c.color} radius={[4, 4, 0, 0]} />
-              </BarChart>
-            ) : (
-              <LineChart data={trend} margin={{ top: 6, right: 10, left: 0, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-                <XAxis dataKey="label" tick={{ fontSize: 11, fill: 'var(--muted)' }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fontSize: 10, fill: 'var(--muted)' }} axisLine={false} tickLine={false} width={40} tickFormatter={(v) => fmtCompact(v)} />
-                <Tooltip formatter={(v) => c.fmt(v)} contentStyle={{ fontSize: 12 }} />
-                <Line type="monotone" dataKey={c.key} stroke={c.color} strokeWidth={2.5} dot={{ r: 3 }} connectNulls />
-              </LineChart>
-            )}
-          </ResponsiveContainer>
-        </div>
-      ))}
-    </div>
-  )
-}
-
-// Client-facing Monthly Reports: read-only, PUBLISHED frozen reports only, for the
-// clients the viewer is allocated. No generate / refresh / publish controls. Reuses
-// the same deck renderer as the agency Monthly Report, in continuous (scroll) view.
-function ClientReports({ clients, currency }) {
-  const list = (clients || []).slice().sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base' }))
-  // Deep link: ?c= client, ?m= published report month - so a shared link opens
-  // straight onto that report.
-  const nav0 = readNavUrl()
-  const [clientId, setClientId] = useState((nav0.c && list.some((c) => c.id === nav0.c)) ? nav0.c : (list[0] ? list[0].id : ''))
-  const client = list.find((c) => c.id === clientId) || list[0] || null
-  const [months, setMonths] = useState(null) // [{ month, publishedAt }]
-  const [month, setMonth] = useState(nav0.m || '')
-  const wantMonthRef = useRef(nav0.m || '') // honour the URL month on first load only
-  const [canDownload, setCanDownload] = useState(false) // agency-controlled (server flag)
-  const [st, setSt] = useState({ status: 'idle' })
-  const [exporting, setExporting] = useState(false)
-  const [drill, setDrill] = useState(null)
-  const [formDrill, setFormDrill] = useState(null) // {form, event, pipeKey} - who is behind one Form performance cell
-  const [copied, setCopied] = useState(false)
-  // Slides by default, as on the staff view: one page at a time reads better
-  // than a long scroll. Scroll stays one click away.
-  const [view, setView] = useState('slides')
-  const [idx, setIdx] = useState(0)
-  const copyLink = () => { try { navigator.clipboard.writeText(window.location.href); setCopied(true); setTimeout(() => setCopied(false), 1600) } catch { /* clipboard blocked */ } }
-  const deckRef = useRef(null)
-  const money = (v) => (v == null || isNaN(v) ? '-' : fmtCurrency(v, currency))
-  const n0 = (v) => (v == null || isNaN(v) ? '-' : fmtNumber(Math.round(v)))
-  const pc = (a, b) => (b ? fmtPct((a / b) * 100, 1) : '-')
-  useEffect(() => {
-    if (!client) { setMonths(null); return }
-    let alive = true; setMonths(null); setMonth('')
-    const want = wantMonthRef.current; wantMonthRef.current = '' // URL month applies to the first load only
-    mrFetch(`scope=monthlysnap&client=${encodeURIComponent(client.id)}&list=1`)
-      .then((r) => { if (!alive) return; const ms = ((r && r.months) || []).map((x) => (typeof x === 'string' ? { month: x } : x)); setMonths(ms); const pick = (want && ms.some((x) => x.month === want)) ? want : (ms[0] ? ms[0].month : ''); setMonth(pick); setCanDownload(!!(r && r.downloadAllowed)) })
-      .catch(() => { if (alive) { setMonths([]); setCanDownload(false) } })
-    return () => { alive = false }
-  }, [clientId])
-  // Mirror client + report into the URL (the shareable deep link).
-  useEffect(() => { if (client && month) writeNavUrl({ v: 'reports', c: client.id, m: month }, false) }, [clientId, month])
-  useEffect(() => {
-    if (!client || !month) { setSt({ status: 'idle' }); return }
-    let alive = true; setSt({ status: 'loading' })
-    mrFetch(`scope=monthlysnap&client=${encodeURIComponent(client.id)}&month=${encodeURIComponent(month)}`)
-      .then((r) => { if (!alive) return; if (r && r.saved && r.report) setSt({ status: 'ok', report: r.report, publishedAt: r.publishedAt }); else setSt({ status: 'empty' }) })
-      .catch(() => { if (alive) setSt({ status: 'err' }) })
-    return () => { alive = false }
-  }, [clientId, month])
-  const rep = st.status === 'ok' ? st.report : null
-  const deck = React.useMemo(() => (rep ? renderMonthlyDeck(rep, { currency, money, n0, pc, openDrill: (d) => setDrill(d), setFormDrill }) : []), [rep, currency])
-  const total = deck.length
-  const cur = Math.max(0, Math.min(idx, total - 1))
-  const slideTitle = (el, i) => (el && el.props && (el.props.title || el.props.kicker)) || (el && el.key === 'cover' ? 'Cover' : `Slide ${i + 1}`)
-  useEffect(() => { setIdx(0) }, [clientId, month, view])
-  useEffect(() => {
-    if (view !== 'slides' || !total || drill || formDrill) return
-    const onKey = (e) => {
-      if (/^(input|select|textarea)$/i.test((e.target && e.target.tagName) || '')) return
-      if (e.key === 'ArrowRight' || e.key === 'PageDown') { setIdx((i) => Math.min(i + 1, total - 1)); e.preventDefault() }
-      else if (e.key === 'ArrowLeft' || e.key === 'PageUp') { setIdx((i) => Math.max(i - 1, 0)); e.preventDefault() }
-      else if (e.key === 'Home') { setIdx(0) } else if (e.key === 'End') { setIdx(total - 1) }
-    }
-    window.addEventListener('keydown', onKey); return () => window.removeEventListener('keydown', onKey)
-  }, [view, total, drill, formDrill])
-  async function downloadPdf() {
-    if (!deckRef.current) return
-    setExporting(true); deckRef.current.classList.add('mr-exporting')
-    try {
-      const slides = [...deckRef.current.querySelectorAll('.mr-slide')]
-      await exportSlidesToPdf(slides, `${((client && client.name) || 'report').replace(/[^\w]+/g, '-')}-${month}.pdf`)
-    } catch (e) { alert('PDF export failed: ' + (e.message || e)) }
-    if (deckRef.current) deckRef.current.classList.remove('mr-exporting')
-    setExporting(false)
-  }
-  if (!list.length) return <div className="mr-page"><div className="mr-note mr-empty-deep"><div className="big">🗓️</div><b>No reports assigned yet.</b><p style={{ maxWidth: 460, margin: '8px auto 0' }}>Your account has Monthly Reports access, but no client is linked to it yet. Your agency will set this up.</p></div></div>
-  return (
-    <div className="mr-page">
-      <div className="mr-bar no-print">
-        {list.length > 1 && <select className="mr-select" value={clientId} onChange={(e) => setClientId(e.target.value)}>{list.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select>}
-        <select className="mr-select" value={month} onChange={(e) => setMonth(e.target.value)} disabled={!months || !months.length}>
-          {months && months.length ? months.map((m) => <option key={m.month} value={m.month}>{snapLabel(m.month)}</option>) : <option value="">No published reports</option>}
-        </select>
-        <div className="mr-bar-spacer" />
-        {st.publishedAt && <span className="mr-saved pub" title={`Published ${new Date(st.publishedAt).toLocaleString('en-AU')}`}>🟢 Published {new Date(st.publishedAt).toLocaleDateString('en-AU')}</span>}
-        {rep && <span className="mr-seg" role="group" aria-label="Layout">
-          <button className={view === 'slides' ? 'on' : ''} onClick={() => setView('slides')}>▤ Slides</button>
-          <button className={view === 'scroll' ? 'on' : ''} onClick={() => setView('scroll')}>▦ Scroll</button>
-        </span>}
-        {rep && <button className="mr-btn" onClick={copyLink} title="Copy a direct link to this report">{copied ? '✓ Link copied' : '🔗 Copy link'}</button>}
-        {canDownload && <button className="mr-btn" onClick={downloadPdf} disabled={!rep || exporting} title="Download as PDF">{exporting ? 'Exporting…' : '⤓ Download PDF'}</button>}
-      </div>
-      {months && !months.length && <div className="mr-note mr-empty-deep"><div className="big">🗓️</div><b>No published reports yet.</b><p style={{ maxWidth: 460, margin: '8px auto 0' }}>When your agency publishes a monthly report for {client ? client.name : 'your account'}, it will appear here.</p></div>}
-      {st.status === 'loading' && <div className="mr-note"><Spinner label="Loading report…" /></div>}
-      {st.status === 'err' && <div className="mr-note mr-err">Couldn’t load this report - please try again shortly.</div>}
-      {rep && view === 'slides' && total > 0 && (
-        <div className="mr-nav no-print">
-          <button className="mr-nav-arrow" onClick={() => setIdx((i) => Math.max(0, i - 1))} disabled={cur === 0} aria-label="Previous slide">‹</button>
-          <div className="mr-nav-chips">
-            {deck.map((el, i) => <button key={i} className={'mr-nav-chip' + (i === cur ? ' on' : '')} onClick={() => setIdx(i)} title={slideTitle(el, i)}><span className="mr-nav-num">{i + 1}</span><span className="mr-nav-t">{slideTitle(el, i)}</span></button>)}
-          </div>
-          <button className="mr-nav-arrow" onClick={() => setIdx((i) => Math.min(total - 1, i + 1))} disabled={cur === total - 1} aria-label="Next slide">›</button>
-          <span className="mr-nav-count">{cur + 1} / {total}</span>
-        </div>
-      )}
-      {rep && <div className={'mr-deck' + (view === 'slides' ? ' mr-slides' : '')} ref={deckRef}><div className="mr-track" style={view === 'slides' ? { transform: `translateX(-${cur * 100}%)` } : undefined}>{deck}</div></div>}
-      {drill && <MRDrill drill={drill} currency={currency} campMap={rep && rep.campIdMap} medMap={rep && rep.mediumIdMap} onClose={() => setDrill(null)} />}
-      {formDrill && rep && rep.client && <MRFormDrill clientId={rep.client.id} range={rep.period} form={formDrill.form} event={formDrill.event} pipeKey={formDrill.pipeKey} currency={currency} onClose={() => setFormDrill(null)} />}
-    </div>
-  )
-}
-function MonthlyReport({ clients, currency, authUser }) {
-  useSettingsSync() // re-render when the client-download flag is toggled
-  const canToggleDownload = isAdminishFE(authUser && authUser.role) // admin / super-admin only
-  const list = (clients || []).slice().sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base' }))
-  // Seed client + report month from the URL (?c=&m=) so a shared link opens
-  // straight onto that client's report. m is a snapshot key: "2026-07" or a range
-  // "2026-05_2026-07".
-  const nav0 = readNavUrl()
-  const urlM = nav0.m && /^\d{4}-\d{2}(_\d{4}-\d{2})?$/.test(nav0.m) ? nav0.m : null
-  const [clientId, setClientId] = useState((nav0.c && list.some((c) => c.id === nav0.c)) ? nav0.c : (list[0] ? list[0].id : ''))
-  const client = list.find((c) => c.id === clientId) || list[0] || null
-  const [fromMonth, setFromMonth] = useState(urlM ? urlM.split('_')[0] : lastCompleteMonth())
-  const [toMonth, setToMonth] = useState(urlM ? (urlM.includes('_') ? urlM.split('_')[1] : urlM.split('_')[0]) : lastCompleteMonth())
-  const period = periodOf(fromMonth, toMonth)
-  // Mirror the selected client + report into the URL (replace, so it doesn't spam
-  // history) - this is the shareable deep link.
-  useEffect(() => { if (client) writeNavUrl({ v: 'monthly', c: client.id, m: period.key }, false) }, [clientId, period.key])
-  const [copied, setCopied] = useState(false)
-  const copyLink = () => {
-    try { navigator.clipboard.writeText(window.location.href); setCopied(true); setTimeout(() => setCopied(false), 1600) } catch { /* clipboard blocked */ }
-  }
-  const [st, setSt] = useState({ status: 'idle' }) // idle|loading|ok|err|empty ; {report, frozen}
-  const [saved, setSaved] = useState(null) // {savedAt, savedBy, published, publishedAt, publishedBy, edited}
-  const [busy, setBusy] = useState(false)
-  const [pubBusy, setPubBusy] = useState(false)
-  const [snapList, setSnapList] = useState(null) // [{month, savedAt, publishedAt, published, edited}]
-  const [snapBump, setSnapBump] = useState(0)    // re-fetch trigger after publish/generate
-  const [showList, setShowList] = useState(false)
-  const [genWarn, setGenWarn] = useState(null) // sections that failed on the last generate
-  const [exporting, setExporting] = useState(false)
-  const [drill, setDrill] = useState(null) // {title, kind, deals}
-  const [formDrill, setFormDrill] = useState(null) // {form, event, pipeKey} - who is behind one Form performance cell
-  const [view, setView] = useState('slides') // slides (one page at a time) | scroll (continuous)
-  const [idx, setIdx] = useState(0)
-  const deckRef = useRef(null)
-  const pageRef = useRef(null)
-  const [fs, setFs] = useState(false)
-  const present = () => { const el = pageRef.current; if (!el) return; if (document.fullscreenElement) document.exitFullscreen().catch(() => {}); else if (el.requestFullscreen) el.requestFullscreen().catch(() => {}) }
-  useEffect(() => { const on = () => setFs(!!document.fullscreenElement); document.addEventListener('fullscreenchange', on); return () => document.removeEventListener('fullscreenchange', on) }, [])
-  const money = (v) => (v == null || isNaN(v) ? '-' : fmtCurrency(v, currency))
-  const n0 = (v) => (v == null || isNaN(v) ? '-' : fmtNumber(Math.round(v)))
-  const pc = (a, b) => (b ? fmtPct((a / b) * 100, 1) : '-')
-
-  // Load the frozen snapshot whenever client or the selected period changes.
-  useEffect(() => {
-    if (!client) return
-    let alive = true
-    setSt({ status: 'loading' }); setSaved(null)
-    mrFetch(`scope=monthlysnap&client=${encodeURIComponent(client.id)}&month=${period.key}`)
-      .then((r) => { if (!alive) return; if (r && r.saved) { setSaved({ savedAt: r.savedAt, savedBy: r.savedBy, published: !!r.published, publishedAt: r.publishedAt || null, publishedBy: r.publishedBy || null, edited: !!r.edited }); setSt({ status: 'ok', report: r.report, frozen: true }) } else setSt({ status: 'empty' }) })
-      .catch(() => { if (alive) setSt({ status: 'empty' }) })
-    return () => { alive = false }
-  }, [clientId, period.key, snapBump])
-  // Per-client list of every generated report + its saved/published status.
-  useEffect(() => {
-    if (!client) { setSnapList(null); return }
-    let alive = true
-    mrFetch(`scope=monthlysnap&client=${encodeURIComponent(client.id)}&list=1`)
-      .then((r) => { if (alive) setSnapList(Array.isArray(r && r.rows) ? r.rows : []) })
-      .catch(() => { if (alive) setSnapList([]) })
-    return () => { alive = false }
-  }, [clientId, snapBump])
-  // Publish / unpublish a generated month for the client's Reports view.
-  async function publishAction(month, action) {
-    if (!client) return
-    setPubBusy(true)
-    try {
-      const r = await fetch(`/.netlify/functions/windsor?scope=monthlysnap&client=${encodeURIComponent(client.id)}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ month, action }) }).then((x) => x.json()).catch(() => null)
-      if (r && r.ok) setSnapBump((n) => n + 1)
-    } finally { setPubBusy(false) }
-  }
-
-  async function generate() {
-    if (!client) return
-    setBusy(true); setSt({ status: 'loading' }); setGenWarn(null)
-    try {
-      const report = await assembleMonthlyReport(client, period)
-      const incomplete = report._incomplete || []
-      delete report._incomplete // transient - don't freeze it into the snapshot
-      setGenWarn(incomplete.length ? incomplete : null)
-      setSt({ status: 'ok', report, frozen: false })
-      const save = await fetch(`/.netlify/functions/windsor?scope=monthlysnap&client=${encodeURIComponent(client.id)}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ month: period.key, report }) }).then((x) => x.json()).catch(() => null)
-      if (save && save.ok) { setSaved({ savedAt: save.savedAt, savedBy: save.savedBy, published: !!save.publishedAt, publishedAt: save.publishedAt || null, edited: !!save.publishedAt }); setSt({ status: 'ok', report, frozen: true }); setSnapBump((n) => n + 1) }
-    } catch (e) { setSt({ status: 'err', error: String(e.message || e) }) }
-    setBusy(false)
-  }
-
-  async function downloadPdf() {
-    if (!deckRef.current) return
-    setExporting(true)
-    // Force the deck into a laid-out, non-transformed column so every slide
-    // (including the ones translated off-screen in Slides view) captures cleanly.
-    deckRef.current.classList.add('mr-exporting')
-    try {
-      const slides = [...deckRef.current.querySelectorAll('.mr-slide')]
-      await exportSlidesToPdf(slides, `${(client && client.name || 'report').replace(/[^\w]+/g, '-')}-${period.key}.pdf`)
-    } catch (e) { alert('PDF export failed: ' + (e.message || e)) }
-    if (deckRef.current) deckRef.current.classList.remove('mr-exporting')
-    setExporting(false)
-  }
-
-  const rep = st.status === 'ok' ? st.report : null
-  const deck = React.useMemo(() => (rep ? renderMonthlyDeck(rep, { currency, money, n0, pc, openDrill: (d) => setDrill(d), setFormDrill }) : []), [rep, currency])
-  const total = deck.length
-  const cur = Math.max(0, Math.min(idx, total - 1))
-  const slideTitle = (el, i) => (el && el.props && (el.props.title || el.props.kicker)) || (el && el.key === 'cover' ? 'Cover' : `Slide ${i + 1}`)
-  useEffect(() => { setIdx(0) }, [clientId, period.key, view])
-  useEffect(() => {
-    if (view !== 'slides' || !total || drill) return
-    const onKey = (e) => {
-      if (/^(input|select|textarea)$/i.test((e.target && e.target.tagName) || '')) return
-      if (e.key === 'ArrowRight' || e.key === 'PageDown') { setIdx((i) => Math.min(i + 1, total - 1)); e.preventDefault() }
-      else if (e.key === 'ArrowLeft' || e.key === 'PageUp') { setIdx((i) => Math.max(i - 1, 0)); e.preventDefault() }
-      else if (e.key === 'Home') { setIdx(0) } else if (e.key === 'End') { setIdx(total - 1) }
-    }
-    window.addEventListener('keydown', onKey); return () => window.removeEventListener('keydown', onKey)
-  }, [view, total, drill])
-
-  return (
-    <div className={'mr-page' + (fs ? ' mr-fs' : '')} ref={pageRef}>
-      <div className="mr-bar no-print">
-        <select className="mr-select" value={clientId} onChange={(e) => setClientId(e.target.value)}>
-          {list.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-        </select>
-        <select className="mr-select" value={fromMonth} onChange={(e) => { const v = e.target.value; setFromMonth(v); if (toMonth < v) setToMonth(v) }} title="From month">
-          {MR_MONTHS().map((m) => <option key={m} value={m}>{monthBounds(m).label}</option>)}
-        </select>
-        <span className="mr-to">to</span>
-        <select className="mr-select" value={toMonth} onChange={(e) => { const v = e.target.value; setToMonth(v); if (fromMonth > v) setFromMonth(v) }} title="To month (same as From = single month)">
-          {MR_MONTHS().map((m) => <option key={m} value={m}>{monthBounds(m).label}</option>)}
-        </select>
-        <button className="mr-btn primary" onClick={generate} disabled={busy}>{busy ? 'Generating…' : (saved ? 'Refresh snapshot' : 'Generate snapshot')}</button>
-        {saved && (saved.published
-          ? <button className="mr-btn" onClick={() => publishAction(period.key, 'unpublish')} disabled={pubBusy} title={`Published ${saved.publishedAt ? new Date(saved.publishedAt).toLocaleString('en-AU') : ''}${saved.publishedBy ? ' by ' + saved.publishedBy : ''} - click to hide from clients`}>{pubBusy ? '…' : (saved.edited ? '● Re-publish' : '✕ Unpublish')}</button>
-          : <button className="mr-btn primary" onClick={() => publishAction(period.key, 'publish')} disabled={pubBusy} title="Make this frozen report visible to clients with Monthly Reports access">{pubBusy ? '…' : '▲ Publish'}</button>)}
-        {saved && saved.published && saved.edited && <button className="mr-btn primary" onClick={() => publishAction(period.key, 'publish')} disabled={pubBusy} title="You've regenerated since publishing - push the new version to clients">↻ Push update</button>}
-        <button className={`mr-btn${showList ? ' on' : ''}`} onClick={() => setShowList((v) => !v)} title="Show every generated report for this client">☰ Reports{snapList && snapList.length ? ` (${snapList.length})` : ''}</button>
-        <div className="mr-bar-spacer" />
-        {saved && <span className={`mr-saved${saved.published ? ' pub' : ''}`} title={`Frozen ${new Date(saved.savedAt).toLocaleString('en-AU')}${saved.savedBy ? ' by ' + saved.savedBy : ''}`}>{saved.published ? (saved.edited ? '🟠 Published (edited since)' : '🟢 Published') : '🔒 Frozen - not published'} {saved.savedAt ? new Date(saved.savedAt).toLocaleDateString('en-AU') : ''}</span>}
-        <div className="mr-viewtoggle" title="Slides = one section per page · Scroll = continuous">
-          <button className={view === 'slides' ? 'on' : ''} onClick={() => setView('slides')}>▤ Slides</button>
-          <button className={view === 'scroll' ? 'on' : ''} onClick={() => setView('scroll')}>▦ Scroll</button>
-        </div>
-        {canToggleDownload && client && <button className={`mr-btn${clientDownloadOn(client.id) ? ' on' : ''}`} onClick={() => setClientDownload(client.id, !clientDownloadOn(client.id))} title={`Allow ${client.name} to download the PDF of their published reports. Off by default - per client.`}>{clientDownloadOn(client.id) ? `✓ ${client.name} PDF: On` : `⃠ ${client.name} PDF: Off`}</button>}
-        <button className="mr-btn" onClick={copyLink} title="Copy a direct link to this client + report - share it and it opens right here">{copied ? '✓ Link copied' : '🔗 Copy link'}</button>
-        <button className="mr-btn" onClick={present} disabled={!rep} title="Present fullscreen (for screen-share)">{fs ? '⤢ Exit' : '⛶ Present'}</button>
-        <button className="mr-btn" onClick={() => window.print()} disabled={!rep} title="Print / Save as PDF">🖨 Print</button>
-        <button className="mr-btn" onClick={downloadPdf} disabled={!rep || exporting} title="Download as PDF">{exporting ? 'Exporting…' : '⤓ Download PDF'}</button>
-      </div>
-
-      {showList && (
-        <div className="mr-snaplist card">
-          <div className="cap" style={{ fontWeight: 700, marginBottom: 6 }}>Generated reports · {client ? client.name : ''} <span style={{ fontWeight: 400 }}>· {(snapList || []).length} · a report is only visible to clients once <b>Published</b></span></div>
-          {snapList == null ? <Spinner label="Loading…" />
-            : snapList.length === 0 ? <p className="cap" style={{ margin: 0 }}>No reports generated for this client yet.</p>
-              : <div className="table-wrap"><table className="mini-tbl"><thead><tr><th className="lft">Month</th><th className="lft" title="When this report snapshot was last built / refreshed">Generated</th><th className="lft" title="When this report was last published (made visible to the client)">Published to client</th><th className="lft">Status</th><th /></tr></thead>
-                <tbody>{snapList.map((r) => {
-                  const isCur = r.month === period.key
-                  return (<tr key={r.month} className={isCur ? 'row-sel' : ''}>
-                    <td className="lft"><button className="mr-linkbtn" onClick={() => { const k = String(r.month); const [lo, hi] = k.includes('_') ? k.split('_') : [k, k]; setFromMonth(lo); setToMonth(hi) }} title="Open this report">{snapLabel(r.month)}</button></td>
-                    <td className="lft">{r.savedAt ? new Date(r.savedAt).toLocaleDateString('en-AU') : '-'}{r.savedBy ? ` · ${r.savedBy}` : ''}</td>
-                    <td className="lft">{r.publishedAt ? new Date(r.publishedAt).toLocaleDateString('en-AU') : '-'}{r.publishedBy ? ` · ${r.publishedBy}` : ''}</td>
-                    <td className="lft">{r.published ? (r.edited ? <span className="mr-pill-sec">🟠 Published · edited since</span> : <span className="mr-pill-pri">🟢 Published</span>) : <span className="cap">Not published</span>}</td>
-                    <td className="lft">{r.published
-                      ? <>{r.edited && <button className="mr-btn sm" disabled={pubBusy} onClick={() => publishAction(r.month, 'publish')}>Push update</button>} <button className="mr-btn sm" disabled={pubBusy} onClick={() => publishAction(r.month, 'unpublish')}>Unpublish</button></>
-                      : <button className="mr-btn sm primary" disabled={pubBusy} onClick={() => publishAction(r.month, 'publish')}>Publish</button>}</td>
-                  </tr>)
-                })}</tbody></table></div>}
-        </div>
-      )}
-
-      {genWarn && <div className="mr-note mr-warn">⚠ These sections didn’t load after a few tries: <b>{genWarn.join(', ')}</b>. They may be missing from this snapshot - click <b>Refresh snapshot</b> to try again (the data is usually cached by now).</div>}
-      {st.status === 'loading' && <div className="mr-note"><Spinner label="Loading report…" /></div>}
-      {st.status === 'err' && <div className="mr-note mr-err">Couldn’t build the report: {st.error}</div>}
-      {st.status === 'empty' && <div className="mr-note mr-empty-deep"><div className="big">🗓️</div><b>No snapshot for {period.label} yet.</b><p>Pick the client and period (one month, or a range via the two pickers), then <b>Generate snapshot</b> to freeze these numbers. Wins are captured by the month a deal was marked won - so late-closing leads show in the month they closed.</p></div>}
-
-      {rep && view === 'slides' && total > 0 && (
-        <div className="mr-nav no-print">
-          <button className="mr-nav-arrow" onClick={() => setIdx((i) => Math.max(0, i - 1))} disabled={cur === 0} aria-label="Previous slide">‹</button>
-          <div className="mr-nav-chips">
-            {deck.map((el, i) => <button key={i} className={'mr-nav-chip' + (i === cur ? ' on' : '')} onClick={() => setIdx(i)} title={slideTitle(el, i)}><span className="mr-nav-num">{i + 1}</span><span className="mr-nav-t">{slideTitle(el, i)}</span></button>)}
-          </div>
-          <button className="mr-nav-arrow" onClick={() => setIdx((i) => Math.min(total - 1, i + 1))} disabled={cur === total - 1} aria-label="Next slide">›</button>
-          <span className="mr-nav-count">{cur + 1} / {total}</span>
-        </div>
-      )}
-      {rep && (
-        <div className={'mr-deck' + (view === 'slides' ? ' mr-slides' : '')} ref={deckRef}>
-          <div className="mr-track" style={view === 'slides' ? { transform: `translateX(-${cur * 100}%)` } : undefined}>{deck}</div>
-        </div>
-      )}
-      {drill && <MRDrill drill={drill} currency={currency} campMap={rep && rep.campIdMap} medMap={rep && rep.mediumIdMap} onClose={() => setDrill(null)} />}
-      {formDrill && rep && rep.client && <MRFormDrill clientId={rep.client.id} range={rep.period} form={formDrill.form} event={formDrill.event} pipeKey={formDrill.pipeKey} currency={currency} onClose={() => setFormDrill(null)} />}
-    </div>
-  )
-}
-
-// Drill-down modal: a scrollable list of the actual deals behind a number, so
-// figures can be sense-checked live with the client (who, when the lead came in,
-// when it closed, value, source). Screen-only (never in the PDF).
-// A non-paid "Other" lead's real source (from the opportunity source / utm_source):
-// CRM UI, Organic, Referral, Direct, etc. - so the drill isn't just "Other".
-function mrPrettySource(s) {
-  const t = String(s || '').trim(); if (!t) return 'Other'
-  const l = t.toLowerCase()
-  if (/crm|manual|admin|import|internal|\badded\b|bulk|migrat/.test(l)) return 'CRM UI'
-  if (/organic|seo|(?:^|[^a-z])search/.test(l)) return 'Organic'
-  if (/referr/.test(l)) return 'Referral'
-  if (/email|newsletter|mailchimp|klaviyo/.test(l)) return 'Email'
-  if (/facebook|instagram|\bfb\b|\big\b|social|tiktok|linkedin|youtube/.test(l)) return 'Social'
-  if (/direct|type.?in|\(none\)|\(not\s*set\)|^none$/.test(l)) return 'Direct'
-  return t.length > 24 ? t.slice(0, 24) + '…' : t.charAt(0).toUpperCase() + t.slice(1)
-}
-// Google reports campaign / ad-group / content as numeric IDs in the UTMs; fold them
-// to the live names via the same campIdMap / mediumIdMap the Caalano360 green columns
-// use. Meta already carries readable names.
-function mrAdDetail(d, campMap, medMap) {
-  const camp = (campMap && campMap[d.campaign]) || d.campaign
-  const grp = (medMap && medMap[d.medium]) || d.medium
-  if (d.channel === 'google') { const parts = [camp, grp].filter(Boolean); return parts.length ? parts.join(' · ') : (d.ad || null) }
-  return d.ad || camp || null
-}
-// Who is behind one cell of the Form performance table. The monthly snapshot
-// deliberately stores counts only - keeping every lead's record per form would
-// bloat every frozen report - so the people are fetched on demand for the
-// report's own period, which returns exactly the leads that cell counted.
-function MRFormDrill({ clientId, range, form, event, pipeKey, currency, onClose }) {
-  const [st, setSt] = useState({ status: 'loading', people: [] })
-  useEffect(() => {
-    const onKey = (e) => { if (e.key === 'Escape') onClose() }
-    document.addEventListener('keydown', onKey); return () => document.removeEventListener('keydown', onKey)
-  }, [onClose])
-  useEffect(() => {
-    let alive = true
-    fetch(`/.netlify/functions/windsor?client=${clientId}&scope=forms&${rangeQuery(range)}`)
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error('http'))))
-      .then((j) => {
-        if (!alive) return
-        const arr = (j && j.forms) || []
-        const f = arr.find((x) => x.form === form)
-        const all = (f && f.people) || []
-        // Re-apply the same reach test the table used, so the list and the count
-        // can't disagree.
-        const fke = formKeyEvents(clientId, pipeKey || 'all', (j && j.pipelines) || [])
-        const ev = (fke.events || []).find((k) => k.label === event.label && (k.kind || 'stage') === (event.kind || 'stage'))
-        const people = ev ? all.filter((p) => fke.reached(p, ev)) : all
-        setSt({ status: 'ok', people })
-      })
-      .catch(() => { if (alive) setSt({ status: 'err', people: [] }) })
-    return () => { alive = false }
-  }, [clientId, range, form, event, pipeKey])
-  const money = (v) => (v == null || isNaN(v) ? '-' : fmtCurrency(v, currency))
-  const ppl = st.people
-  const chan = ppl.reduce((a, p) => { a[p.channel === 'meta' ? 'meta' : p.channel === 'google' ? 'google' : 'other']++; return a }, { meta: 0, google: 0, other: 0 })
-  const pctc = (n) => (ppl.length ? Math.round((n / ppl.length) * 100) : 0) + '%'
-  return (
-    <div className="mr-drill-overlay no-print" onClick={onClose}>
-      <div className="mr-drill" onClick={(e) => e.stopPropagation()} style={{ '--mr-drill-cols': 7 }}>
-        <div className="mr-drill-head">
-          <div>
-            <h3>{form} · {event.label}</h3>
-            <span>{st.status === 'loading' ? 'Loading…' : <>{fmtNumber(ppl.length)} lead(s){ppl.length ? <> · <span className="mr-src mr-src-meta">Meta {chan.meta} · {pctc(chan.meta)}</span> <span className="mr-src mr-src-google">Google {chan.google} · {pctc(chan.google)}</span> <span className="mr-src mr-src-other">Other {chan.other} · {pctc(chan.other)}</span></> : null}</>}</span>
-          </div>
-          <button className="mr-drill-x" onClick={onClose} aria-label="Close">✕</button>
-        </div>
-        <div className="mr-drill-body">
-          {st.status === 'loading' ? <Spinner label="Loading the leads behind this…" />
-            : st.status === 'err' ? <div className="cap">Couldn’t load the leads for this form.</div>
-              : ppl.length ? (
-                <table className="mr-table">
-                  <thead><tr><th>Contact</th><th>Status</th><th>Pipeline · stage</th><th>Source</th><th>Campaign / creative</th><th className="r">Age</th><th className="r">Value</th></tr></thead>
-                  <tbody>{ppl.map((p, i) => (
-                    <tr key={p.contactId || i}>
-                      <td>{p.name}</td>
-                      <td><span className={`mr-pill-${p.status === 'won' ? 'won' : p.status === 'lost' ? 'lost' : 'open'}`}>{p.status === 'won' ? 'Won' : p.status === 'lost' ? 'Lost' : 'Open'}</span></td>
-                      <td>{[p.pipelineName, p.stageName].filter(Boolean).join(' · ') || '-'}</td>
-                      <td>{p.channel === 'meta' ? 'Meta' : p.channel === 'google' ? 'Google' : 'Other'}</td>
-                      <td title={[p.campaign, p.adset, p.creative].filter(Boolean).join(' / ')}>{p.creative || p.campaign || '-'}</td>
-                      <td className="r">{p.ageDays != null ? `${p.ageDays}d` : '-'}</td>
-                      <td className="r">{money(p.value)}</td>
-                    </tr>
-                  ))}</tbody>
-                </table>
-              ) : <div className="cap">No leads reached this step for this form.</div>}
-        </div>
-      </div>
-    </div>
-  )
-}
-function MRDrill({ drill, currency, campMap, medMap, onClose }) {
-  const money = (v) => (v == null || isNaN(v) ? '-' : fmtCurrency(v, currency))
-  const n0f = (v) => fmtNumber(Math.round(Number(v) || 0))
-  useEffect(() => {
-    const onKey = (e) => { if (e.key === 'Escape') onClose() }
-    document.addEventListener('keydown', onKey); return () => document.removeEventListener('keydown', onKey)
-  }, [])
-  const deals = drill.deals || []
-  const isLost = drill.kind === 'lost'
-  const total = deals.reduce((s, d) => s + (d.value || 0), 0)
-  // Per-channel split of these deals, so a lost-reason popup shows what share came
-  // from Meta vs Google vs everything else.
-  const chanBk = deals.reduce((a, d) => { a[d.channel === 'meta' ? 'meta' : d.channel === 'google' ? 'google' : 'other']++; return a }, { meta: 0, google: 0, other: 0 })
-  const chanPct = (n) => (deals.length ? Math.round((n / deals.length) * 100) : 0) + '%'
-  // Show the Ad/creative column only when we actually have attribution detail for
-  // at least one deal (older snapshots won't carry ad/campaign). The overlay width
-  // scales to the column count so more data never forces horizontal scrolling.
-  const hasAd = deals.some((d) => d.ad || d.campaign)
-  const colCount = 7 + (isLost ? 1 : 1) + (hasAd ? 1 : 0)
-  const isLostSum = drill.kind === 'lostsum' && drill.lost
-  const lostPeople = (rows) => (
-    <table className="mr-table mr-kids-tbl">
-      <thead><tr><th>Contact</th><th>Lead created</th><th>Lost</th><th>Source</th><th>Pipeline · stage</th><th>Owner</th><th className="r">Value</th></tr></thead>
-      <tbody>{rows.map((d, i) => <tr key={i}>
-        <td>{d.name}</td><td>{fmtDate(d.createdAt)}</td><td>{fmtDate(d.statusAt)}</td>
-        <td><span className={`mr-src mr-src-${d.channel || 'other'}`}>{d.channel === 'meta' ? 'Meta' : d.channel === 'google' ? 'Google' : mrPrettySource(d.source)}</span></td>
-        <td>{[d.pipeline, d.stage].filter(Boolean).join(' · ') || '-'}</td><td>{d.userName || '-'}</td><td className="r">{money(d.value)}</td>
-      </tr>)}</tbody>
-    </table>
-  )
-  return (
-    <div className="mr-drill-overlay no-print" onClick={onClose}>
-      <div className="mr-drill" onClick={(e) => e.stopPropagation()} style={{ '--mr-drill-cols': colCount }}>
-        <div className="mr-drill-head">
-          <div><h3>{drill.title}</h3><span>{deals.length} deal(s) · {money(total)} total{deals.length ? <> · <span className="mr-src mr-src-meta">Meta {chanBk.meta} · {chanPct(chanBk.meta)}</span> <span className="mr-src mr-src-google">Google {chanBk.google} · {chanPct(chanBk.google)}</span> <span className="mr-src mr-src-other">Other {chanBk.other} · {chanPct(chanBk.other)}</span></> : ''}</span></div>
-          <button className="mr-drill-x" onClick={onClose} aria-label="Close">✕</button>
-        </div>
-        <div className="mr-drill-body">
-          {isLostSum ? (
-            <>
-              {drill.basis ? <p className="mr-drill-basis">{drill.basis}. {n0f(drill.lost.total.count)} deal{drill.lost.total.count === 1 ? '' : 's'} · {money(drill.lost.total.value)} lost in total. Click a reason to see who.</p> : null}
-              <MRDrillTable
-                cols={[
-                  { k: 'name', label: 'Reason' },
-                  { k: 'count', label: 'Deals', align: 'r', render: (r) => n0f(r.count) },
-                  { k: 'share', label: '%', align: 'r', render: (r) => (drill.lost.total.count ? Math.round((r.count / drill.lost.total.count) * 100) + '%' : '-') },
-                  { k: 'value', label: 'Value lost', align: 'r', render: (r) => money(r.value) },
-                ]}
-                rows={drill.lost.byReason || []}
-                rowKey={(r) => r.name}
-                childrenOf={(r) => (drill.lost.deals || []).filter((d) => (d.reason || 'Not set') === r.name)}
-                renderChildren={(kids) => lostPeople(kids)}
-                empty="No lost deals on this basis."
-              />
-            </>
-          ) : deals.length ? (
-            <table className="mr-table">
-              <thead><tr>
-                <th>Contact</th><th>Lead created</th><th>{isLost ? 'Lost' : 'Won'}</th>
-                {!isLost && <th className="r">Days to close</th>}
-                {isLost && <th>Reason</th>}<th>Source</th>
-                {hasAd && <th>Campaign / creative</th>}
-                <th>Pipeline · stage</th><th>Owner</th><th className="r">Value</th>
-              </tr></thead>
-              <tbody>{deals.map((d, i) => {
-                const days = (d.createdAt && d.statusAt) ? Math.max(0, Math.round((Date.parse(d.statusAt) - Date.parse(d.createdAt)) / 86400000)) : null
-                const srcTxt = d.channel === 'meta' ? 'Meta' : d.channel === 'google' ? 'Google' : mrPrettySource(d.source)
-                const adTxt = mrAdDetail(d, campMap, medMap)
-                return (
-                <tr key={i}>
-                  <td>{d.name}</td>
-                  <td>{fmtDate(d.createdAt)}</td>
-                  <td>{fmtDate(d.statusAt)}</td>
-                  {!isLost && <td className="r">{days == null ? '-' : days}</td>}
-                  {isLost && <td>{d.reason || '-'}</td>}
-                  <td><span className={`mr-src mr-src-${d.channel || 'other'}`} title={d.channel === 'other' && d.source ? d.source : undefined}>{srcTxt}</span></td>
-                  {hasAd && <td className="mr-drill-ad">{adTxt ? <span title={adTxt}>{adTxt}</span> : '-'}</td>}
-                  <td>{[d.pipeline, d.stage].filter(Boolean).join(' · ') || '-'}</td>
-                  <td>{d.userName || '-'}</td>
-                  <td className="r">{money(d.value)}</td>
-                </tr>
-              )})}</tbody>
-            </table>
-          ) : <div className="mr-empty">No deals to show.</div>}
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// One large creative card for the Monthly Report: Meta stats + the Caalano360
-// CRM key-event funnel (Leads → Booked → Shown → Won → Revenue) attributed to
-// this creative's UTM, plus inline Instagram playback via the ad's permalink.
-function MRCreative({ a, money, n0, clientId, range, channel, currency }) {
-  const [play, setPlay] = useState(false)
-  const [drill, setDrill] = useState(null)
-  const canDrill = !!(clientId && range)
-  const ctrV = a.impressions ? (a.clicks / a.impressions) * 100 : null
-  const results = a.results != null ? a.results : a.leads
-  const cprV = results ? a.spend / results : null
-  const freqV = a.reach ? a.impressions / a.reach : null
-  const embed = a.igUrl ? a.igUrl.replace(/\/+$/, '') + '/embed' : null
-  const events = a.events || null // per-client configured key events [{label,count,kind}]
-  const revenue = a.revenue != null ? a.revenue : (a.ke ? a.ke.revenue : 0)
-  const roas = a.roas != null ? a.roas : (a.ke && a.ke.revenue && a.spend ? a.ke.revenue / a.spend : null)
-  const cpw = a.cpw != null ? a.cpw : (a.ke && a.ke.won && a.spend ? a.spend / a.ke.won : null)
-  useEffect(() => {
-    if (!play) return
-    const onKey = (e) => { if (e.key === 'Escape') setPlay(false) }
-    document.addEventListener('keydown', onKey); return () => document.removeEventListener('keydown', onKey)
-  }, [play])
-  // Funnel rows = a Leads anchor + each configured key event, so we can compute
-  // next-step conversion (this step ÷ the previous step) and cost per event.
-  const feRows = [{ label: 'Leads', count: a.leads || 0, kind: 'lead' }, ...(events || [])]
-  return (
-    <div className="mr-cre">
-      <div className="mr-cre-top">
-        <div className="mr-cre-thumb">
-          {a.thumb ? <img src={a.thumb} alt="" loading="lazy" crossOrigin="anonymous" /> : <span className="mr-noimg">{a.type === 'Video' ? '▶' : '🖼'}</span>}
-          {embed
-            ? <button className="mr-cre-play no-print" onClick={() => setPlay(true)} aria-label="Play">▶</button>
-            : (a.igUrl && <a className="mr-cre-play no-print" href={a.igUrl} target="_blank" rel="noreferrer" aria-label="Open on Instagram">▶</a>)}
-          {a.type === 'Video' && <span className="mr-cre-badge">▶ Video</span>}
-        </div>
-        <div className="mr-cre-head">
-          <div className="mr-cre-name" title={a.name}>{a.name}{a.adset ? <small>{a.adset}</small> : null}</div>
-          {a.pipeName ? <div className="mr-cre-pipe" title={`This creative's campaign is attached to the ${a.pipeName} pipeline`}>🔗 {a.pipeName}</div> : null}
-          <div className="mr-cre-metrics">
-            <div><b>{money(a.spend)}</b><span>Spend</span></div>
-            <div><b>{n0(a.impressions)}</b><span>Impr</span></div>
-            <div><b>{ctrV == null ? '-' : fmtPct(ctrV, 2)}</b><span>CTR</span></div>
-            <div><b>{freqV != null ? freqV.toFixed(1) + 'x' : '-'}</b><span>Freq</span></div>
-            <div><b>{n0(results)}</b><span>{a.resultType || 'Results'}</span></div>
-            <div><b>{cprV == null ? '-' : money(cprV)}</b><span>Cost/result</span></div>
-          </div>
-        </div>
-      </div>
-      {events && events.length ? (
-        <div className="mr-cre-ke">
-          <div className="mr-cre-ke-lab">📈 Caalano360 · key events <span className="mr-cre-ke-hint">· “Cost per” = spend ÷ reached</span></div>
-          <div className="mr-cre-ketbl-wrap">
-            <table className="mr-cre-ketbl">
-              <colgroup>
-                <col className="ke-name" /><col className="ke-num" /><col className="ke-num" /><col className="ke-num" /><col className="ke-num" /><col className="ke-num" />
-              </colgroup>
-              <thead><tr>
-                <th>Key event</th>
-                <th className="r">Count</th>
-                <th className="r" title="This creative's total ad spend ÷ the number of people who reached this stage (e.g. spend ÷ Site Visits Booked)">Cost per</th>
-                <th className="r" title="This event's count ÷ this creative's leads">% leads</th>
-                <th className="r" title="This step ÷ the previous step">Next</th>
-                <th className="r" title="Appointment events only: shown ÷ occurred (appointments whose date has passed)">Show %</th>
-              </tr></thead>
-              <tbody>
-                {feRows.map((e, i) => {
-                  const isCal = e.kind === 'calendar'
-                  const prev = i > 0 ? feRows[i - 1].count : null
-                  const pctLeads = a.leads && e.count != null ? (e.count / a.leads) * 100 : null
-                  const nextStep = prev && e.count != null ? (e.count / prev) * 100 : null
-                  const costEv = e.count && a.spend ? a.spend / e.count : null
-                  const cls = e.kind === 'won' ? 'mr-ketbl-won' : e.kind === 'lead' ? 'mr-ketbl-lead' : ''
-                  const rowDrill = canDrill && e.count > 0
-                  const openDrill = rowDrill ? () => setDrill({ kind: e.kind, label: e.label, stage: e.stage || null, pipeline: e.kind === 'lead' ? null : (e.pipeline || null), refs: e.kind === 'calendar' ? (e.refs || null) : null, ad: a.name }) : undefined
-                  return (
-                    <tr key={i} className={`${cls}${rowDrill ? ' mr-ketbl-clickable' : ''}`} onClick={openDrill} title={rowDrill ? 'Click to see the people behind this' : undefined}>
-                      <td title={e.label}>{e.label}{isCal && e.shown != null ? <small> · {n0(e.shown)} shown</small> : null}{rowDrill ? <span className="mr-ketbl-chev"> ›</span> : null}</td>
-                      <td className="r">{n0(e.count)}</td>
-                      <td className="r">{costEv == null ? '-' : money(costEv)}</td>
-                      <td className="r">{e.kind === 'lead' ? '100%' : pctLeads == null ? '-' : fmtPct(pctLeads, 0)}</td>
-                      <td className="r">{nextStep == null ? '-' : fmtPct(nextStep, 0)}</td>
-                      <td className="r">{isCal && e.showRate != null ? fmtPct(e.showRate, 0) : '-'}</td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-          <div className="mr-cre-cash">
-            <div><b>{money(revenue)}</b><span>Revenue</span></div>
-            <div><b>{cpw == null ? '-' : money(cpw)}</b><span>Cost / won</span></div>
-            <div><b>{roas == null ? '-' : roas.toFixed(1) + 'x'}</b><span>ROAS</span></div>
-          </div>
-        </div>
-      ) : <div className="mr-cre-ke mr-cre-ke-empty">No CRM-attributed leads matched this creative’s UTM (utm_content).</div>}
-      {play && embed && (
-        <div className="mr-play-overlay no-print" onClick={() => setPlay(false)}>
-          <div className="mr-play-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="mr-play-head"><b title={a.name}>{a.name}</b><button className="mr-play-x" onClick={() => setPlay(false)} aria-label="Close">✕</button></div>
-            <iframe className="mr-play-frame" src={embed} title={a.name} scrolling="no" frameBorder="0" allow="autoplay; encrypted-media; clipboard-write; picture-in-picture" allowFullScreen />
-            <a className="mr-play-open" href={a.igUrl} target="_blank" rel="noreferrer">Open on Instagram ↗</a>
-          </div>
-        </div>
-      )}
-      {drill ? <KeyPeopleModal event={drill} clientId={clientId} channel={channel || 'meta'} ad={drill.ad} range={range} currency={currency} onClose={() => setDrill(null)} /> : null}
-    </div>
-  )
-}
-
-// Status Change vs Created On revenue matrix - the same figures side by side so
-// the client can see cash banked this month vs how this month's leads are doing.
-function MRRevMatrix({ sc, co, spend, money, n0, onDrill, lostSc, lostCo }) {
-  const cell = (v, deals, title) => onDrill && deals && deals.length
-    ? <button className="mr-cellbtn" onClick={() => onDrill({ title, deals })}>{v}</button> : v
-  // Lost on the same two bases. A click opens the reasons behind the number,
-  // with the value lost, and each reason opens to the people.
-  const lostCell = (L, title, basis) => {
-    if (!L) return <span className="mr-cell-na" title="Regenerate this month's snapshot to read lost deals on this basis">-</span>
-    const v = n0(L.total.count)
-    return onDrill && L.total.count ? <button className="mr-cellbtn" onClick={() => onDrill({ kind: 'lostsum', title, basis, lost: L, deals: L.deals })}>{v}</button> : v
-  }
-  const days = (v) => (v == null ? '-' : `${v} day${v === 1 ? '' : 's'}`)
-  const roas = (rev) => (spend ? (rev / spend).toFixed(1) + 'x' : '-')
-  const cac = (paidWon) => (spend && paidWon ? money(spend / paidWon) : '-')
-  return (
-    <table className="mr-table mr-revmatrix">
-      <thead><tr><th></th><th className="r">Status change<small>closed this month</small></th><th className="r">Created on<small>leads created this month</small></th></tr></thead>
-      <tbody>
-        <tr><td>Total revenue</td><td className="r">{money(sc.revenue)}</td><td className="r">{money(co.revenue)}</td></tr>
-        <tr><td>Paid revenue</td><td className="r">{money(sc.paid.revenue)}</td><td className="r">{money(co.paid.revenue)}</td></tr>
-        <tr><td>Paid ROAS</td><td className="r">{roas(sc.paid.revenue)}</td><td className="r">{roas(co.paid.revenue)}</td></tr>
-        <tr><td>CAC (cost / paid won)</td><td className="r">{cac(sc.paid.count)}</td><td className="r">{cac(co.paid.count)}</td></tr>
-        <tr><td>Deals won</td><td className="r">{cell(n0(sc.count), sc.deals, 'Deals won - closed this month')}</td><td className="r">{cell(n0(co.count), co.deals, 'Deals won - leads created this month')}</td></tr>
-        <tr><td>Avg won value</td><td className="r">{sc.avgValue ? money(sc.avgValue) : '-'}</td><td className="r">{co.avgValue ? money(co.avgValue) : '-'}</td></tr>
-        <tr><td>Avg time to close</td><td className="r">{days(sc.avgCloseDays)}</td><td className="r">{days(co.avgCloseDays)}</td></tr>
-        {(lostSc || lostCo) ? <>
-          <tr className="mr-revmatrix-lost"><td>Deals lost <small>click for the reasons</small></td><td className="r">{lostCell(lostSc, 'Deals lost - marked lost this month', 'Marked lost this month, whatever month the lead arrived')}</td><td className="r">{lostCell(lostCo, 'Deals lost - leads created this month', "This month's leads that are already lost")}</td></tr>
-          <tr className="mr-revmatrix-lost"><td>Lost value</td><td className="r">{lostSc ? money(lostSc.total.value) : '-'}</td><td className="r">{lostCo ? money(lostCo.total.value) : '-'}</td></tr>
-        </> : null}
-      </tbody>
-    </table>
-  )
-}
-
-// Expandable parent/child table for the report drills (campaign→ad set,
-// campaign→conversion actions). Interactive on screen; every child row is forced
-// open in the PDF/print export so nothing is lost on paper.
-function MRDrillTable({ cols, rows, rowKey, childrenOf, renderChildren, max, empty = 'No data for this period.' }) {
-  const [open, setOpen] = useState(() => new Set())
-  if (!rows || !rows.length) return <div className="mr-empty">{empty}</div>
-  const data = max ? rows.slice(0, max) : rows
-  const toggle = (k) => setOpen((s) => { const n = new Set(s); n.has(k) ? n.delete(k) : n.add(k); return n })
-  const span = cols.length + 1
-  return (
-    <div className="mr-tablewrap">
-      <table className="mr-table mr-drilltbl">
-        <thead><tr><th className="mr-exp-th" aria-hidden="true" />{cols.map((c) => <th key={c.k} className={c.align === 'r' ? 'r' : ''}>{c.label}</th>)}</tr></thead>
-        <tbody>{data.map((row, i) => {
-          const k = rowKey(row, i); const kids = childrenOf(row) || []; const isOpen = open.has(k)
-          return (
-            <React.Fragment key={k}>
-              <tr className={'mr-drow' + (kids.length ? ' has-kids' : '')} onClick={() => kids.length && toggle(k)}>
-                <td className="mr-exp-cell">{kids.length ? <span className="mr-exp-ic">{isOpen ? '▾' : '▸'}</span> : ''}</td>
-                {cols.map((c) => <td key={c.k} className={c.align === 'r' ? 'r' : ''}>{c.render ? c.render(row) : row[c.k]}</td>)}
-              </tr>
-              {kids.length ? <tr className={'mr-kids' + (isOpen ? ' open' : '')}><td colSpan={span} className="mr-kids-cell">{renderChildren(kids, row)}</td></tr> : null}
-            </React.Fragment>
-          )
-        })}</tbody>
-      </table>
-    </div>
-  )
-}
-// Status donut (this period's leads by open / won / lost).
-function MRDonut({ data, money }) {
-  const total = data.reduce((a, d) => a + d.value, 0)
-  if (!total) return <div className="mr-empty">No leads in this period.</div>
-  return (
-    <div className="mr-donut">
-      <ResponsiveContainer width="100%" height={190}>
-        <PieChart>
-          <Pie data={data} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={48} outerRadius={72} paddingAngle={2} stroke="none">
-            {data.map((d, i) => <Cell key={i} fill={d.color} />)}
-          </Pie>
-          <Tooltip contentStyle={{ fontSize: 12 }} formatter={(v, n) => [fmtNumber(v), n]} />
-          <Legend wrapperStyle={{ fontSize: 11 }} />
-        </PieChart>
-      </ResponsiveContainer>
-    </div>
-  )
-}
-// Creative performance - visual cards (big thumbnail + all stats + the client's
-// configured key events), with a sort control and pagination (10 per page).
-// One page-through grid of creative cards. Owns its own paging so, in a
-// multi-pipeline deck, each pipeline's card block pages independently. The
-// parent hands down a `doSort` that ranks by the shared sort chip, and a
-// `sortToken` that resets paging to the first page whenever the sort changes.
-function MRCreativeCards({ ads, doSort, sortToken, sortLabel, label, money, n0, currency, clientId, range, channel }) {
-  const [page, setPage] = useState(0)
-  const PER = 10
-  useEffect(() => { setPage(0) }, [sortToken])
-  const sorted = doSort(ads)
-  const pages = Math.max(1, Math.ceil(sorted.length / PER))
-  const cur = Math.min(page, pages - 1)
-  const pageAds = sorted.slice(cur * PER, cur * PER + PER)
-  return (
-    <>
-      {label && <div className="mr-pipe-head" style={{ marginTop: 14 }}><span className="c360-dot" /> {label} <span className="cap">· {sorted.length} creative(s)</span></div>}
-      <div className="mr-cre-grid">{pageAds.map((a) => <MRCreative key={a.name} a={a} money={money} n0={n0} clientId={clientId} range={range} channel={channel} currency={currency} />)}</div>
-      {pages > 1 && (
-        <div className="mr-cre-pager no-print">
-          <button disabled={cur === 0} onClick={() => setPage(cur - 1)}>‹ Prev</button>
-          <span>Page {cur + 1} / {pages} · {sorted.length} creatives · sorted by {sortLabel}</span>
-          <button disabled={cur >= pages - 1} onClick={() => setPage(cur + 1)}>Next ›</button>
-        </div>
-      )}
-    </>
-  )
-}
-
-// One creative data-table (the sortable green Caalano360 table). In a
-// multi-pipeline deck each pipeline gets its own table under an optional label;
-// the header sort (tsort/onTsort) is shared so every table sorts together.
-function MRCreativeTable({ rows, o360cols, tsort, onTsort, currency, money, n0, label }) {
-  const tableRows = sortRows(rows, tsort)
-  return (
-    <>
-      <div className="mr-section-lab" style={{ marginTop: 18 }}>{label ? `Creative table · ${label}` : 'Creative table'}</div>
-      <div className="table-wrap"><table className="o360-tbl">
-        <O360ColGroup left={8} green={!!o360cols} cols={o360cols} />
-        <thead>
-          {o360cols && <C360GrpRow left={8} cols={o360cols} />}
-          <tr>
-            <SortTh k="name" sort={tsort} on={onTsort}>Creative</SortTh>
-            <SortTh k="type" sort={tsort} on={onTsort}>Type</SortTh>
-            <SortTh k="spend" sort={tsort} on={onTsort}>Spend</SortTh>
-            <SortTh k="impressions" sort={tsort} on={onTsort}>Impr.</SortTh>
-            <SortTh k="ctrV" sort={tsort} on={onTsort}>CTR</SortTh>
-            <SortTh k="freqV" sort={tsort} on={onTsort}>Freq</SortTh>
-            <SortTh k="leads" sort={tsort} on={onTsort}>{tableRows[0] && tableRows[0].resultType ? tableRows[0].resultType : 'Results'}</SortTh>
-            <SortTh k="cpl" sort={tsort} on={onTsort}>Cost/res</SortTh>
-            {o360cols && <O360Head sort={tsort} on={onTsort} cols={o360cols} />}
-          </tr>
-        </thead>
-        <tbody>{tableRows.map((a) => (
-          <tr key={a.name}>
-            <td title={a.name}><div className="cre-cell">{a.thumb ? <img className="cre-th" src={a.thumb} alt="" loading="lazy" crossOrigin="anonymous" onError={(e) => { e.target.style.display = 'none' }} /> : <span className="cre-th cre-th-none" />}<span className="cre-cell-nm">{a.name}</span></div></td>
-            <td>{a.type}</td>
-            <td>{money(a.spend)}</td>
-            <td>{n0(a.impressions)}</td>
-            <td>{a.ctrV == null ? '-' : fmtPct(a.ctrV, 2)}</td>
-            <td>{a.freqV == null ? '-' : a.freqV.toFixed(1) + 'x'}</td>
-            <td>{n0(a.leads)}</td>
-            <td>{a.cpl == null ? '-' : money(a.cpl)}</td>
-            {o360cols && o360Cells(a, currency, o360cols)}
-          </tr>
-        ))}</tbody>
-      </table></div>
-    </>
-  )
-}
-
-function MRCreativeSection({ ads, oCre, o360cols, o360colsFor, pipeLabelFor, money, n0, currency, showTable = false, clientId, range, channel }) {
-  const groups = o360cols ? o360cols.groups : []
-  // Enrich each creative: platform metrics + the per-client key-event counts + cash.
-  // Each creative's key events come from the pipeline attached to its campaign
-  // (o360colsFor), so multi-pipeline clients only show that ad's pipeline's events.
-  const enriched = ads.map((a) => {
-    const o = oCre.get(unorm(a.name))
-    const leads = a.results != null ? a.results : a.leads
-    const cols = (o360colsFor ? o360colsFor(a.campaign) : o360cols) || o360cols
-    let events = [], won = 0, revenue = 0
-    const evByLabel = new Map()
-    if (cols && o) {
-      const f = o360Fields(o, a.spend, leads, cols)
-      let ci = 0
-      for (const g of cols.groups) {
-        const seg = cols.cols.slice(ci, ci + g.span); ci += g.span
-        const first = seg.find((c) => c.gfirst) || seg[0]
-        const count = f[first.key] || 0
-        // Carry the drill context (calendar ids / linked stage / pipeline) so a
-        // click on this event can open the people behind it, scoped to this ad.
-        const ev = { label: g.label, count, kind: g.kind, rate: null, shown: null, showRate: null, occurred: null, stage: first.stage || null, pipeline: first.pipeline || null, refs: first.refs || (first.ref ? [first.ref] : null) }
-        if (g.kind === 'calendar') {
-          const shCol = seg.find((c) => c.metric === 'calShown')
-          const srCol = seg.find((c) => c.metric === 'calShowRate')
-          const brCol = seg.find((c) => c.metric === 'calBookRate')
-          const ocCol = seg.find((c) => c.metric === 'calOccurred')
-          ev.shown = shCol ? f[shCol.key] : null
-          ev.showRate = srCol ? f[srCol.key] : null
-          ev.occurred = ocCol ? f[ocCol.key] : null
-          ev.rate = brCol ? f[brCol.key] : null   // book rate (booked ÷ leads)
-        } else if (g.kind === 'won') {
-          const wrCol = seg.find((c) => c.metric === 'wonRate')
-          ev.rate = wrCol ? f[wrCol.key] : null
-        } else {
-          const rrCol = seg.find((c) => c.metric === 'stageRate')
-          ev.rate = rrCol ? f[rrCol.key] : null
-        }
-        events.push(ev)
-        evByLabel.set(g.label, count)
-        if (g.kind === 'won') { won = count; revenue = o.revenue || 0 }
-      }
-    }
-    const ctr = a.impressions ? (a.clicks / a.impressions) * 100 : null
-    const pipeName = pipeLabelFor ? pipeLabelFor(a.campaign) : null
-    return { ...a, leads, ctrV: ctr, cpl: leads ? a.spend / leads : null, events, evByLabel, won, revenue, pipeName, roas: revenue && a.spend ? revenue / a.spend : null, cpw: won && a.spend ? a.spend / won : null }
-  })
-  // Sort chips span the UNION of every pipeline's key events (shared o360cols); a
-  // creative without that event just sorts as 0.
-  // Dedupe event chips by label - the union spans every pipeline, so the same
-  // stage name (e.g. "Booked Discovery Call") can appear in more than one pipeline.
-  const uniqGroups = [...new Map(groups.map((g) => [g.label, g])).values()]
-  // Volume sort chips (by count, high→low) + a parallel set of "cheapest cost per
-  // event" chips (spend ÷ that event's count, low→high) so you can rank creatives
-  // by the best cost per booked call / quote / etc. Creatives that never reached
-  // an event sort last on the cost view (sentinel below).
-  const NOCOST = 9e15
-  const evMetrics = uniqGroups.map((g, i) => ({ k: 'ev' + i, label: g.label, evLabel: g.label }))
-  const costMetrics = uniqGroups.map((g, i) => ({ k: 'cpe' + i, label: g.label, costEvLabel: g.label, asc: true }))
-  const METRICS = [
-    { k: 'spend', label: 'Spend' }, { k: 'ctrV', label: 'CTR' }, { k: 'leads', label: 'Leads' }, { k: 'cpl', label: 'CPL', asc: true },
-    ...evMetrics,
-    { k: 'revenue', label: 'Revenue' }, { k: 'roas', label: 'ROAS' },
-    ...costMetrics,
-  ]
-  // Natural direction for a metric: cost / CPL metrics read best cheapest-first
-  // (asc), everything else biggest-first (desc). Picking a metric resets to its
-  // natural direction; the arrow toggle then flips it either way.
-  const natDir = (mm) => (mm && (mm.asc || mm.costEvLabel != null) ? 'asc' : 'desc')
-  const [sortK, setSortK] = useState('spend')
-  const [dir, setDir] = useState('desc')
-  const m = METRICS.find((x) => x.k === sortK) || METRICS[0]
-  const pickMetric = (k) => { setSortK(k); setDir(natDir(METRICS.find((x) => x.k === k))) }
-  const valOf = (a) => {
-    if (m.evLabel != null) return (a.evByLabel && a.evByLabel.get(m.evLabel)) || 0
-    if (m.costEvLabel != null) { const c = (a.evByLabel && a.evByLabel.get(m.costEvLabel)) || 0; return c > 0 && a.spend ? a.spend / c : NOCOST }
-    return a[m.k] || 0
-  }
-  const doSort = (list) => [...list].sort((x, y) => (dir === 'asc' ? valOf(x) - valOf(y) : valOf(y) - valOf(x)))
-  // Data-table view (same sortable green Caalano360 table as the Meta ads view).
-  // Header sort is shared, so every pipeline's table sorts together.
-  const [tsort, onTsort] = useSort('spend')
-  const mapRow = (a) => ({ ...a, freqV: a.reach ? a.impressions / a.reach : null, ...o360Fields(oCre.get(unorm(a.name)), a.spend, a.leads, o360cols) })
-  // Multi-pipeline decks split the whole screen by pipeline: every pipeline's
-  // cards first (Cards P1, Cards P2 …), then every pipeline's table (Table P1,
-  // Table P2 …). A creative's pipeline comes from its campaign (pipeLabelFor);
-  // creatives whose campaign maps to no pipeline collect into a trailing
-  // "Unattributed" group. Single-pipeline decks (pipeLabelFor null, or only one
-  // pipeline actually present) keep the flat layout.
-  const pipeGroups = (() => {
-    if (!pipeLabelFor) return null
-    const by = new Map()
-    for (const a of enriched) { const k = a.pipeName || '__none__'; if (!by.has(k)) by.set(k, []); by.get(k).push(a) }
-    if ([...by.keys()].filter((k) => k !== '__none__').length < 2) return null
-    const arr = [...by.entries()].map(([k, items]) => ({ key: k, label: k === '__none__' ? 'Unattributed' : k, items, spend: items.reduce((s, a) => s + (a.spend || 0), 0) }))
-    arr.sort((a, b) => (a.key === '__none__' ? 1 : b.key === '__none__' ? -1 : b.spend - a.spend))
-    return arr
-  })()
-  const sortToken = sortK + '|' + dir
-  const sortCtl = (
-    <div className="mr-cre-sort no-print">
-      <span>Sort by</span>
-      <select className="mr-cre-sort-sel" value={sortK} onChange={(e) => pickMetric(e.target.value)}>
-        <optgroup label="Performance">
-          {METRICS.filter((x) => x.evLabel == null && x.costEvLabel == null).map((x) => <option key={x.k} value={x.k}>{x.label}</option>)}
-        </optgroup>
-        {evMetrics.length ? <optgroup label="Key event - volume reached">
-          {evMetrics.map((x) => <option key={x.k} value={x.k}>{x.label}</option>)}
-        </optgroup> : null}
-        {costMetrics.length ? <optgroup label="Cheapest cost per event">
-          {costMetrics.map((x) => <option key={x.k} value={x.k}>Cost / {x.label}</option>)}
-        </optgroup> : null}
-      </select>
-      <button className="mr-cre-sort-dir" onClick={() => setDir((d) => (d === 'asc' ? 'desc' : 'asc'))} title={dir === 'asc' ? 'Ascending (lowest first) - click for highest first' : 'Descending (highest first) - click for lowest first'}>{dir === 'asc' ? '↑ Low→High' : '↓ High→Low'}</button>
-    </div>
-  )
-  if (pipeGroups) {
-    return (
-      <>
-        {sortCtl}
-        {pipeGroups.map((g) => (
-          <MRCreativeCards key={'c-' + g.key} ads={g.items} doSort={doSort} sortToken={sortToken} sortLabel={m.label} label={g.label} money={money} n0={n0} currency={currency} clientId={clientId} range={range} channel={channel} />
-        ))}
-        {showTable && pipeGroups.map((g) => (
-          <MRCreativeTable key={'t-' + g.key} rows={g.items.map(mapRow)} o360cols={o360cols} tsort={tsort} onTsort={onTsort} currency={currency} money={money} n0={n0} label={g.label} />
-        ))}
-      </>
-    )
-  }
-  return (
-    <>
-      {sortCtl}
-      <MRCreativeCards ads={enriched} doSort={doSort} sortToken={sortToken} sortLabel={m.label} money={money} n0={n0} currency={currency} clientId={clientId} range={range} channel={channel} />
-      {showTable && <MRCreativeTable rows={enriched.map(mapRow)} o360cols={o360cols} tsort={tsort} onTsort={onTsort} currency={currency} money={money} n0={n0} />}
-    </>
-  )
-}
-
-// Pure renderer for the deck so it can be reused by both the live view and the
-// frozen snapshot (identical shape). Returns an array of <MRSlide> elements.
-function renderMonthlyDeck(rep, h) {
-  const { currency, money, n0, pc, openDrill, setFormDrill } = h
-  // The form drill fetches its people live for the report's own period, so it
-  // needs a client and a range; frozen decks rendered without them stay static.
-  const fDrillOk = !!(setFormDrill && rep.client && rep.client.id && rep.period && rep.period.from && rep.period.to)
-  const b = rep.period
-  const meta = rep.meta, google = rep.google, blend = rep.blend, attribution = rep.attribution
-  const won = rep.wonClosed || (blend && blend.wonClosed) || null
-  const paid = (blend && blend.paid) || {}
-  const crm = (blend && blend.crm) || {}          // created-on cohort (opps created this month)
-  const pipelines = (blend && blend.pipelines) || []
-  const users = (blend && blend.users) || []
-  const totalSpend = paid.adSpend || (((meta && meta.totals && meta.totals.spend) || 0) + ((google && google.totals && google.totals.cost) || 0))
-  // Paid leads = Meta's optimised RESULTS (sum of each campaign's own objective
-  // result, matching Ads Manager) + Google conversions - not native lead-form
-  // leads only, which under-count website/conversion campaigns.
-  const metaResults = (meta && meta.totals && meta.totals.results != null) ? meta.totals.results : ((paid.metaLeads) || 0)
-  const gConv = (google && google.totals && google.totals.conversions) || paid.googleConv || 0
-  const paidLeads = Math.round(metaResults + gConv)
-
-  // Two won bases, deal-level (rep.deals) preferred; fall back to the wonInPeriod
-  // aggregate (rep.wonClosed) for snapshots frozen before deal lists existed.
-  //   scWon = STATUS CHANGE: deals marked won this month (cash view, any lead date)
-  //   coWon = CREATED ON:    deals whose lead was created this month & are won
-  const md = rep.deals || null
-  const emptyWon = { count: 0, revenue: 0, avgValue: 0, avgCloseDays: null, paid: { count: 0, revenue: 0 }, byUser: {}, byChannel: { meta: { count: 0, revenue: 0 }, google: { count: 0, revenue: 0 }, other: { count: 0, revenue: 0 } }, deals: [] }
-  const scWon = md ? md.statusChange.won : (won ? {
-    count: won.total.won, revenue: won.total.revenue, avgValue: won.total.avgValue, avgCloseDays: won.avgCloseDays != null ? won.avgCloseDays : null,
-    paid: { count: ((won.channels.meta && won.channels.meta.won) || 0) + ((won.channels.google && won.channels.google.won) || 0), revenue: ((won.channels.meta && won.channels.meta.revenue) || 0) + ((won.channels.google && won.channels.google.revenue) || 0) },
-    byUser: won.byUser || {}, byChannel: { meta: won.channels.meta || { count: 0, revenue: 0 }, google: won.channels.google || { count: 0, revenue: 0 }, other: won.channels.other || { count: 0, revenue: 0 } }, deals: [],
-  } : emptyWon)
-  const coWon = md ? md.createdOn.won : { count: crm.won || 0, revenue: crm.revenue || 0, avgValue: crm.avgValue || 0, avgCloseDays: null, paid: { count: 0, revenue: 0 }, byUser: {}, byChannel: emptyWon.byChannel, deals: [] }
-  const lost = md ? md.lost : { total: { count: 0, value: 0 }, byReason: [], deals: [] }
-
-  // Cash view (status change) is the headline for revenue/ROAS.
-  const dealsWon = scWon.count
-  const realisedRev = scWon.revenue
-  const paidRev = scWon.paid.revenue
-  const paidWon = scWon.paid.count
-  const roas = totalSpend ? paidRev / totalSpend : null   // paid, status-change (cash ROAS)
-
-  // Slide list (Google slides only when connected).
-  const slides = []
-  const push = (el) => slides.push(el)
-  // "Key events by campaign" is built in place but pushed later (after the Google ad
-  // groups, before Users) so the deck reads platform → key events → forms → team.
-  let keCampSlide = null
-
-  // Meta metric helpers
-  const cpm = (r) => (r.impressions ? (r.spend / r.impressions) * 1000 : null)
-  const freq = (r) => (r.reach ? r.impressions / r.reach : null)
-  const ctr = (r) => (r.impressions ? (r.clicks / r.impressions) * 100 : null)
-  const cpl = (r) => (r.leads ? r.spend / r.leads : null)
-  const metaCols = (nameKey, nameLabel, extra) => [
-    { k: 'name', label: nameLabel, render: (r) => <span className="mr-name">{r[nameKey] || r.name}{extra && r[extra] ? <small>{r[extra]}</small> : null}</span> },
-    { k: 'spend', label: 'Spend', align: 'r', render: (r) => money(r.spend) },
-    { k: 'impr', label: 'Impr.', align: 'r', render: (r) => n0(r.impressions) },
-    { k: 'reach', label: 'Reach', align: 'r', render: (r) => n0(r.reach) },
-    { k: 'freq', label: 'Freq.', align: 'r', render: (r) => { const f = freq(r); return f == null ? '-' : f.toFixed(1) + 'x' } },
-    { k: 'cpm', label: 'CPM', align: 'r', render: (r) => { const v = cpm(r); return v == null ? '-' : money(v) } },
-    { k: 'ctr', label: 'CTR', align: 'r', render: (r) => { const v = ctr(r); return v == null ? '-' : fmtPct(v, 2) } },
-    { k: 'results', label: 'Results', align: 'r', render: (r) => (r.results ? `${n0(r.results)}${r.resultType ? ' ' + r.resultType : ''}` : '-') },
-    { k: 'leads', label: 'Leads', align: 'r', render: (r) => n0(r.leads) },
-    { k: 'cpl', label: 'CPL', align: 'r', render: (r) => { const v = cpl(r); return v == null ? '-' : money(v) } },
-  ]
-
-  // Caalano360 green key-event setup - shared by the creative table, the
-  // key-events-by-campaign slide and the CRM slides. Position map comes from the
-  // full pipeline registry (allPipelines) so every key event orders by its real
-  // funnel position; the blend pipelines are activity-derived and can omit stages.
-  const stagePos = stagePosMap([...((attribution && attribution.allPipelines) || []), ...pipelines])
-  const calNames = new Map(((attribution && attribution.appointments && attribution.appointments.byCalendar) || []).map((cc) => [cc.id, cc.name]))
-  const o360cols = rep.hasCrm ? buildO360Cols(loadKeyEvents(rep.client.id), stagePos, calNames) : null
-  const oCamp = aliasedOutcomeMap(rep.client.id, 'campaign', rep.campOutcomes || [], rep.campIdMap)
-  const oCre = aliasedOutcomeMap(rep.client.id, 'content', rep.creOutcomes || [])
-  // Ad-set / ad-group key-event maps for the "Key events by campaign" drill.
-  // Meta ad sets match byMedium by name; Google ad groups match byMedium+byCreative
-  // with the numeric utm_medium folded to its ad-group name (same as the live views).
-  const oMedMeta = aliasedOutcomeMap(rep.client.id, 'medium', rep.medOutcomes || [])
-  const oMedGoogle = aliasedOutcomeMap(rep.client.id, 'medium', [...(rep.medOutcomes || []), ...(rep.creOutcomes || [])], rep.mediumIdMap)
-  // Per-pipeline key events: multi-pipeline clients show only the key events for
-  // the pipeline attached (in Settings → campaign map) to a creative's / campaign's
-  // campaign. Single-pipeline clients (or unmapped campaigns → "All") keep the full
-  // union set. o360colsFor(campaignName) returns the right green-column descriptor.
-  const multiPipe = rep.hasCrm && pipelines.length > 1
-  const campPipeMap = rep.hasCrm ? loadCampMap(rep.client.id) : {}
-  const rawKeyEvents = rep.hasCrm ? loadKeyEvents(rep.client.id) : []
-  const pipeColsCache = new Map()
-  // Resolve a campaign to a pipeline id: an explicit Settings link wins; "all" keeps
-  // the union; otherwise fall back to a name-token match against the pipeline names
-  // (same matcher the forms use) so campaigns left on "Auto" still resolve. null →
-  // union (truly unmatched).
-  const pipeOfCampaign = (campName) => {
-    if (!multiPipe || campName == null) return null
-    const t = campPipeMap[campName]
-    if (t === 'all') return null
-    if (t) return t
-    return suggestPipeline(campName, pipelines) || null
-  }
-  const pipeNameOf = (pid) => ((pipelines.find((p) => p.id === pid) || {}).name || null)
-  const pipeLabelFor = (campName) => pipeNameOf(pipeOfCampaign(campName))
-  const o360colsFor = (campName) => {
-    if (!o360cols) return null
-    const pid = pipeOfCampaign(campName)
-    if (!pid) return o360cols
-    if (pipeColsCache.has(pid)) return pipeColsCache.get(pid)
-    const c = buildO360Cols(keyEventsForPipe(rawKeyEvents, pid), stagePos, calNames)
-    pipeColsCache.set(pid, c)
-    return c
-  }
-
-  // ---- Cover ----
-  push(
-    <section className="mr-slide mr-cover" key="cover">
-      <div className="mr-cover-top"><span className="mr-cover-brand">Caalano<b>360</b></span><span className="mr-cover-kicker">Monthly Performance Report</span></div>
-      <div className="mr-cover-mid">
-        <h1>{rep.client.name}</h1>
-        {rep.client.industry && <p className="mr-cover-ind">{rep.client.industry}</p>}
-        <div className="mr-cover-month">{b.label}</div>
-      </div>
-      <div className="mr-cover-foot">Generated {new Date(rep.generatedAt).toLocaleDateString('en-AU')} · Wins &amp; revenue attributed to the month each deal was marked won.</div>
-    </section>
-  )
-
-  // ---- Meta slides ----
-  if (rep.hasMeta && meta) {
-    const t = meta.totals || {}
-    // Compact platform columns for the campaign→ad-set drill table.
-    // Link-click CTR, conversion rate (results ÷ link clicks) and CPM read truer than
-    // impressions / reach / all-click CTR for lead campaigns - and ad-set reach comes
-    // back 0 from Meta's per-adset breakdown, so drop it here.
-    const metaDrillCols = (nameLabel) => [
-      { k: 'name', label: nameLabel, render: (r) => <span className="mr-name">{r.name}</span> },
-      { k: 'spend', label: 'Spend', align: 'r', render: (r) => money(r.spend) },
-      { k: 'lctr', label: 'Link CTR', align: 'r', render: (r) => (r.impressions ? fmtPct((r.linkClicks / r.impressions) * 100, 2) : '-') },
-      { k: 'cvr', label: 'Conv. rate', align: 'r', render: (r) => { const res = r.results != null ? r.results : r.leads; return r.linkClicks ? fmtPct((res / r.linkClicks) * 100, 1) : '-' } },
-      { k: 'cpm', label: 'CPM', align: 'r', render: (r) => (r.impressions ? money((r.spend / r.impressions) * 1000) : '-') },
-      { k: 'results', label: 'Results', align: 'r', render: (r) => n0(r.results != null ? r.results : r.leads) },
-      { k: 'cpl', label: 'Cost/res', align: 'r', render: (r) => { const res = r.results != null ? r.results : r.leads; return res ? money(r.spend / res) : '-' } },
-    ]
-    const adsetsOf = (campName) => (meta.adsets || []).filter((a) => a.campaign === campName)
-    push(
-      <MRSlide key="m-camp" kicker="Meta Ads · Platform" title="Campaign & ad set performance" sub={`${(meta.campaigns || []).length} campaign(s) · ${b.label} · click a campaign to drill into its ad sets`}>
-        <div className="mr-kpirow">
-          <MRKpi label="Spend" value={money(t.spend)} />
-          <MRKpi label="Impressions" value={n0(t.impressions)} />
-          <MRKpi label="Reach" value={n0(t.reach)} />
-          <MRKpi label="Frequency" value={t.reach ? (t.impressions / t.reach).toFixed(1) + 'x' : '-'} />
-          <MRKpi label="CTR" value={t.impressions ? fmtPct((t.clicks / t.impressions) * 100, 2) : '-'} />
-          <MRKpi label="Results" value={n0(t.results != null ? t.results : t.leads)} sub={t.resultBreakdown && t.resultBreakdown.length > 1 ? 'mixed objectives' : (t.resultBreakdown && t.resultBreakdown[0] ? t.resultBreakdown[0].label : null)} />
-          <MRKpi label="Cost / result" value={(t.results != null ? t.results : t.leads) ? money(t.spend / (t.results != null ? t.results : t.leads)) : '-'} strong />
-        </div>
-        <MRDrillTable
-          cols={metaDrillCols('Campaign')} rows={meta.campaigns || []} max={16}
-          rowKey={(r) => r.name}
-          childrenOf={(r) => adsetsOf(r.name)}
-          renderChildren={(kids) => <div className="mr-kids-inner"><div className="mr-kids-lab">Ad sets</div><MRTable cols={metaDrillCols('Ad set')} rows={kids} /></div>}
-        />
-        <div className="mr-section-lab">6-month trend</div>
-        <MRTrend trend={rep.trend} currency={currency} />
-      </MRSlide>
-    )
-    const spendAds = (meta.ads || []).filter((a) => (a.spend || 0) > 0)
-    push(
-      <MRSlide key="m-cre" kicker="Meta Ads · Creative" title="Creative performance" sub={`${spendAds.length} creative(s) with spend · sort & page through, 10 at a time`}>
-        {spendAds.length
-          ? <MRCreativeSection ads={spendAds} oCre={oCre} o360cols={o360cols} o360colsFor={o360colsFor} pipeLabelFor={multiPipe ? pipeLabelFor : null} money={money} n0={n0} currency={currency} showTable clientId={rep.client && rep.client.id} range={b} channel="meta" />
-          : <div className="mr-empty">No creatives with spend for this period.</div>}
-        <p className="mr-foot-note">All creatives that spent this period, sortable by any metric, 10 per page. <b>Leads</b> = Meta results; the key-event chips are the client's configured <b>key events</b> (Settings → Key events) for leads whose ad UTM (utm_content) matches the creative. ▶ plays the Instagram post inline where a permalink is available.</p>
-      </MRSlide>
-    )
-  }
-
-  // ---- Key events by campaign (Caalano360 green columns) - right after creative ----
-  if (rep.hasCrm && o360cols) {
-    const campSrc = []
-    for (const c of (meta && meta.campaigns) || []) campSrc.push({ name: c.name, channel: 'meta', spend: c.spend || 0, leads: (c.results != null ? c.results : c.leads) || 0 })
-    for (const c of (google && google.campaigns) || []) campSrc.push({ name: c.name, channel: 'google', spend: c.cost || 0, leads: c.conversions || 0 })
-    const campRows = campSrc.map((c) => ({ ...c, ...o360Fields(oCamp.get(unorm(c.name)), c.spend, c.leads, o360cols) })).sort((a, b2) => b2.spend - a.spend).slice(0, 16)
-    // Visual layer: pick the "headline" key event (the Won group if configured,
-    // else the last event) and chart which campaigns drive it, plus its share.
-    const firstCols = o360cols.cols.filter((c) => c.gfirst)
-    const gWonIdx = o360cols.groups.findIndex((g) => g.kind === 'won')
-    const headIdx = gWonIdx >= 0 ? gWonIdx : o360cols.groups.length - 1
-    const headKey = firstCols[headIdx] ? firstCols[headIdx].key : null
-    const headLabel = o360cols.groups[headIdx] ? o360cols.groups[headIdx].label.replace(/^📅 /, '') : 'Key event'
-    const shortName = (s) => (s && s.length > 24 ? s.slice(0, 22) + '…' : (s || '-'))
-    const PIEK = ['#6d5efc', '#12b886', '#e0803a', '#4285f4', '#e1306c', '#f59e0b', '#9b8cff', '#ef4444']
-    const barData = campRows.filter((c) => c._has360)
-      .map((c) => ({ name: shortName(c.name), full: c.name, leads: c.leads || 0, event: headKey ? (c[headKey] || 0) : 0 }))
-      .sort((a, b2) => (b2.event - a.event) || (b2.leads - a.leads)).slice(0, 8)
-    const donutData = barData.filter((d) => d.event > 0).map((d, i) => ({ name: d.name, value: d.event, color: PIEK[i % PIEK.length] }))
-    // A green key-events-by-campaign table for a set of campaigns + a column
-    // descriptor (its pipeline's key events). Each campaign row is expandable into
-    // its ad sets (Meta) / ad groups (Google) - shown by name, with the same green
-    // key-event columns matched by utm_medium. Returns null if no CRM data matched.
-    const CampKeyEventsTable = ({ rows, cols, label }) => {
-      const [open, setOpen] = useState(() => new Set())
-      // Click any column header to sort the campaigns by it (name / spend / leads
-      // or any green key-event column). The top-16-by-spend selection is fixed;
-      // the chosen column only reorders what's shown.
-      const [tsort, onTsort] = useSort('spend')
-      const withF = rows.map((c) => ({ ...c, ...o360Fields(oCamp.get(unorm(c.name)), c.spend, c.leads, cols) })).sort((a, b2) => b2.spend - a.spend).slice(0, 16)
-      if (!cols || !withF.some((c) => c._has360)) return null
-      const shown = sortRows(withF, tsort)
-      // Ad sets (Meta) / ad groups (Google) under a campaign, each with its own green
-      // columns. Kept if it has spend, leads or any matched key event.
-      const kidsOf = (c) => {
-        const src = c.channel === 'meta'
-          ? ((meta && meta.adsets) || []).filter((a) => a.campaign === c.name).map((a) => ({ name: a.name, channel: 'meta', spend: a.spend || 0, leads: (a.results != null ? a.results : a.leads) || 0 }))
-          : ((google && google.adGroups) || []).filter((a) => a.campaign === c.name).map((a) => ({ name: a.name, channel: 'google', spend: a.cost || 0, leads: a.conversions || 0 }))
-        const oMed = c.channel === 'meta' ? oMedMeta : oMedGoogle
-        return src.map((k) => ({ ...k, ...o360Fields(oMed.get(unorm(k.name)), k.spend, k.leads, cols) }))
-          .filter((k) => k.spend > 0 || k.leads > 0 || k._has360)
-          .sort((a, b2) => b2.spend - a.spend).slice(0, 20)
-      }
-      const toggle = (name) => setOpen((s) => { const n = new Set(s); n.has(name) ? n.delete(name) : n.add(name); return n })
-      const rowsWithKids = shown.map((c) => ({ c, kids: kidsOf(c) }))
-      return (
-        <div key={label || 'all'} className="mr-camp-block">
-          {label ? <div className="mr-section-lab">{label}</div> : null}
-          <div className="mr-tablewrap mr-o360-wrap">
-            <table className="mr-table o360-tbl mr-o360">
-              <colgroup>
-                <col style={{ width: 210 }} /><col style={{ width: 84 }} /><col style={{ width: 60 }} />
-                {cols.cols.map((c) => <col key={c.key} className={o360ColClass(c)} />)}
-              </colgroup>
-              <thead>
-                <C360GrpRow left={3} cols={cols} />
-                <tr>
-                  <SortTh k="name" sort={tsort} on={onTsort}>Campaign</SortTh>
-                  <SortTh k="spend" sort={tsort} on={onTsort} className="r">Spend</SortTh>
-                  <SortTh k="leads" sort={tsort} on={onTsort} className="r">Leads</SortTh>
-                  <O360Head sort={tsort} on={onTsort} cols={cols} />
-                </tr>
-              </thead>
-              <tbody>{rowsWithKids.map(({ c, kids }, i) => {
-                const hasKids = kids.length > 0
-                const isOpen = open.has(c.name)
-                return (
-                  <React.Fragment key={i}>
-                    <tr className={'mr-o360-camprow' + (hasKids ? ' has-kids' : '')} onClick={hasKids ? () => toggle(c.name) : undefined}>
-                      <td className="mr-o360-name" title={c.name}><span className={'mr-o360-exp' + (hasKids ? '' : ' mr-o360-exp-none')}>{hasKids ? (isOpen ? '▾' : '▸') : ''}</span><span className={`mr-src mr-src-${c.channel}`}>{c.channel === 'meta' ? 'Meta' : 'Google'}</span> {c.name}</td>
-                      <td className="r">{money(c.spend)}</td><td className="r">{n0(c.leads)}</td>
-                      {o360Cells(c, currency, cols)}
-                    </tr>
-                    {isOpen ? kids.map((k, j) => (
-                      <tr key={'k' + j} className="mr-o360-kid">
-                        <td className="mr-o360-name mr-o360-kidname" title={k.name}><span className="mr-o360-kidtick" />{k.name}</td>
-                        <td className="r">{money(k.spend)}</td><td className="r">{n0(k.leads)}</td>
-                        {o360Cells(k, currency, cols)}
-                      </tr>
-                    )) : null}
-                  </React.Fragment>
-                )
-              })}</tbody>
-            </table>
-          </div>
-        </div>
-      )
-    }
-    const renderCampTable = (rows, cols, label) => {
-      const withF = rows.map((c) => ({ ...c, ...o360Fields(oCamp.get(unorm(c.name)), c.spend, c.leads, cols) })).sort((a, b2) => b2.spend - a.spend).slice(0, 16)
-      if (!cols || !withF.some((c) => c._has360)) return null
-      return <CampKeyEventsTable key={label || 'all'} rows={rows} cols={cols} label={label} />
-    }
-    // Multi-pipeline: one table per pipeline (campaigns grouped by their mapped
-    // pipeline); unmapped campaigns fall back to a union table. Single-pipeline: one.
-    const campTables = (() => {
-      if (!multiPipe) { const t = renderCampTable(campSrc, o360cols, null); return t ? [t] : [] }
-      const byPipe = new Map()
-      for (const c of campSrc) { const pid = pipeOfCampaign(c.name) || '__all__'; if (!byPipe.has(pid)) byPipe.set(pid, []); byPipe.get(pid).push(c) }
-      const pipeName = (pid) => ((pipelines.find((p) => p.id === pid) || {}).name || 'Pipeline')
-      const entries = [...byPipe.entries()].sort((a, b2) => (a[0] === '__all__' ? 1 : 0) - (b2[0] === '__all__' ? 1 : 0))
-      const out = []
-      for (const [pid, rows] of entries) {
-        const cols = pid === '__all__' ? o360cols : o360colsFor(rows[0].name)
-        const label = pid === '__all__' ? 'Unmapped campaigns · all key events' : `Pipeline · ${pipeName(pid)}`
-        const t = renderCampTable(rows, cols, label)
-        if (t) out.push(t)
-      }
-      return out
-    })()
-    if ((rep.campOutcomes || []).length && campTables.length) {
-      keCampSlide = (
-        <MRSlide key="c360-camp" kicker="Caalano360" title="Key events by campaign" sub="Which campaigns are driving the key events - with the cost of each. CRM outcomes (utm_campaign) matched to paid spend.">
-          {barData.length ? (
-            <div className="mr-two mr-two-viz">
-              <div>
-                <div className="mr-viz-lab">Leads vs {headLabel} - top campaigns</div>
-                <ResponsiveContainer width="100%" height={Math.max(180, barData.length * 40)}>
-                  <BarChart data={barData} layout="vertical" margin={{ top: 4, right: 18, left: 4, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" horizontal={false} />
-                    <XAxis type="number" tick={{ fontSize: 10, fill: 'var(--muted)' }} axisLine={false} tickLine={false} allowDecimals={false} />
-                    <YAxis type="category" dataKey="name" width={132} tick={{ fontSize: 9.5, fill: 'var(--muted)' }} axisLine={false} tickLine={false} />
-                    <Tooltip contentStyle={{ fontSize: 12 }} formatter={(v, n) => [fmtNumber(v), n]} labelFormatter={(l, p) => (p && p[0] && p[0].payload ? p[0].payload.full : l)} />
-                    <Legend wrapperStyle={{ fontSize: 11 }} />
-                    <Bar dataKey="leads" name="Leads" fill="#6d5efc" radius={[0, 3, 3, 0]} maxBarSize={13} />
-                    <Bar dataKey="event" name={headLabel} fill="#12b886" radius={[0, 3, 3, 0]} maxBarSize={13}><LabelList dataKey="event" position="right" style={{ fontSize: 9, fill: 'var(--muted)' }} /></Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-              <div>
-                <div className="mr-viz-lab">{headLabel} - share by campaign</div>
-                {donutData.length ? <MRDonut data={donutData} money={money} /> : <div className="mr-empty">No {headLabel.toLowerCase()} attributed to a campaign yet.</div>}
-              </div>
-            </div>
-          ) : null}
-          {campTables}
-          <p className="mr-foot-note"><b>▸ Click a campaign</b> to break it into its ad sets (Meta) / ad groups (Google) - by name, with the same key-event columns. Green columns are the client's configured <b>key events</b> - the count reached and the cost per each - plus the Won revenue block and ROAS. Scroll right to see every event. Matched by <b>utm_campaign</b> (ad sets by <b>utm_medium</b>); “-” means no CRM leads carried that UTM.{multiPipe ? ' Each pipeline shows only its own key events (from the campaign→pipeline links in Settings); unmapped campaigns show all events.' : ''}</p>
-        </MRSlide>
-      )
-    }
-  }
-
-  // ---- Google slides ----
-  if (rep.hasGoogle && google) {
-    const gt = google.totals || {}
-    const gctr = (r) => (r.impressions ? (r.clicks / r.impressions) * 100 : null)
-    const gcpc = (r) => (r.clicks ? r.cost / r.clicks : null)
-    const gcpa = (r) => (r.conversions ? r.cost / r.conversions : null)
-    const gCampCols = (nameLabel) => [
-      { k: 'name', label: nameLabel, render: (r) => <span className="mr-name">{r.name}{r.campaign ? <small>{r.campaign}</small> : null}</span> },
-      { k: 'cost', label: 'Cost', align: 'r', render: (r) => money(r.cost) },
-      { k: 'impressions', label: 'Impr.', align: 'r', render: (r) => n0(r.impressions) },
-      { k: 'clicks', label: 'Clicks', align: 'r', render: (r) => n0(r.clicks) },
-      { k: 'ctr', label: 'CTR', align: 'r', render: (r) => { const v = gctr(r); return v == null ? '-' : fmtPct(v, 2) } },
-      { k: 'cpc', label: 'CPC', align: 'r', render: (r) => { const v = gcpc(r); return v == null ? '-' : money(v) } },
-      { k: 'conversions', label: 'Conv.', align: 'r', render: (r) => n0(r.conversions) },
-      { k: 'cpa', label: 'Cost / conv.', align: 'r', render: (r) => { const v = gcpa(r); return v == null ? '-' : money(v) } },
-    ]
-    // Conversion actions grouped by the campaign they were attributed to.
-    const caByCamp = {}
-    for (const r of (google.conversionActions || [])) { const cn = r.campaign || '-'; (caByCamp[cn] = caByCamp[cn] || []).push(r) }
-    const aggCa = (rows) => { const m = new Map(); for (const r of rows) { const e = m.get(r.name) || { name: r.name, category: r.category, conversions: 0, allConversions: 0, value: 0 }; e.conversions += r.conversions || 0; e.allConversions += r.allConversions || 0; e.value += r.value || 0; m.set(r.name, e) } return [...m.values()].sort((a, b) => b.allConversions - a.allConversions) }
-    const gDrillCols = [
-      { k: 'name', label: 'Campaign', render: (r) => <span className="mr-name">{r.name}</span> },
-      { k: 'cost', label: 'Cost', align: 'r', render: (r) => money(r.cost) },
-      { k: 'impressions', label: 'Impr.', align: 'r', render: (r) => n0(r.impressions) },
-      { k: 'clicks', label: 'Clicks', align: 'r', render: (r) => n0(r.clicks) },
-      { k: 'ctr', label: 'CTR', align: 'r', render: (r) => { const v = gctr(r); return v == null ? '-' : fmtPct(v, 2) } },
-      { k: 'conversions', label: 'Conv.', align: 'r', render: (r) => n0(r.conversions) },
-      { k: 'cpa', label: 'Cost/conv.', align: 'r', render: (r) => { const v = gcpa(r); return v == null ? '-' : money(v) } },
-    ]
-    // Primary conversion actions are the ones counted in Google's "Conversions"
-    // column (conversions > 0); secondary actions only report All-conversions.
-    const caCols = [
-      { k: 'name', label: 'Conversion action', render: (r) => <span className="mr-name">{r.name}</span> },
-      { k: 'primary', label: 'Type', render: (r) => (r.conversions > 0 ? <span className="mr-pill-pri">Primary</span> : <span className="mr-pill-sec">Secondary</span>) },
-      { k: 'category', label: 'Category', render: (r) => <span className="mr-ca-cat">{r.category || '-'}</span> },
-      { k: 'conversions', label: 'Conv.', align: 'r', render: (r) => n0(r.conversions) },
-      { k: 'allConversions', label: 'All conv.', align: 'r', render: (r) => n0(r.allConversions) },
-      { k: 'value', label: 'Value', align: 'r', render: (r) => money(r.value) },
-    ]
-    const allCa = aggConvActions(google.conversionActions || [])
-    const gDaily = (google.daily || [])
-    push(
-      <MRSlide key="g-camp" kicker="Google Ads · Platform" title="Campaign performance & conversions" sub={`${(google.campaigns || []).length} campaign(s) · ${b.label} · click a campaign to see the conversion actions it drove`}>
-        <div className="mr-kpirow">
-          <MRKpi label="Cost" value={money(gt.cost)} />
-          <MRKpi label="Impressions" value={n0(gt.impressions)} />
-          <MRKpi label="Clicks" value={n0(gt.clicks)} />
-          <MRKpi label="CTR" value={gt.impressions ? fmtPct((gt.clicks / gt.impressions) * 100, 2) : '-'} />
-          <MRKpi label="Conversions" value={n0(gt.conversions)} />
-          <MRKpi label="Cost / conv." value={gt.conversions ? money(gt.cost / gt.conversions) : '-'} strong />
-        </div>
-        {gDaily.length > 1 && (
-          <div className="soc-chart">
-            <div className="mr-trend-lab">Daily - cost (bars) vs conversions (line)</div>
-            <ResponsiveContainer width="100%" height={190}>
-              <ComposedChart data={gDaily} margin={{ top: 6, right: 8, left: 0, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-                <XAxis dataKey="date" tick={{ fontSize: 10, fill: 'var(--muted)' }} tickFormatter={(d) => fmtDate(d).slice(0, 5)} axisLine={false} tickLine={false} minTickGap={24} />
-                <YAxis yAxisId="c" tick={{ fontSize: 10, fill: 'var(--muted)' }} axisLine={false} tickLine={false} width={44} tickFormatter={(v) => fmtCompact(v)} />
-                <YAxis yAxisId="v" orientation="right" tick={{ fontSize: 10, fill: 'var(--muted)' }} axisLine={false} tickLine={false} width={30} allowDecimals={false} />
-                <Tooltip contentStyle={{ fontSize: 12 }} labelFormatter={(d) => fmtDate(d)} formatter={(v, n) => (n === 'Cost' ? fmtCurrency(v, currency) : fmtNumber(v))} />
-                <Legend wrapperStyle={{ fontSize: 11 }} />
-                <Bar yAxisId="c" dataKey="cost" name="Cost" fill="#4285f4" radius={[3, 3, 0, 0]} maxBarSize={22} />
-                <Line yAxisId="v" type="monotone" dataKey="conversions" name="Conversions" stroke="#22b07d" strokeWidth={2.4} dot={false} />
-              </ComposedChart>
-            </ResponsiveContainer>
-          </div>
-        )}
-        <div className="mr-section-lab">Campaigns · click a row to drill into its conversion actions</div>
-        <MRDrillTable
-          cols={gDrillCols} rows={google.campaigns || []} max={16}
-          rowKey={(r) => r.name}
-          childrenOf={(r) => aggCa(caByCamp[r.name] || [])}
-          renderChildren={(kids) => <div className="mr-kids-inner"><div className="mr-kids-lab">Conversion actions attributed to this campaign</div><MRTable cols={caCols} rows={kids} empty="No conversion actions recorded for this campaign." /></div>}
-        />
-        <div className="mr-section-lab">Conversion actions <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>· green “Primary” = counted in the Conversions column above</span></div>
-        <MRTable cols={caCols} rows={allCa} max={16} empty="No conversion actions recorded for this period." />
-      </MRSlide>
-    )
-    const kwCols = (first) => [
-      { k: 'text', label: first, render: (r) => <span className="mr-name">{r.text || r.term}<small>{[r.campaign, r.adGroup].filter(Boolean).join(' · ') || (r.match || '')}</small></span> },
-      { k: 'cost', label: 'Cost', align: 'r', render: (r) => money(r.cost) },
-      { k: 'clicks', label: 'Clicks', align: 'r', render: (r) => n0(r.clicks) },
-      { k: 'conversions', label: 'Conv.', align: 'r', render: (r) => n0(r.conversions) },
-    ]
-    push(
-      <MRSlide key="g-ag" kicker="Google Ads · Platform" title="Ad groups, keywords & search terms" sub="Ad-group performance, plus the top keywords and search terms with the campaign / ad group they came from">
-        <div className="mr-section-lab">Ad groups</div>
-        <MRTable cols={gCampCols('Ad group')} rows={google.adGroups || []} max={10} />
-        <div className="mr-two">
-          <div>
-            <div className="mr-section-lab">Keywords</div>
-            <MRTable cols={kwCols('Keyword')} rows={google.keywords || []} max={12} />
-          </div>
-          <div>
-            <div className="mr-section-lab">Search terms</div>
-            <MRTable cols={kwCols('Search term')} rows={google.searchTerms || []} max={12} />
-          </div>
-        </div>
-      </MRSlide>
-    )
-  }
-
-  // ---- Key events by campaign (moved here: after the Google ad groups) ----
-  if (keCampSlide) push(keCampSlide)
-
-  // ---- Form performance ---- (right after key events, before the team slide)
-  // Mirrors the live Forms tab: Leads → each configured key event (count + % of the
-  // form's leads) → Revenue → Avg deal. Falls back to the booked/shown/won table for
-  // older snapshots frozen before per-form key events were stored.
-  if (rep.forms && rep.forms.length) {
-    const frate = (x, y) => (y ? fmtPct((x / y) * 100, 0) : '-')
-    const fkind = (k) => (k === 'facebook' ? 'Meta Lead Form' : k === 'website' ? 'Website form' : (k || ''))
-    const evLbl = (k) => (k.kind === 'calendar' ? '📅 ' : '') + k.label
-    // One "Leads → each key event → Revenue → Avg deal" table for a set of forms
-    // and its own column list. Multi-pipeline decks render one of these per
-    // pipeline (each pipeline's own key events, no duplicated columns).
-    const keTable = (events, forms, pipeKey = 'all') => {
-      const ftot = forms.reduce((a, f) => ({ leads: a.leads + (f.leads || 0), won: a.won + (f.won || 0), revenue: a.revenue + (f.revenue || 0), ke: a.ke.map((v, i) => v + ((f.ke && f.ke[i]) || 0)) }), { leads: 0, won: 0, revenue: 0, ke: events.map(() => 0) })
-      return (
-        <div className="mr-tablewrap"><table className="mr-table mr-forms-tbl">
-          <thead><tr><th className="lft">Form</th><th className="r">Leads</th>{events.map((k, i) => <th key={i} className="r">{evLbl(k)}</th>)}<th className="r">Revenue</th><th className="r">Avg deal</th></tr></thead>
-          <tbody>
-            {forms.map((f, i) => (
-              <tr key={i}>
-                <td className="lft"><span className="mr-name mr-name-form" title={f.form}>{f.form}{f.kind ? <small>{fkind(f.kind)}</small> : null}</span></td>
-                <td className="r">{f.leads > 0 && fDrillOk
-                  ? <button className="mr-cellbtn" onClick={() => setFormDrill({ form: f.form, event: { label: 'Leads', kind: 'lead' }, pipeKey })} title="Click to see the leads behind this">{n0(f.leads)}</button>
-                  : n0(f.leads)}</td>
-                {events.map((k, j) => {
-                  const c = (f.ke && f.ke[j]) || 0
-                  const pctSm = f.leads ? <small className="mr-fpct"> {fmtPct((c / f.leads) * 100, 0)}</small> : null
-                  // Only offer the drill where there is something to look at and
-                  // we know which client/period to ask about.
-                  return <td key={j} className="r">{c > 0 && fDrillOk
-                    ? <button className="mr-cellbtn" onClick={() => setFormDrill({ form: f.form, event: k, pipeKey })} title="Click to see the leads behind this">{n0(c)}{pctSm}</button>
-                    : <>{n0(c)}{pctSm}</>}</td>
-                })}
-                <td className="r">{money(f.revenue)}</td>
-                <td className="r">{f.won ? money(f.revenue / f.won) : '-'}</td>
-              </tr>
-            ))}
-            <tr className="mr-tot"><td className="lft">Total</td><td className="r">{n0(ftot.leads)}</td>{ftot.ke.map((v, i) => <td key={i} className="r">{n0(v)}</td>)}<td className="r">{money(ftot.revenue)}</td><td className="r">{ftot.won ? money(ftot.revenue / ftot.won) : '-'}</td></tr>
-          </tbody>
-        </table></div>
-      )
-    }
-    // Legacy booked/shown/won table (snapshots frozen before per-form key events).
-    const legacyTable = (forms) => {
-      const ftot = forms.reduce((a, f) => ({ leads: a.leads + (f.leads || 0), booked: a.booked + (f.booked || 0), shown: a.shown + (f.shown || 0), won: a.won + (f.won || 0), revenue: a.revenue + (f.revenue || 0) }), { leads: 0, booked: 0, shown: 0, won: 0, revenue: 0 })
-      return (
-        <div className="mr-tablewrap"><table className="mr-table mr-forms-tbl">
-          <thead><tr><th className="lft">Form</th><th className="r">Leads</th><th className="r">Booked</th><th className="r">Book %</th><th className="r">Shown</th><th className="r">Won</th><th className="r">Win %</th><th className="r">Revenue</th></tr></thead>
-          <tbody>
-            {forms.map((f, i) => (
-              <tr key={i}>
-                <td className="lft"><span className="mr-name mr-name-form" title={f.form}>{f.form}{f.kind ? <small>{fkind(f.kind)}</small> : null}</span></td>
-                <td className="r">{n0(f.leads)}</td><td className="r">{n0(f.booked)}</td><td className="r">{frate(f.booked, f.leads)}</td>
-                <td className="r">{n0(f.shown)}</td><td className="r">{n0(f.won)}</td><td className="r">{frate(f.won, f.leads)}</td><td className="r">{money(f.revenue)}</td>
-              </tr>
-            ))}
-            <tr className="mr-tot"><td className="lft">Total</td><td className="r">{n0(ftot.leads)}</td><td className="r">{n0(ftot.booked)}</td><td className="r">{frate(ftot.booked, ftot.leads)}</td><td className="r">{n0(ftot.shown)}</td><td className="r">{n0(ftot.won)}</td><td className="r">{frate(ftot.won, ftot.leads)}</td><td className="r">{money(ftot.revenue)}</td></tr>
-          </tbody>
-        </table></div>
-      )
-    }
-    // Merge duplicate key-event columns by label+kind (a union table built before
-    // per-pipeline blocks existed can list the same event once per pipeline). The
-    // per-pipeline reach is disjoint, so stage counts sum; won-kind reach isn't
-    // pipeline-scoped, so take the max to avoid double counting.
-    const dedupeUnion = (events, forms) => {
-      const idxOf = new Map(); const merged = []; const groups = []
-      events.forEach((k, i) => { const key = (k.kind || 'stage') + '|' + k.label; if (!idxOf.has(key)) { idxOf.set(key, merged.length); merged.push(k); groups.push([i]) } else groups[idxOf.get(key)].push(i) })
-      if (merged.length === events.length) return { events, forms }
-      const mForms = forms.map((f) => ({ ...f, ke: groups.map((g, gi) => { const vals = g.map((i) => (f.ke && f.ke[i]) || 0); return merged[gi].kind === 'won' ? Math.max(0, ...vals) : vals.reduce((s, v) => s + v, 0) }) }))
-      return { events: merged, forms: mForms }
-    }
-    const byPipe = (rep.formKeByPipe && rep.formKeByPipe.length > 1) ? rep.formKeByPipe : null
-    const uniFke = rep.formKe || []
-    const hasFke = uniFke.length > 0
-    const uni = hasFke ? dedupeUnion(uniFke, rep.forms) : null
-    push(
-      <MRSlide key="forms" kicker="Caalano360 · Forms" title="Form performance" sub={hasFke ? `Every lead form this month, from leads through your configured key events - so you can compare friction vs quality (fewer but higher-converting vs more but lower-quality).${byPipe ? ' Split per pipeline - each shows only that pipeline’s key events.' : ''}` : "Every lead form this month, from leads through to won - so you can compare friction vs quality."}>
-        {byPipe
-          ? byPipe.map((blk, bi) => (
-              <div key={bi} className="mr-camp-block">
-                <div className="mr-pipe-head" style={{ marginTop: bi ? 16 : 0 }}><span className="c360-dot" /> {blk.pipelineName || 'Pipeline'} <span className="cap">· {blk.forms.length} form(s)</span></div>
-                {keTable(blk.events, blk.forms, blk.pipelineId || 'all')}
-              </div>
-            ))
-          : hasFke
-            ? keTable(uni.events, uni.forms, 'all')
-            : legacyTable(rep.forms)}
-      </MRSlide>
-    )
-  }
-
-  // ---- Caalano360 (order: User performance + Lost reasons combined → Account summary & ROI) ----
-  if (rep.hasCrm && blend) {
-    const rmap = reachedByStage(pipelines)
-    const calMap = attribution ? calCountMap(attribution, 'all') : new Map()
-    const keyEventsRaw = resolveKeyEvents(loadKeyEvents(rep.client.id), stagePos)
-    // Pass the RAW key events to keyEventRows - it resolves internally, and
-    // double-resolving drops bare stage events (Won, Shown, …), which is why the
-    // funnel previously showed only Leads + the calendar-linked stage.
-    // Use the deal-level created-on won count (coWon) - NOT the blend aggregate
-    // crm.won - so the funnel's "Client Won" matches the "Deals won · created" KPI
-    // and the status donut above (they can differ by a deal at the month boundary).
-    const funnelRows = keyEventRows(loadKeyEvents(rep.client.id), rmap, calMap, stagePos, coWon.count || 0)
-    // Per-pipeline funnels: for multi-pipeline clients (FINR = BA + Finance, Nexia =
-    // ADHD + Allied Health, …) render ONE funnel per pipeline. Scoping the key events
-    // via keyEventsForPipe means each calendar merges cleanly with its own pipeline's
-    // stage (the union view otherwise showed the same step twice - 📅 calendar AND
-    // plain stage). Single-pipeline clients keep the one account-level funnel.
-    const funnelPipeSpec = multiPipe ? pipelines : [null]
-    const funnelPipes = funnelPipeSpec.map((p) => {
-      const kev = p ? keyEventsForPipe(rawKeyEvents, p.id) : rawKeyEvents
-      const prmap = p ? reachedByStage([p]) : rmap
-      const wt = p ? ((p.crm && p.crm.won) || p.won || 0) : (coWon.count || 0)
-      const rows = keyEventRows(kev, prmap, calMap, stagePos, wt)
-      const leads = p ? ((p.crm && p.crm.leads) || p.leads || 0) : (crm.leads || 0)
-      return { pipe: p, rows, leads }
-    }).filter((f) => f.rows.length)
-    // Blended spend allocated across pipelines by lead share (same basis the live
-    // pipeline-performance view uses) so each funnel's "cost / event" reads sensibly.
-    const funnelLeadTotal = funnelPipes.reduce((s, f) => s + f.leads, 0)
-    const funnelSpendOf = (f) => (funnelPipes.length > 1 && funnelLeadTotal ? totalSpend * (f.leads / funnelLeadTotal) : totalSpend)
-    const otherRev = Math.max(0, realisedRev - paidRev)
-    const PIE = ['#6d5efc', '#e0803a', '#e1306c', '#4285f4', '#f59e0b', '#12b886', '#9b8cff', '#ef4444']
-    const statusDonut = [
-      { name: 'Open', value: crm.open || 0, color: '#6d5efc' },
-      { name: 'Won', value: coWon.count || 0, color: '#22b07d' },
-      { name: 'Lost', value: lost.total.count || 0, color: '#ef4444' },
-    ].filter((d) => d.value)
-
-    // ---- User performance + Lost reasons (combined) ----
-    const ke = keyEventsRaw.filter((k) => k.kind === 'stage' || (k.kind === 'calendar' && k.stage)).slice(0, 5)
-    const keRef = (k) => (k.kind === 'calendar' ? k.stage : k.ref)
-    const urows = users.map((u) => {
-      const sc = (scWon.byUser && scWon.byUser[u.id]) || { count: 0, revenue: 0 }
-      const uc = u.crm || {}
-      const urmap = reachedByStage(u.pipelines || [])
-      const evReach = {}; for (const k of ke) evReach[k.ref] = stageReachOf(urmap, k.pipeline, keRef(k))
-      return { id: u.id, name: u.name, leads: u.leads || uc.leads || 0, cohortWon: uc.won || 0, evReach, closed: (sc.count != null ? sc.count : (sc.won || 0)), revenue: sc.revenue || 0 }
-    }).sort((a, b2) => (b2.revenue - a.revenue) || (b2.closed - a.closed) || (b2.leads - a.leads))
-    const topU = urows.find((u) => u.closed > 0) || urows[0]
-    const userDeals = (uid) => (scWon.deals || []).filter((d) => d.userId === uid)
-    // ---- Per-pipeline breakdowns (multi-pipeline clients only) ----
-    // Each pipeline gets its own User-performance table and Lost-reasons panel, so a
-    // FINR (BA + Finance) / Nexia (ADHD + Allied Health) report reads pipeline by
-    // pipeline instead of blending two books of business into one.
-    const keFor = (pid) => (pid ? resolveKeyEvents(keyEventsForPipe(rawKeyEvents, pid), stagePos) : keyEventsRaw)
-      .filter((k) => k.kind === 'stage' || (k.kind === 'calendar' && k.stage)).slice(0, 5)
-    // Closed-this-month deals for a user, optionally scoped to a pipeline by name.
-    const userDealsPipe = (uid, pname) => (scWon.deals || []).filter((d) => d.userId === uid && (pname == null || d.pipeline === pname))
-    // Cohort-won deals for a rep: this-month's leads (created-on cohort) that are won.
-    const userCohortDealsPipe = (uid, pname) => (coWon.deals || []).filter((d) => d.userId === uid && (pname == null || d.pipeline === pname))
-    const buildUrows = (P) => {
-      const kelist = P ? keFor(P.id) : ke
-      const rows = users.map((u) => {
-        const up = P ? (u.pipelines || []).find((p) => p.id === P.id) : null
-        if (P && !up) return null
-        const uc = P ? (up.crm || {}) : (u.crm || {})
-        const urmap = reachedByStage(P ? [up] : (u.pipelines || []))
-        const evReach = {}; for (const k of kelist) evReach[k.ref] = stageReachOf(urmap, k.pipeline, keRef(k))
-        const deals = P ? userDealsPipe(u.id, P.name) : null
-        const closed = P ? deals.length : (() => { const sc = (scWon.byUser && scWon.byUser[u.id]) || {}; return sc.count != null ? sc.count : (sc.won || 0) })()
-        const revenue = P ? deals.reduce((s, d) => s + (d.value || 0), 0) : (((scWon.byUser && scWon.byUser[u.id]) || {}).revenue || 0)
-        const leads = P ? (uc.leads || 0) : (u.leads || uc.leads || 0)
-        return { id: u.id, name: u.name, leads, cohortWon: uc.won || 0, evReach, closed, revenue }
-      }).filter(Boolean).filter((r) => !P || r.leads || r.closed || r.cohortWon)
-      return { ke: kelist, rows: rows.sort((a, b2) => (b2.revenue - a.revenue) || (b2.closed - a.closed) || (b2.leads - a.leads)) }
-    }
-    // Which paid channel a lost deal's lead came from (Meta / Google / everything
-    // else), so we can total each lost reason by platform.
-    const chanKey = (d) => (d.channel === 'meta' ? 'meta' : d.channel === 'google' ? 'google' : 'other')
-    // Single-pipeline lost reasons rebuilt from the deal list so each reason carries
-    // its per-channel split (the backend byReason has no channel breakdown). Falls
-    // back to the backend rows (no channel columns) if the deal detail is absent.
-    const lostByReasonChan = (() => {
-      if (!(lost.deals && lost.deals.length)) return { rows: lost.byReason || [], hasChan: false }
-      const m = new Map()
-      for (const d of lost.deals) {
-        const rn = d.reason || 'Not set'
-        const e = m.get(rn) || { name: rn, count: 0, value: 0, meta: 0, google: 0, other: 0 }
-        e.count++; e.value += d.value || 0; e[chanKey(d)]++; m.set(rn, e)
-      }
-      return { rows: [...m.values()].sort((a, b2) => b2.count - a.count), hasChan: true }
-    })()
-    // Lost reasons grouped by pipeline (from the capped closed-lost deal list, which
-    // is the only feed carrying each deal's pipeline).
-    const lostByPipe = () => {
-      const m = new Map()
-      for (const d of (lost.deals || [])) {
-        const pn = d.pipeline || 'Unassigned'
-        let g = m.get(pn); if (!g) { g = { name: pn, deals: [], byReason: new Map(), count: 0, value: 0 }; m.set(pn, g) }
-        g.deals.push(d); g.count++; g.value += d.value || 0
-        const rn = d.reason || 'Not set'; const rr = g.byReason.get(rn) || { count: 0, value: 0, meta: 0, google: 0, other: 0 }
-        rr.count++; rr.value += d.value || 0; rr[chanKey(d)]++; g.byReason.set(rn, rr)
-      }
-      // Order by the account pipeline order, then any extras.
-      const order = new Map(pipelines.map((p, i) => [p.name, i]))
-      return [...m.values()].map((g) => ({
-        name: g.name, count: g.count, value: g.value, deals: g.deals,
-        byReason: [...g.byReason.entries()].map(([name, v]) => ({ name, count: v.count, value: v.value, meta: v.meta, google: v.google, other: v.other })).sort((a, b2) => b2.count - a.count),
-      })).sort((a, b2) => (order.has(a.name) ? order.get(a.name) : 99) - (order.has(b2.name) ? order.get(b2.name) : 99) || b2.count - a.count)
-    }
-    // Render one user-performance MRTable for a given {ke, rows} bundle + drill scope.
-    const UserPerfTable = ({ bundle, pname }) => (
-      <MRTable
-        cols={[
-          { k: 'name', label: 'User', render: (r) => <span className="mr-name">{r.name}</span> },
-          { k: 'leads', label: 'Leads', align: 'r', render: (r) => n0(r.leads) },
-          ...bundle.ke.map((k) => ({ k: 'ev_' + k.ref, label: k.label, align: 'r', render: (r) => n0(r.evReach[k.ref] || 0) })),
-          { k: 'cohortWon', label: 'Won (cohort)', align: 'r', render: (r) => (r.cohortWon ? <button className="mr-cellbtn" onClick={() => openDrill({ title: `${r.name} - won (cohort, leads created this month)${pname ? ` · ${pname}` : ''}`, deals: userCohortDealsPipe(r.id, pname) })}>{n0(r.cohortWon)}</button> : '-') },
-          { k: 'winrate', label: 'Cohort win %', align: 'r', render: (r) => pc(r.cohortWon, r.leads) },
-          { k: 'closed', label: 'Closed this mo', align: 'r', render: (r) => (r.closed ? <button className="mr-cellbtn" onClick={() => openDrill({ title: `${r.name} - closed this month${pname ? ` · ${pname}` : ''}`, deals: userDealsPipe(r.id, pname) })}>{n0(r.closed)}</button> : '-') },
-          { k: 'revenue', label: 'Revenue (closed)', align: 'r', render: (r) => money(r.revenue) },
-        ]}
-        rows={bundle.rows} max={16}
-        empty="No assigned-user data for this pipeline."
-        wrapClass="mr-userperf"
-      />
-    )
-    push(
-      <MRSlide key="users" kicker="Caalano360 · Team" title="User performance & lost reasons" sub="Team performance this month, and why this month's closed-lost deals were lost - shown as two separate panels.">
-        <section className="mr-bubble">
-          <div className="mr-bubble-lab">👥 User performance</div>
-          <p className="mr-bubble-sub">Ranked by revenue closed this month. Leads and key-event columns are each user's created-on cohort; “Closed this mo” is deals they marked won this month.</p>
-          {topU && topU.closed > 0 && <div className="mr-top">
-            <span className="mr-top-badge">★ Top performer</span>
-            <b>{topU.name}</b>
-            <span className="mr-top-stats">{money(topU.revenue)} closed · {n0(topU.closed)} deal(s) this month · {n0(topU.leads)} new leads</span>
-          </div>}
-          {multiPipe
-            ? pipelines.map((P) => {
-              const bundle = buildUrows(P)
-              if (!bundle.rows.length) return null
-              return (
-                <div className="mr-pipe-block" key={P.id}>
-                  <div className="mr-pipe-head"><span className="c360-dot" /> {P.name}</div>
-                  <UserPerfTable bundle={bundle} pname={P.name} />
-                </div>
-              )
-            })
-            : <UserPerfTable bundle={{ ke, rows: urows }} pname={null} />}
-          <p className="mr-foot-note">“Won (cohort)” counts this month's leads that are already won; “Closed this mo” counts deals won this month regardless of when the lead came in - click a number to see the deals.{multiPipe ? ' Each table is scoped to that pipeline.' : ''}</p>
-        </section>
-
-        <section className="mr-bubble">
-          <div className="mr-bubble-lab">📉 Lost reasons &amp; pipeline status</div>
-          <p className="mr-bubble-sub">Why the deals marked lost this month were lost - by status change, whatever month the lead arrived, so it reads as what the team has just been through - and where this month's leads currently stand.</p>
-          <div className="mr-kpirow">
-            <MRKpi label="Deals lost" value={n0(lost.total.count)} sub="marked lost this month (status change)" />
-            <MRKpi label="Value lost" value={money(lost.total.value)} />
-            <MRKpi label="Win rate" value={pc(dealsWon, dealsWon + lost.total.count)} sub="won ÷ resulted this month" />
-            <MRKpi label="Still open" value={n0(crm.open)} sub={`${money(crm.openValue)} in pipeline`} />
-          </div>
-          <div className="mr-lost-full">
-            <div className="mr-viz-lab">Why deals were lost{multiPipe ? ' · by pipeline' : ''} · by channel</div>
-            {(() => {
-              // Reason + Deals/Value/% then a per-channel split (Meta / Google / Other),
-              // so you can see which platform's leads drive each lost reason.
-              const chanCols = [
-                { k: 'meta', label: 'Meta', align: 'r', render: (r) => n0(r.meta || 0) },
-                { k: 'google', label: 'Google', align: 'r', render: (r) => n0(r.google || 0) },
-                { k: 'other', label: 'Other', align: 'r', render: (r) => n0(r.other || 0) },
-              ]
-              const reasonCol = (drillTitle, deals) => ({ k: 'name', label: 'Reason', render: (r) => (openDrill ? <button className="mr-cellbtn mr-cellbtn-l" onClick={() => openDrill({ title: drillTitle(r), kind: 'lost', deals: deals(r) })}>{r.name}</button> : <span className="mr-name">{r.name}</span>) })
-              if (multiPipe) {
-                const groups = lostByPipe()
-                if (!groups.length) return <div className="mr-empty">No deals were marked lost this month{md ? '' : ' (regenerate the snapshot to pull lost-deal detail)'}.</div>
-                return groups.map((g) => (
-                  <div className="mr-pipe-block" key={g.name}>
-                    <div className="mr-pipe-head"><span className="c360-dot" /> {g.name} <span className="cap">· {n0(g.count)} lost · {money(g.value)}</span></div>
-                    <MRTable
-                      cols={[
-                        reasonCol((r) => `Lost - ${r.name} · ${g.name}`, (r) => g.deals.filter((d) => (d.reason || 'Not set') === r.name)),
-                        { k: 'count', label: 'Deals', align: 'r', render: (r) => n0(r.count) },
-                        { k: 'value', label: 'Value', align: 'r', render: (r) => money(r.value) },
-                        { k: 'share', label: '%', align: 'r', render: (r) => pc(r.count, g.count) },
-                        ...chanCols,
-                      ]}
-                      rows={g.byReason} max={6}
-                    />
-                  </div>
-                ))
-              }
-              if (!lostByReasonChan.rows.length) return <div className="mr-empty">No deals were marked lost this month{md ? '' : ' (regenerate the snapshot to pull lost-deal detail)'}.</div>
-              return (
-                <MRTable
-                  cols={[
-                    reasonCol((r) => `Lost - ${r.name}`, (r) => (lost.deals || []).filter((d) => (d.reason || 'Not set') === r.name)),
-                    { k: 'count', label: 'Deals', align: 'r', render: (r) => n0(r.count) },
-                    { k: 'value', label: 'Value', align: 'r', render: (r) => money(r.value) },
-                    { k: 'share', label: '%', align: 'r', render: (r) => pc(r.count, lost.total.count) },
-                    ...(lostByReasonChan.hasChan ? chanCols : []),
-                  ]}
-                  rows={lostByReasonChan.rows} max={10}
-                />
-              )
-            })()}
-            <p className="mr-foot-note" style={{ marginTop: 8 }}>Of {n0(crm.leads)} leads created this month: {n0(coWon.count)} won, {n0(crm.lost != null ? crm.lost : Math.max(0, n0(crm.leads) - n0(coWon.count) - n0(crm.open)))} lost, {n0(crm.open)} still open. The table above counts deals marked lost this month whatever month their lead arrived, so its total can differ. The Meta / Google / Other columns split each lost reason by the platform its lead first came from.</p>
-          </div>
-        </section>
-      </MRSlide>
-    )
-
-    // ---- Account summary & ROI ----
-    const roiRows = ['meta', 'google'].map((cKey) => ({
-      label: cKey === 'meta' ? 'Meta' : 'Google',
-      spend: (cKey === 'meta' ? paid.metaSpend : paid.googleSpend) || 0,
-      rev: (scWon.byChannel && scWon.byChannel[cKey] && scWon.byChannel[cKey].revenue) || 0,
-      won: (scWon.byChannel && scWon.byChannel[cKey] && scWon.byChannel[cKey].count) || 0,
-      close: (scWon.byChannel && scWon.byChannel[cKey] && scWon.byChannel[cKey].avgCloseDays != null) ? scWon.byChannel[cKey].avgCloseDays : null,
-    })).filter((r) => r.spend || r.rev)
-    push(
-      <MRSlide key="c360" kicker="Caalano360" title="Account summary & ROI" sub="Ad platform + CRM. Spend & leads are this month's; ROAS is measured only on revenue from deals attributed to a paid channel (Meta/Google) via UTM - never total business.">
-        <div className="mr-kpirow mr-kpirow-wide">
-          <MRKpi label="Total ad spend" value={money(totalSpend)} />
-          <MRKpi label="Paid results" value={n0(paidLeads)} sub="Meta results + Google conv · not CRM leads" />
-          <MRKpi label="Cost / result" value={paidLeads ? money(totalSpend / paidLeads) : '-'} sub="spend ÷ ad results" />
-          <MRKpi label="Deals won · created" value={n0(coWon.count)} sub="this month's leads" />
-          <MRKpi label="Deals won · closed" value={n0(dealsWon)} sub="closed this month" />
-          <MRKpi label="Paid revenue" value={money(paidRev)} strong sub="closed this month" />
-          <MRKpi label="ROAS (paid)" value={roas != null ? roas.toFixed(1) + 'x' : '-'} sub="cash / status change" />
-          <MRKpi label="Cost / won (paid)" value={paidWon ? money(totalSpend / paidWon) : '-'} />
-          <MRKpi label="Avg time to close" value={scWon.avgCloseDays != null ? `${scWon.avgCloseDays} days` : '-'} sub="lead → won" />
-          <MRKpi label="Open pipeline" value={money(crm.openValue)} sub={`${n0(crm.open)} open`} />
-        </div>
-        <div className="mr-two mr-two-viz">
-          <div>
-            <div className="mr-section-lab">Revenue - status change vs created on</div>
-            <div className="mr-revmatrix-wrap"><MRRevMatrix sc={scWon} co={coWon} spend={totalSpend} money={money} n0={n0} onDrill={openDrill} lostSc={md ? md.lost : null} lostCo={md && md.lostCreatedOn ? md.lostCreatedOn : null} /></div>
-            {roiRows.length > 0 && (
-              <>
-                <div className="mr-section-lab">ROI by channel (closed this month)</div>
-                <MRTable
-                  cols={[
-                    { k: 'label', label: 'Channel', render: (r) => <span className="mr-name">{r.label}</span> },
-                    { k: 'spend', label: 'Spend', align: 'r', render: (r) => money(r.spend) },
-                    { k: 'won', label: 'Won', align: 'r', render: (r) => n0(r.won) },
-                    { k: 'rev', label: 'Revenue', align: 'r', render: (r) => money(r.rev) },
-                    { k: 'roas', label: 'ROAS', align: 'r', render: (r) => (r.spend ? (r.rev / r.spend).toFixed(1) + 'x' : '-') },
-                    { k: 'cac', label: 'CAC', align: 'r', render: (r) => (r.won ? money(r.spend / r.won) : '-') },
-                    { k: 'close', label: 'Avg close', align: 'r', render: (r) => (r.close != null ? `${r.close} days` : '-') },
-                  ]}
-                  rows={roiRows}
-                />
-              </>
-            )}
-          </div>
-          <div>
-            <div className="mr-viz-lab">Leads by status (this month)</div>
-            {statusDonut.length ? <MRDonut data={statusDonut} money={money} /> : <div className="mr-empty">No leads this month.</div>}
-            <p className="mr-foot-note" style={{ marginTop: 6 }}>Of {n0(crm.leads)} leads created this month: {n0(coWon.count)} won, {n0(lost.total.count)} lost, {n0(crm.open)} still open.</p>
-          </div>
-        </div>
-        <p className="mr-foot-note">Status change = deals marked won this month (cash banked, any lead date). Created on = deals whose lead came in this month and are won. Total business closed this month was {money(realisedRev)} across {n0(dealsWon)} deal(s){otherRev > 0 ? `, of which ${money(otherRev)} came from organic / referral / untracked sources (excluded from paid ROAS)` : ''}.</p>
-        <div className="mr-section-lab">This month's leads → key events (created-on cohort){multiPipe && funnelPipes.length > 1 ? ' · one funnel per pipeline' : ''}</div>
-        {funnelPipes.length
-          ? (multiPipe && funnelPipes.length > 1
-            ? <div className="mr-funnel-split">
-              {funnelPipes.map((f) => (
-                <div className="mr-funnel-big" key={f.pipe.id}>
-                  <KeyEventsFunnel rows={f.rows} total={f.leads} spend={funnelSpendOf(f)} currency={currency}
-                    title={f.pipe.name} sub={`${n0(f.leads)} leads created this month in this pipeline · spend allocated by lead share`}
-                    caveat="One cohort: this pipeline's leads created this month and how far they've progressed. “Cost / event” spreads that pipeline's share of ad spend across every event - a blended guide, not paid-only CAC." />
-                </div>
-              ))}
-            </div>
-            : <div className="mr-funnel-big"><KeyEventsFunnel rows={funnelPipes[0].rows} total={funnelPipes[0].leads} spend={totalSpend} currency={currency} caveat="One cohort: leads created this month and how far they've progressed. “Cost / event” spreads total ad spend across every event, so it's a blended guide, not paid-only CAC." /></div>)
-          : <div className="mr-empty">No key events configured - set them in Settings → Key events.</div>}
-      </MRSlide>
-    )
-  }
-
-  // Number the slides (cover excluded from the count shown).
-  return slides
-}
-
-// Aggregate conversion-action rows (which come per campaign/ad-group) up to the
-// account level by action name.
-function aggConvActions(rows) {
-  const m = new Map()
-  for (const r of rows) { const e = m.get(r.name) || { name: r.name, category: r.category, conversions: 0, allConversions: 0, value: 0 }; e.conversions += r.conversions || 0; e.allConversions += r.allConversions || 0; e.value += r.value || 0; m.set(r.name, e) }
-  return [...m.values()].sort((a, b) => b.allConversions - a.allConversions)
-}
-
-// ---------------------------------------------------------------------------
-// Organic Social Media dashboard - Instagram + Facebook Page organic, per client.
-// ---------------------------------------------------------------------------
 function SocPost({ p, platform }) {
   const [playing, setPlaying] = useState(false)
   const n = (v) => (v == null ? '-' : fmtNumber(v))
@@ -25441,7 +18582,7 @@ function ClientSwitcher({ clients, active, onPick, idxOf }) {
 // authorisation boundary - every data request is still checked server-side, so a
 // link to a client you can't see simply returns 403 and falls back to home.
 const NAV_VIEWS = new Set(['overview', 'trends', 'weekly', 'forecast', 'cockpit', 'curator', 'insights', 'update', 'monthly', 'social', 'reports', 'settings', 'clients'])
-function readNavUrl() {
+export function readNavUrl() {
   try { const p = new URLSearchParams(window.location.search); return { v: p.get('v'), c: p.get('c'), t: p.get('t'), p: p.get('p'), s: p.get('s'), r: p.get('r'), from: p.get('from'), to: p.get('to'), wb: p.get('wb'), m: p.get('m') } } catch { return {} }
 }
 // writeNavUrl takes a PATCH: each key is set (truthy) or deleted (falsy); keys not
@@ -25488,7 +18629,7 @@ function NavAudit({ on, view, clientId, tab }) {
   useNavAudit(on, view, clientId, tab)
   return null
 }
-function writeNavUrl(patch, push) {
+export function writeNavUrl(patch, push) {
   try {
     const p = new URLSearchParams(window.location.search)
     for (const [k, val] of Object.entries(patch)) { if (val === undefined) continue; val ? p.set(k, String(val)) : p.delete(k) }

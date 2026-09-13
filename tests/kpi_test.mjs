@@ -1,8 +1,9 @@
 const ROOT = new URL('../', import.meta.url).pathname
-// The two reducers that make the KPI columns dynamic, lifted from App.jsx so
-// the test runs the shipped arithmetic, driven as a person would drive them.
+// The two reducers that make the KPI columns dynamic, lifted from the KPI
+// editor's source (src/views/settings.jsx) so the test runs the shipped
+// arithmetic, driven as a person would drive them.
 import fs from 'fs'
-const src = fs.readFileSync(ROOT + 'src/App.jsx', 'utf8')
+const src = fs.readFileSync(ROOT + 'src/views/settings.jsx', 'utf8')
 const lift = (startRe, endRe) => { const a = src.search(startRe); const b = src.slice(a).search(endRe); return src.slice(a, a + b + endRe.source.length - 2) }
 const setTargetSrc = lift(/const setTarget = \(key, side, raw\) => setK\(/, /\n  \}\)\n/)
 // The budget path is a plain helper now: rederive(set, spend) -> set.

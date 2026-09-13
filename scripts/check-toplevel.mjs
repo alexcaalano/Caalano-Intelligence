@@ -18,19 +18,19 @@ import path from 'path'
 import { fileURLToPath } from 'url'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-const files = ['src/App.jsx']
+const files = ['src/App.jsx', 'src/views/sales-hub.jsx', 'src/views/settings.jsx', 'src/views/creative.jsx', 'src/views/monthly-report.jsx']
 let bad = 0
 for (const rel of files) {
   const src = fs.readFileSync(path.join(root, rel), 'utf8')
   const out = transformSync(src, { loader: 'jsx', format: 'esm' }).code
-  const declared = [...src.matchAll(/^function ([A-Za-z0-9_$]+)\s*\(/gm)].map((m) => m[1])
-  const topLevel = new Set([...out.matchAll(/^function ([A-Za-z0-9_$]+)\s*\(/gm)].map((m) => m[1]))
+  const declared = [...src.matchAll(/^(?:export )?function ([A-Za-z0-9_$]+)\s*\(/gm)].map((m) => m[1])
+  const topLevel = new Set([...out.matchAll(/^(?:export )?function ([A-Za-z0-9_$]+)\s*\(/gm)].map((m) => m[1]))
   const nested = declared.filter((n) => !topLevel.has(n))
   if (nested.length) {
     bad += nested.length
     console.error(`\n${rel}: ${nested.length} declaration(s) look top level but are nested:`)
     for (const n of nested) {
-      const line = src.split('\n').findIndex((l) => l.startsWith(`function ${n}(`)) + 1
+      const line = src.split('\n').findIndex((l) => l.startsWith(`function ${n}(`) || l.startsWith(`export function ${n}(`)) + 1
       console.error(`  ${rel}:${line}  function ${n}()`)
     }
   } else {

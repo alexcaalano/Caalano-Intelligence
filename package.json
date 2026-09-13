@@ -5,9 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "node scripts/check-toplevel.mjs && node scripts/check-tdz.mjs && node scripts/check-undef.mjs && node scripts/check-windsor-scope.mjs && vite build",
+    "build": "node scripts/check-toplevel.mjs && node scripts/check-tdz.mjs && node scripts/check-tdz.mjs src/views/sales-hub.jsx && node scripts/check-tdz.mjs src/views/settings.jsx && node scripts/check-tdz.mjs src/views/creative.jsx && node scripts/check-tdz.mjs src/views/monthly-report.jsx && node scripts/check-undef.mjs && node scripts/check-windsor-scope.mjs && vite build",
     "preview": "vite preview",
-    "check": "node scripts/check-toplevel.mjs && node scripts/check-tdz.mjs && node scripts/check-undef.mjs && node scripts/check-windsor-scope.mjs",
+    "check": "node scripts/check-toplevel.mjs && node scripts/check-tdz.mjs && node scripts/check-tdz.mjs src/views/sales-hub.jsx && node scripts/check-tdz.mjs src/views/settings.jsx && node scripts/check-tdz.mjs src/views/creative.jsx && node scripts/check-tdz.mjs src/views/monthly-report.jsx && node scripts/check-undef.mjs && node scripts/check-windsor-scope.mjs",
     "test": "node scripts/run-tests.mjs"
   },
   "dependencies": {

@@ -18,6 +18,21 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.603.0 - 2026-09-13 · `PENDING`
+
+**A lighter first load** - the Sales Hub with Goals and Deals & Actions,
+the Settings page and its editors, the Creative Cockpit with Meta
+Insights and Client Update, and the Monthly Report now live in their own
+files and load the first time they are opened, with a brief "Loading…"
+in their place. The main bundle drops from 1,356 kB to 975 kB (390 kB to
+285 kB compressed), so the app shell and the tabs people land on arrive
+sooner. PDF export ships one copy of html2canvas instead of two, and the
+styles left behind by the old Rep KPIs editor are gone. The build's
+guards (nested declarations, use-before-define, undefined names) now
+run over the view files as well.
+
+---
+
 ## v3.602.0 - 2026-09-13 · `28bbdae`
 
 **Goal progress that cannot time out, and a hub that opens warm** - goal

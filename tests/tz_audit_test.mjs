@@ -26,9 +26,11 @@ const lift = (name) => {
   for (; i < src.length; i++) { const c = src[i]; if (c === '{') depth++; else if (c === '}') { depth--; if (!depth) break } }
   return src.slice(a, i + 1)
 }
-const line = (re) => { const m = src.match(re); if (!m) throw new Error('missing ' + re); return m[0] }
+// A helper the views import is declared with `export`; the lifted line runs
+// inside new Function, where that keyword is not allowed.
+const line = (re) => { const m = src.match(re); if (!m) throw new Error('missing ' + re); return m[0].replace(/^export /, '') }
 const presetRange = new Function([
-  line(/^const APP_TZ = .*$/m), line(/^const tzDateStr = .*$/m), line(/^const tzTodayStr = .*$/m), line(/^const iso = .*$/m),
+  line(/^(?:export )?const APP_TZ = .*$/m), line(/^(?:export )?const tzDateStr = .*$/m), line(/^(?:export )?const tzTodayStr = .*$/m), line(/^(?:export )?const iso = .*$/m),
   "const PRESETS = [{ id: 'today', label: 'Today' }, { id: 'yesterday', label: 'Yesterday' }, { id: 'last_month', label: 'Last month' }]",
   lift('presetRange'), 'return presetRange',
 ].join('\n'))()

@@ -26,7 +26,7 @@ const scrub = (s) => s
   .replace(/([{,]\s*)[A-Za-z_$][\w$]*\s*:/g, '$1')
 
 const starts = []
-lines.forEach((l, i) => { const m = /^function ([A-Za-z_$][\w$]*)\(/.exec(l); if (m) starts.push([i, m[1]]) })
+lines.forEach((l, i) => { const m = /^(?:export )?function ([A-Za-z_$][\w$]*)\(/.exec(l); if (m) starts.push([i, m[1]]) })
 
 const problems = []
 for (const [start, name] of starts) {

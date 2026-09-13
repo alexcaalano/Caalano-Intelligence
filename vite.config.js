@@ -7,6 +7,10 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   plugins: [react()],
   base: '/',
+  // jsPDF's html() path does a dynamic import of 'html2canvas'; the app renders
+  // with html2canvas-pro (same API, a maintained fork), so point jsPDF at that
+  // and ship one copy instead of two.
+  resolve: { alias: { html2canvas: 'html2canvas-pro' } },
   define: {
     __BUILD_TIME__: JSON.stringify(new Date().toISOString()),
     __COMMIT_REF__: JSON.stringify((process.env.COMMIT_REF || '').slice(0, 7)),

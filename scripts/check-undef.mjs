@@ -13,7 +13,9 @@
 import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 
-const FILES = ['src/App.jsx', 'netlify/functions/windsor.mjs', 'netlify/lib/ghl.mjs']
+const DEFAULT_FILES = ['src/App.jsx', 'src/views/sales-hub.jsx', 'src/views/settings.jsx', 'src/views/creative.jsx', 'src/views/monthly-report.jsx', 'netlify/functions/windsor.mjs', 'netlify/lib/ghl.mjs']
+// A file list on the command line checks just those (used while carving views out of App.jsx).
+const FILES = process.argv.length > 2 ? process.argv.slice(2) : DEFAULT_FILES
 const require = createRequire(import.meta.url)
 
 let parse

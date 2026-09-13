@@ -18,6 +18,21 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.613.0 - 2026-09-13 · `PENDING`
+
+**SaaS foundations, phase 0, part two (no user-visible change)** - the
+provider adapter layer from the SaaS design: a registry every data
+provider plugs into, and the first adapter, Windsor, whose read is
+today's fetch handed in unchanged. With the PROVIDER_ADAPTERS switch on,
+every Windsor read in production goes through the registry and comes back
+with the same rows and the same cache, which proves the plumbing before
+the Meta and Google adapters are built on it; off, nothing changes.
+Credential encryption is in as well: each stored credential gets its own
+key, wrapped by a site key that can be rotated without touching the
+stored data. Both are under test.
+
+---
+
 ## v3.612.0 - 2026-09-13 · `7476176`
 
 **Custom dashboards show every module to everyone given them** - the

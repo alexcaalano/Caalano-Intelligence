@@ -19,6 +19,8 @@ import { getStore } from '@netlify/blobs'
 import { currentUser, canSeeClient, isAdminish, canSeeReports , isClientRole } from '../lib/auth.mjs'
 import { isWarmRequest, triggerWarm, claimRevalidate } from '../lib/warm.mjs'
 import { readLiveEvents, liveToken } from '../lib/live.mjs'
+import { registerAdapter, providerFetch, adaptersOn } from '../lib/providers/index.mjs'
+import windsorAdapter, { setWindsorFetcher } from '../lib/providers/windsor.mjs'
 import { normGoals, goalWindow, goalTargetFor, goalActual, goalShares, repValue } from '../lib/goals.mjs'
 import { upstream } from '../lib/ghl.mjs'
 // Parse working-hours query params (bhDays / bhStart / bhEnd) into an hours object.
@@ -348,7 +350,18 @@ function windsorStaleAges(c) {
   const g = (k, a) => (a ? (windsorStale.get(`${k}:${String(a)}`) ?? null) : null)
   return { meta: g('facebook', c && c.meta), google: g('google_ads', c && c.google) }
 }
+// Every Windsor read goes through this name. With PROVIDER_ADAPTERS=1 it
+// routes through the provider registry (netlify/lib/providers), which hands
+// it straight back to the direct fetch below: the same rows, the same cache,
+// with the adapter plumbing exercised in production ahead of the Meta and
+// Google adapters. Off, it is the direct fetch and nothing else runs.
 async function windsorFetch(connector, fields, from, to, preset, key, opts = {}) {
+  if (!adaptersOn()) return windsorFetchDirect(connector, fields, from, to, preset, key, opts)
+  return providerFetch('windsor', { apiKey: key }, { connector, fields, from, to, preset, opts })
+}
+setWindsorFetcher(windsorFetchDirect)
+registerAdapter(windsorAdapter)
+async function windsorFetchDirect(connector, fields, from, to, preset, key, opts = {}) {
   // Demo account: answer from the generated dataset. The signal is the KEY, not
   // a module-level flag - the key is resolved once per request from the client
   // being asked for, so a real client's request can never take this branch and

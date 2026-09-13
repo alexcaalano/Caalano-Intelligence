@@ -670,11 +670,16 @@ role, since those ignore the policies). Tests: `tests/entitle_test.mjs`
 Postgres: only own rows, a foreign-tenant write refused, nothing with no
 tenant set, the platform flag sees all, settings never leak out of the
 transaction). Row level security is FORCED on every tenant table, so the
-table owner is bound by the policies too. On Neon: run the migrations as
+table owner is bound by the policies too. Added in v3.613.0: `netlify/lib/providers/`
+(the registry with `registerAdapter` / `providerFetch` / `onProviderResult`,
+and the Windsor adapter whose `fetch` is today's direct read handed in by
+`windsor.mjs`), `netlify/lib/cred.mjs` (the AES-256-GCM envelope with
+per-row data keys wrapped by `KEK_V1`, and `rewrapCredential` for
+rotation), and `PROVIDER_ADAPTERS=1` to route every Windsor read through the
+registry in production. Tests: `tests/providers_test.mjs`. On Neon: run the migrations as
 the project's default role, and give the functions their own ordinary role
 (no BYPASSRLS) with select/insert/update/delete on the tables and usage on
-the sequences. Still to do in phase 0: the Windsor adapter behind the
-provider interface, and `scripts/migrate-blobs-to-pg.mjs`.
+the sequences. Still to do in phase 0: `scripts/migrate-blobs-to-pg.mjs`.
 
 **Phase 1 - Move Caalano Digital in.**
 A one-off `scripts/migrate-blobs-to-pg.mjs`: creates organisation

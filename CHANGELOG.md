@@ -18,6 +18,20 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.600.0 - 2026-09-13 · `PENDING`
+
+**The TV hears the floor** - in TV mode, a new lead plays a short
+two-note ding and a booked appointment a rising three-note chime, each
+with a small chip at the bottom of the screen ("New lead · Sophie Tran")
+that fades after twelve seconds. Nothing takes over the screen; the gong
+is still for wins. The cues come from the same CRM webhook as the gong,
+only for events from the last ten minutes, one sound per kind per poll,
+and only while the Sales Hub is open in TV mode: the ordinary tab stays
+silent. An Activity toggle sits beside Confetti and Gong, and Super
+Admins get "Test lead" and "Test booking" buttons next to the gong test.
+
+---
+
 ## v3.599.0 - 2026-09-13 · `3130501`
 
 **Average deal value, and a hub that shows it is working** - Average deal

@@ -14,7 +14,7 @@ import { GOAL_METRICS, goalMetric, SPLITS, normGoals, newGoalId, goalShares, val
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.599.0'
+const APP_VERSION = '3.600.0'
 // The business clock. Every server window is cut on the client's local day
 // (Caalano Systems location timezone), so any day the app derives on its own -
 // preset ranges, "today", CSV dates - must use the same clock rather than the
@@ -16006,7 +16006,7 @@ function OptimisationLog({ clientId, sheet, embedded = false }) {
 // built from the same code as Users, Timing, Appointments and Call Reporting.
 const HUB_PERIODS = [['this_month', 'This month'], ['last_month', 'Last month'], ['last_7d', 'Last 7 days'], ['last_30d', 'Last 30 days'], ['last_90d', 'Last 90 days']]
 const HUB_PREFS_KEY = 'caalano_hub_prefs'
-function hubPrefs() { try { return { confetti: true, sound: true, ...(JSON.parse(localStorage.getItem(HUB_PREFS_KEY) || '{}')) } } catch { return { confetti: true, sound: true } } }
+function hubPrefs() { try { return { confetti: true, sound: true, activity: true, ...(JSON.parse(localStorage.getItem(HUB_PREFS_KEY) || '{}')) } } catch { return { confetti: true, sound: true, activity: true } } }
 function saveHubPrefs(p) { try { localStorage.setItem(HUB_PREFS_KEY, JSON.stringify(p)) } catch { /* private mode */ } }
 // A short rising chime from the browser's own synth: no file, no download.
 // The gong. A real recording wins if the site ships one at /gong.mp3 (drop
@@ -16066,6 +16066,34 @@ function hubGongSynth() {
     const tg = ac.createGain(); tg.gain.setValueAtTime(0.0001, t0); tg.gain.exponentialRampToValueAtTime(0.9, t0 + 0.006); tg.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.4)
     th.connect(tg); tg.connect(master); th.start(t0); th.stop(t0 + 0.45)
     setTimeout(() => { try { ac.close() } catch { /* ignore */ } }, 7500)
+  } catch { /* no audio */ }
+}
+// Activity cues for the TV: short synthesised sounds, well under the gong,
+// for a new lead (a bright two-note ding) and a booked appointment (a rising
+// three-note chime). Nothing takes over the screen; a small chip in the corner
+// says what happened and fades. One shared audio context, resumed on use.
+let _hubAC = null
+function hubAC() {
+  const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return null
+  if (!_hubAC || _hubAC.state === 'closed') _hubAC = new AC()
+  if (_hubAC.state === 'suspended') _hubAC.resume().catch(() => {})
+  return _hubAC
+}
+function hubPing(kind) {
+  try {
+    const ac = hubAC(); if (!ac) return
+    const t0 = ac.currentTime + 0.02
+    const master = ac.createGain(); master.gain.value = 0.22; master.connect(ac.destination)
+    const notes = kind === 'booked' ? [[523.25, 0], [659.25, 0.11], [783.99, 0.22]] : [[880, 0], [1318.5, 0.09]]
+    const tail = kind === 'booked' ? 0.5 : 0.7
+    for (const [f, dt] of notes) {
+      for (const [type, mul, lvl] of [['sine', 1, 1], ['triangle', 2, 0.25]]) {
+        const o = ac.createOscillator(); o.type = type; o.frequency.value = f * mul
+        const g = ac.createGain(); const t = t0 + dt
+        g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(lvl, t + 0.008); g.gain.exponentialRampToValueAtTime(0.0001, t + tail)
+        o.connect(g); g.connect(master); o.start(t); o.stop(t + tail + 0.1)
+      }
+    }
   } catch { /* no audio */ }
 }
 // The gong strike on screen: mallet swings in, the gong shudders and rings
@@ -16327,12 +16355,20 @@ function SalesHubView({ clientId, authUser, currency, nonce, pipe: pipeProp, onP
   const seenWins = useRef(null)
   const [celebrate, setCelebrate] = useState(null)
   const strikeT = useRef(null)
+  // Activity chips for the TV (new leads, bookings), and refs so the live
+  // poll always reads the current TV state and preferences.
+  const [activity, setActivity] = useState([])
+  const tvRef = useRef(tv), prefsRef = useRef(prefs)
+  useEffect(() => { tvRef.current = tv }, [tv])
+  useEffect(() => { prefsRef.current = prefs }, [prefs])
+  useEffect(() => { if (!activity.length) return; const iv = setInterval(() => setActivity((a) => a.filter((x) => Date.now() - x.at < 12000)), 1000); return () => clearInterval(iv) }, [activity.length])
+  const hubTestActivity = (kind) => { hubPing(kind); setActivity((a) => [{ id: `test:${Date.now()}`, kind, at: Date.now(), text: kind === 'lead' ? 'New lead · test' : 'Appointment booked · test' }, ...a].slice(0, 6)) }
   // One win at a time: the gong overlay, then confetti and the sound timed to
   // the mallet hitting, then everything clears after ten seconds.
   const hubStrike = (win) => {
     if (win.id && win.id !== 'test') { if (celebrated.current.has(win.id)) return; celebrated.current.add(win.id) }
     clearTimeout(strikeT.current); setCelebrate({ ...win, key: Date.now() })
-    setTimeout(() => { if (prefs.confetti) hubConfetti(); if (prefs.sound) hubChime() }, HUB_GONG_HIT_MS)
+    setTimeout(() => { if (prefsRef.current.confetti) hubConfetti(); if (prefsRef.current.sound) hubChime() }, HUB_GONG_HIT_MS)
     strikeT.current = setTimeout(() => setCelebrate(null), 10000)
   }
   useSettingsSync()
@@ -16446,9 +16482,23 @@ function SalesHubView({ clientId, authUser, currency, nonce, pipe: pipeProp, onP
           liveQueue.current.push(...fresh.filter((e) => e.kind === 'won' && j.now - (e.at || 0) < 10 * 60000))
           setLive((l) => ({ ok: true, latest, wins: [...fresh.filter((e) => e.kind === 'won').reverse(), ...l.wins].slice(0, 10) }))
           strikeNext()
+          hubActivity(fresh, j.now)
         })
         .catch(() => { if (!dead) setLive((l) => ({ ...l, ok: false })) })
       strikeNext()
+    }
+    // New leads and bookings: a sound and a corner chip, only on a TV (the
+    // tab stays quiet), only for events from the last ten minutes, and one
+    // cue per kind per poll so a bulk import is not thirty dings.
+    const hubActivity = (fresh, nowMs) => {
+      if (dead || !tvRef.current || !prefsRef.current.activity) return
+      const recent = fresh.filter((e) => (e.kind === 'lead' || e.kind === 'booked') && nowMs - (e.at || 0) < 10 * 60000)
+      if (!recent.length) return
+      const kinds = [...new Set(recent.map((e) => e.kind))]
+      kinds.forEach((k, i) => setTimeout(() => { if (!dead) hubPing(k) }, i * 650))
+      const dd = dRef.current || {}
+      const who = (e) => (dd.users || {})[e.userId] || ((dd.reps || []).find((r) => r.id === e.userId) || {}).name || null
+      setActivity((a) => [...recent.slice(-6).reverse().map((e) => ({ id: e.id, kind: e.kind, at: nowMs, text: e.kind === 'lead' ? `New lead${who(e) ? ` · ${who(e)}` : ''}` : `Appointment booked${who(e) ? ` · ${who(e)}` : ''}` })), ...a].slice(0, 6))
     }
     // One gong per poll at most: the first new win rings now, the rest queue.
     const strikeNext = () => {
@@ -16481,7 +16531,8 @@ function SalesHubView({ clientId, authUser, currency, nonce, pipe: pipeProp, onP
       <div className="hub-tools">
         <label className="alloc-check"><input type="checkbox" checked={prefs.confetti} onChange={(e) => { const p = { ...prefs, confetti: e.target.checked }; setPrefs(p); saveHubPrefs(p) }} /> Confetti</label>
         <label className="alloc-check"><input type="checkbox" checked={prefs.sound} onChange={(e) => { const p = { ...prefs, sound: e.target.checked }; setPrefs(p); saveHubPrefs(p) }} /> Gong</label>
-        {authUser && authUser.role === 'superadmin' ? <button type="button" className="btn-ghost sm" onClick={() => hubStrike({ id: 'test', user: authUser.name || 'Test rep', name: 'Sample deal', value: 12500 })}>Test the gong</button> : null}
+        <label className="alloc-check" title="On the TV only: a sound and a corner note for each new lead and booked appointment"><input type="checkbox" checked={prefs.activity} onChange={(e) => { const p = { ...prefs, activity: e.target.checked }; setPrefs(p); saveHubPrefs(p) }} /> TV activity sounds</label>
+        {authUser && authUser.role === 'superadmin' ? <><button type="button" className="btn-ghost sm" onClick={() => hubStrike({ id: 'test', user: authUser.name || 'Test rep', name: 'Sample deal', value: 12500 })}>Test the gong</button><button type="button" className="btn-ghost sm" onClick={() => hubTestActivity('lead')}>Test lead sound</button><button type="button" className="btn-ghost sm" onClick={() => hubTestActivity('booked')}>Test booking sound</button></> : null}
         <span className={`hub-livechip ${live.latest ? 'on' : ''}`} title="Live events arrive from the CRM webhook the moment a deal changes; the numbers refresh from the five-minute snapshot">{live.latest ? `● Live · last event ${actHrs(Math.round((Date.now() - live.latest) / 3600000))}` : live.ok === false ? '○ Live unavailable' : '○ Live · no events yet'}</span>
         {authUser && authUser.role === 'superadmin' ? <button type="button" className="btn-ghost sm" onClick={() => { if (setup) return setSetup(null); setSetup({ loading: true }); fetch(`/.netlify/functions/windsor?scope=webhookurl&client=${encodeURIComponent(clientId)}`, { credentials: 'same-origin' }).then((r) => r.json().catch(() => ({}))).then((j) => setSetup(j || {})).catch(() => setSetup({ error: 'Could not load.' })) }}>Live setup</button> : null}
       </div>
@@ -16592,7 +16643,8 @@ function SalesHubView({ clientId, authUser, currency, nonce, pipe: pipeProp, onP
           <div className="hub-tv-ctl">
             <label className="alloc-check"><input type="checkbox" checked={prefs.confetti} onChange={(e) => { const p = { ...prefs, confetti: e.target.checked }; setPrefs(p); saveHubPrefs(p) }} /> Confetti</label>
             <label className="alloc-check"><input type="checkbox" checked={prefs.sound} onChange={(e) => { const p = { ...prefs, sound: e.target.checked }; setPrefs(p); saveHubPrefs(p) }} /> Gong</label>
-            {authUser && authUser.role === 'superadmin' ? <button type="button" className="btn-ghost sm" onClick={() => hubStrike({ id: 'test', user: authUser.name || 'Test rep', name: 'Sample deal', value: 12500 })}>Test</button> : null}
+            <label className="alloc-check"><input type="checkbox" checked={prefs.activity} onChange={(e) => { const p = { ...prefs, activity: e.target.checked }; setPrefs(p); saveHubPrefs(p) }} /> Activity</label>
+            {authUser && authUser.role === 'superadmin' ? <><button type="button" className="btn-ghost sm" onClick={() => hubStrike({ id: 'test', user: authUser.name || 'Test rep', name: 'Sample deal', value: 12500 })}>Test gong</button><button type="button" className="btn-ghost sm" onClick={() => hubTestActivity('lead')}>Test lead</button><button type="button" className="btn-ghost sm" onClick={() => hubTestActivity('booked')}>Test booking</button></> : null}
             <button type="button" className="btn-ghost sm" onClick={() => { try { if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen() } catch { /* not allowed */ } }}>Full screen</button>
             <button type="button" className="btn-ghost sm" onClick={() => setTv(false)}>Exit (Esc)</button>
           </div></div>
@@ -16602,6 +16654,7 @@ function SalesHubView({ clientId, authUser, currency, nonce, pipe: pipeProp, onP
           <div className="hub-tv-col">{leaderboard}<div className="card rep-card"><h4>Latest wins</h4>{allWins.length ? winsFeed(6) : <p className="cap">No wins in the last 7 days yet.</p>}</div></div>
           <div className="hub-tv-col">{spotlight}{boardsGrid}{!dialDefs.length && authUser && isAdminishFE(authUser.role) ? <p className="cap">Set goals in Settings and the gauges light up here.</p> : null}</div>
         </div>
+        {activity.length ? <div className="hub-tv-activity" role="status" aria-live="polite">{activity.map((x) => <div className={`hub-tv-act ${x.kind}`} key={x.id}>{x.text}</div>)}</div> : null}
         <div className="hub-tv-brand"><span className="hub-tv-brand-p">Powered by</span> <b>Caalano<span>360</span></b></div>
       </div>
     )

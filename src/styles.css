@@ -5424,6 +5424,12 @@ button.act-tier.on { border-color: var(--text); }
 .hub-tv-brand { position: fixed; left: 22px; bottom: 14px; z-index: 901; display: inline-flex; align-items: baseline; gap: 6px; font-size: 13px; color: var(--muted); background: rgba(19, 23, 38, .85); border: 1px solid var(--border); border-radius: 999px; padding: 5px 12px; letter-spacing: .01em; }
 .hub-tv-brand b { color: #eef1f7; font-weight: 800; letter-spacing: -.01em; }
 .hub-tv-brand b span { color: var(--brand); }
+.hub-tv-activity { position: fixed; left: 50%; transform: translateX(-50%); bottom: 14px; z-index: 901; display: flex; flex-direction: column; align-items: center; gap: 6px; pointer-events: none; }
+.hub-tv-act { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 700; color: #eef1f7; background: rgba(19, 23, 38, .92); border: 1px solid var(--border-2); border-radius: 999px; padding: 7px 14px; animation: hub-act-in .35s ease-out; }
+.hub-tv-act::before { content: ''; width: 9px; height: 9px; border-radius: 50%; background: var(--brand); box-shadow: 0 0 8px var(--brand); }
+.hub-tv-act.booked::before { background: var(--pos); box-shadow: 0 0 8px var(--pos); }
+@keyframes hub-act-in { from { transform: translateY(8px); opacity: 0; } to { transform: none; opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .hub-tv-act { animation: none; } }
 .hub-tv-brand-p { text-transform: uppercase; font-size: 10.5px; letter-spacing: .12em; font-weight: 700; }
 .hub-tv .hub-dials { grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 220px)); justify-content: center; }
 .hub-tv .hub-dial-pct { font-size: 26px; } .hub-tv .hub-dial-v { font-size: 18px; } .hub-tv .hub-dial-s { font-size: 13px; }

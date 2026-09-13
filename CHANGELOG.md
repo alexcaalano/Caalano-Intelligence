@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.595.0 - 2026-09-13 · `PENDING`
+## v3.595.0 - 2026-09-13 · `1e22238`
 
 **Month by month** - a second screen on the Sales Hub, next to the live
 board. Every goal is a row, grouped business, pipeline and rep; the last

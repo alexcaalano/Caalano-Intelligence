@@ -18,6 +18,13 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.591.0 - 2026-09-13 · `PENDING`
+
+**Gauges centred** - the target dials sit centred across the row, on the
+TV and on the tab, whether there are two of them or nine.
+
+---
+
 ## v3.590.0 - 2026-09-13 · `7e71ddb`
 
 **Action list starts collapsed** - every section on Deals & Actions

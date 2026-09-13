@@ -5337,7 +5337,7 @@ button.act-tier.on { border-color: var(--text); }
 .hub-chip-rep i { font-style: normal; color: var(--faint); }
 .hub-bottom { grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); }
 /* Gauges: half-circle dials, one per summed team target. */
-.hub-dials { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 150px), 1fr)); gap: 10px; }
+.hub-dials { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 200px)); justify-content: center; gap: 10px; }
 .hub-dial { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 8px 10px 12px; text-align: center; color: var(--text); cursor: pointer; font: inherit; display: grid; gap: 2px; justify-items: center; }
 .hub-dial:hover { border-color: var(--brand); }
 .hub-dial.open { outline: 2px solid var(--brand); outline-offset: -1px; }
@@ -5371,7 +5371,7 @@ button.act-tier.on { border-color: var(--text); }
 .hub-tv-brand b { color: #eef1f7; font-weight: 800; letter-spacing: -.01em; }
 .hub-tv-brand b span { color: var(--brand); }
 .hub-tv-brand-p { text-transform: uppercase; font-size: 10.5px; letter-spacing: .12em; font-weight: 700; }
-.hub-tv .hub-dials { grid-template-columns: repeat(auto-fill, minmax(min(100%, 180px), 1fr)); }
+.hub-tv .hub-dials { grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 220px)); justify-content: center; }
 .hub-tv .hub-dial-pct { font-size: 26px; } .hub-tv .hub-dial-v { font-size: 18px; } .hub-tv .hub-dial-s { font-size: 13px; }
 .hub-tv .hub-board-row { font-size: 15px; } .hub-tv .hub-board-t { font-size: 12.5px; }
 .hub-tv .hub-spot-n { font-size: 40px; } .hub-tv .hub-spot-v { font-size: 32px; } .hub-tv .hub-spot-r { font-size: 15px; }

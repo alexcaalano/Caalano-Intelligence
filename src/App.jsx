@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.589.0'
+const APP_VERSION = '3.590.0'
 // The business clock. Every server window is cut on the client's local day
 // (Caalano Systems location timezone), so any day the app derives on its own -
 // preset ranges, "today", CSV dates - must use the same clock rather than the
@@ -17094,7 +17094,9 @@ function DealsActionsView({ clientId, authUser, currency, nonce }) {
     return out
   }, [deals, data.pipelines])
   const money = (v) => fmtCurrency(v, currency)
-  const isOpen = (k) => (openSec[k] == null ? true : openSec[k])
+  // Every section starts collapsed so the whole list of what needs doing is
+  // visible at a glance; a tap opens the one being worked on.
+  const isOpen = (k) => (openSec[k] == null ? false : openSec[k])
   const sec = (key, title, help, rows, render, extra = null, tone = '') => {
     if (!rows.length && st.status === 'ok') return null
     return (

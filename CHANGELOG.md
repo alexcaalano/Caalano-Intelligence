@@ -18,6 +18,15 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.590.0 - 2026-09-13 · `PENDING`
+
+**Action list starts collapsed** - every section on Deals & Actions
+(upcoming, to result, won without a value, and the rest) opens closed
+with its count, so the whole list of what needs doing is visible at a
+glance. Tap a section to open it; live-deal stages behave the same.
+
+---
+
 ## v3.589.0 - 2026-09-13 · `eddb7b9`
 
 **Branding visible** - "Powered by Caalano360" moves to the bottom left

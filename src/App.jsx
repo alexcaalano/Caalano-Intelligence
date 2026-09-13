@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.591.0'
+const APP_VERSION = '3.592.0'
 // The business clock. Every server window is cut on the client's local day
 // (Caalano Systems location timezone), so any day the app derives on its own -
 // preset ranges, "today", CSV dates - must use the same clock rather than the
@@ -16149,6 +16149,18 @@ function HubDial({ label, actual, target, fmt, elapsed, monthly, onClick, open }
     </button>
   )
 }
+// The hub's funnels chart the client's key-event stages (Settings -> Key
+// events), the same forward steps the Caalano360 tab uses, so side branches
+// such as "No show" or "Disqualified" are not read as steps everyone passed
+// through. Stage order follows the pipeline; the won stage is left out. A
+// client with no key events set gets every stage, as before.
+function hubFunnelStages(clientId, p) {
+  const all = (p && p.stages) || []
+  const ke = normKeyEvents(loadKeyEvents(clientId)).filter((e) => e.kind === 'stage' && !WON_RE.test(e.label || '') && (!e.pipeline || e.pipeline === p.id))
+  const wanted = new Map(ke.map((e) => [e.ref, e.label || e.ref]))
+  const picked = all.filter((st) => wanted.has(st.name)).map((st) => ({ ...st, label: wanted.get(st.name) }))
+  return { stages: picked.length ? picked : all.map((st) => ({ ...st, label: st.name })), keyed: picked.length > 0 }
+}
 function hubTargetsSum(clientId, reps) {
   const k = loadRepKpis(clientId)
   const out = {}
@@ -16353,6 +16365,7 @@ function SalesHubView({ clientId, authUser, currency, nonce, pipe: pipeProp, onP
   // One pipeline at a time: its funnel and its open deals side by side.
   const pipeCard = (p) => {
     const first = (p.stages || [])[0]; const base = first ? first.reached : 0
+    const fun = hubFunnelStages(clientId, p)
     const open = (d.stageOpen || []).filter((so) => so.pipelineId === p.id)
     const order = new Map((p.stages || []).map((sdef, i) => [sdef.name, i]))
     open.sort((a, b) => (order.get(a.stage) ?? 99) - (order.get(b.stage) ?? 99))
@@ -16361,7 +16374,7 @@ function SalesHubView({ clientId, authUser, currency, nonce, pipe: pipeProp, onP
       <div className="card hub-pipecard" key={p.id}>
         <div className="rep-lb-head"><h4>{multi ? p.name : 'The pipeline'}</h4><span className="cap">{fmtNumber(p.leads)} leads · {fmtNumber(p.won)} won · {money(p.revenue)} · {hubPct(p.winRate)} win rate</span></div>
         <div className="hub-pipe-cols">
-          <div><div className="hub-sub">How far the leads got</div>{base ? p.stages.map((sdef, i) => <RepBar key={sdef.name} label={sdef.name} value={sdef.reached} max={base} text={`${fmtNumber(sdef.reached)}${i ? ` · ${p.stages[i - 1].reached ? Math.round((sdef.reached / p.stages[i - 1].reached) * 100) : 0}% of previous` : ''}`} />) : <p className="cap">No leads in this period.</p>}</div>
+          <div><div className="hub-sub">How this period's leads are progressing <span className="cap">· {fmtNumber(base)} leads{fun.keyed ? ' · key events' : ''}</span></div>{base ? fun.stages.map((sdef, i) => <RepBar key={sdef.name} label={sdef.label} value={sdef.reached} max={base} text={`${fmtNumber(sdef.reached)} · ${Math.round((sdef.reached / base) * 100)}%${i ? ` · ${fun.stages[i - 1].reached ? Math.round((sdef.reached / fun.stages[i - 1].reached) * 100) : 0}% of previous` : ''}`} />) : <p className="cap">No leads in this period.</p>}</div>
           <div><div className="hub-sub">Open deals by stage <span className="cap">· {fmtNumber(p.open)} worth {money(p.openValue)}{p.stale ? ` · ${p.stale} stale` : ''}</span></div>{open.length ? open.map((so) => <RepBar key={so.stageId} label={so.stage} value={so.open} max={openMax} text={`${fmtNumber(so.open)} · ${money(so.value)}${so.stale ? ` · ${so.stale} stale` : ''}`} tone={so.stale && so.stale / so.open > 0.5 ? 'warn' : ''} />) : <p className="cap">No open deals.</p>}</div>
         </div>
       </div>
@@ -16462,10 +16475,11 @@ function SalesHubView({ clientId, authUser, currency, nonce, pipe: pipeProp, onP
                   {facts('Closing', [['Won', fmtNumber(r.won)], ['Lost', fmtNumber(r.lost)], ['Win rate', hubPct(r.winRate)], ['Result rate', r.resultRate != null ? `${r.resultRate}% · ${fmtNumber(r.decided)} decided` : '-'], ['Average deal', r.avgDeal ? money(r.avgDeal) : '-'], ['Days to close', r.avgCloseDays != null ? r.avgCloseDays : '-'], ...((r.lostReasons || []).slice(0, 3).map((x) => [`Lost: ${x.reason}`, fmtNumber(x.count)]))])}
                 </div>
                 <div className="hub-detail-funnels">{pipesAll.map((p) => {
-                  const reach = (r.reachByPipeline || {})[p.id] || {}; const stages = p.stages || []; const base = stages.length ? (reach[stages[0].name] || 0) : 0
+                  const reach = (r.reachByPipeline || {})[p.id] || {}; const all = p.stages || []; const base = all.length ? (reach[all[0].name] || 0) : 0
                   if (!base) return null
+                  const fun = hubFunnelStages(clientId, p); const stages = fun.stages
                   let last = 0; stages.forEach((sdef, i) => { if (reach[sdef.name]) last = i })
-                  return <div className="hub-mini-funnel" key={p.id}><div className="hub-sub">{multi ? p.name : 'How far this rep\'s leads got'} <span className="cap">· {fmtNumber(base)} leads</span></div>{stages.slice(0, Math.max(last + 1, Math.min(3, stages.length))).map((sdef) => <RepBar key={sdef.name} label={sdef.name} value={reach[sdef.name] || 0} max={base} text={`${fmtNumber(reach[sdef.name] || 0)} · ${Math.round(((reach[sdef.name] || 0) / base) * 100)}%`} />)}</div>
+                  return <div className="hub-mini-funnel" key={p.id}><div className="hub-sub">{multi ? p.name : 'How this period\'s leads are progressing'} <span className="cap">· {fmtNumber(base)} leads this period{fun.keyed ? ' · key events' : ''}</span></div>{stages.slice(0, fun.keyed ? stages.length : Math.max(last + 1, Math.min(3, stages.length))).map((sdef) => <RepBar key={sdef.name} label={sdef.label} value={reach[sdef.name] || 0} max={base} text={`${fmtNumber(reach[sdef.name] || 0)} · ${Math.round(((reach[sdef.name] || 0) / base) * 100)}%`} />)}</div>
                 })}</div>
               </div> : null}
             </React.Fragment>
@@ -16478,7 +16492,7 @@ function SalesHubView({ clientId, authUser, currency, nonce, pipe: pipeProp, onP
         {calCard}
         {lostCard}
       </div>
-      <p className="cap act-foot">Everything counts in the period it happened. Leads by the date they came in. Bookings by the date they were booked; held, no-shows and show rate by the appointment's own date. Won and lost by the date the status changed, whatever month the lead came in, so a deal closed today shows today; win rate is won over won plus lost decided in the period. Result rate is deals decided in the period over those plus what is still open now: how much of the desk got resulted. Open and stale are what is on the desk now; the funnel is this period's leads and how far they have got. Each pipeline's funnel and lost reasons are kept apart; a stage is never counted across pipelines. Speed to lead follows the client's business-hours rule and counts the first reply a person sent{team.speedFull ? ', measured on every lead' : ', measured on as many leads as the read allowed'}. Calls come from the CRM's call export. Re-reads every 3 minutes, every minute in TV mode.</p>
+      <p className="cap act-foot">Everything counts in the period it happened. Leads by the date they came in. Bookings by the date they were booked; held, no-shows and show rate by the appointment's own date. Won and lost by the date the status changed, whatever month the lead came in, so a deal closed today shows today; win rate is won over won plus lost decided in the period. Result rate is deals decided in the period over those plus what is still open now: how much of the desk got resulted. Open and stale are what is on the desk now. The funnels follow this period's leads through the client's key-event stages (set under Settings, Key events), so they show how new leads are progressing, not this month's wins; a lead counts at a stage if it reached that stage or any later one. Each pipeline's funnel and lost reasons are kept apart; a stage is never counted across pipelines. Speed to lead follows the client's business-hours rule and counts the first reply a person sent{team.speedFull ? ', measured on every lead' : ', measured on as many leads as the read allowed'}. Calls come from the CRM's call export. Re-reads every 3 minutes, every minute in TV mode.</p>
     </div>
   )
 }

@@ -18,6 +18,19 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.592.0 - 2026-09-13 · `PENDING`
+
+**Hub funnels on key events** - the pipeline card and the rep detail
+funnel now chart the client's key-event stages (Settings, Key events),
+the same forward steps the Caalano360 tab uses, instead of every stage
+in the pipeline. Side branches such as "No show" or "Disqualified" no
+longer read as steps every lead passed through. Both are titled "How
+this period's leads are progressing" with the leads base shown, so the
+last bar is not mistaken for this month's wins. A client with no key
+events set still gets every stage.
+
+---
+
 ## v3.591.0 - 2026-09-13 · `b983bec`
 
 **Gauges centred** - the target dials sit centred across the row, on the

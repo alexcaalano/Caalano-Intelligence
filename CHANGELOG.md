@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.577.0 - 2026-09-13 · `PENDING`
+## v3.577.0 - 2026-09-13 · `eed768b`
 
 **Rep KPIs lists only reps** - the targets editor under Settings -> Rep
 KPIs now shows just the CRM users who own at least one deal, most deals

@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.598.0 - 2026-09-13 · `PENDING`
+## v3.598.0 - 2026-09-13 · `f3f00f1`
 
 **Month by month: who and what, and filters** - every row now names its
 pipelines and reps in full, not "1 pipeline · 2 reps". Pipeline chips

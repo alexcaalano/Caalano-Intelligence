@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.610.0 - 2026-09-13 · `PENDING`
+## v3.610.0 - 2026-09-13 · `ced63d5`
 
 **Every mini board shows three places** - a board with only one or two
 reps on it now keeps the silver and bronze rows, dimmed and blank, so the

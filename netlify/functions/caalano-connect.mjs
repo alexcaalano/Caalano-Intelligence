@@ -39,7 +39,7 @@ const SCOPES = [
 const AUTH = 'https://marketplace.gohighlevel.com/oauth/chooselocation'
 
 const page = (title, body) => new Response(
-  `<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title>` +
+  `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title>` +
   `<body style="font-family:system-ui;background:#0a0c12;color:#eef1f7;display:grid;place-items:center;height:100vh;margin:0;text-align:center">` +
   `<div style="max-width:520px;padding:32px"><h2>${title}</h2>${body}</div></body>`,
   { headers: { 'content-type': 'text/html', 'cache-control': 'no-store' } },
@@ -147,7 +147,7 @@ export default async (req) => {
       const isCompany = String(t.userType || '').toLowerCase() === 'company' && !!t.companyId
       const badge = isCompany
         ? '<p style="color:#12b886;font-weight:700">✅ Agency (Company) token - this can read every sub-account.</p>'
-        : `<p style="color:#f5a524;font-weight:700">⚠️ This is a <b>${t.userType || 'Location'}</b> token${t.companyId ? '' : ' (no companyId)'} - it can only read ONE sub-account. Re-authorise and pick your <b>Agency</b> (not a single location).</p>`
+        : `<p style="color:#f5a524;font-weight:700">⚠️ This is a <b>${t.userType || 'Location'}</b> token${t.companyId ? '' : ' (no companyId)'} - it can only read ONE sub-account. For agency access, install the app from the agency Marketplace in GoHighLevel for all sub-accounts and click Complete connection when you land back here.</p>`
       return page('Caalano Systems connected', `${badge}${posted ? '<p>Completed from the install started in GoHighLevel.</p>' : ''}<p><a style="color:#9b8cff" href="/.netlify/functions/caalano-connect?start=1">Re-authorise</a> · <a style="color:#9b8cff" href="/">Back to dashboard</a></p>`)
     } catch (e) {
       return page('Connection failed', `<p style="color:#f0435b">${String(e.message || e)}</p><p><a style="color:#9b8cff" href="/.netlify/functions/caalano-connect?start=1">Try again</a></p>`)

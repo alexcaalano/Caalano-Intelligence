@@ -42,6 +42,8 @@ export default async (req) => {
           // filtered like everything else now.
           // fatigue is genuinely global (shared thresholds, no client in it).
           scoped.fatigue = data.fatigue || {}
+          // The CRM web address is agency-wide and every Open in CRM link needs it.
+          scoped.ui = { crmUrl: (data.ui && data.ui.crmUrl) || '' }
           return json({ ok: true, data: scoped })
         }
       }

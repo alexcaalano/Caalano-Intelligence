@@ -47,7 +47,10 @@ export function normLiveEvent(body, now = Date.now()) {
     const oppId = body.id || body.opportunityId || (body.opportunity && body.opportunity.id) || null
     if (!oppId) return null
     const status = String(body.status || '').toLowerCase()
-    const kind = type === 'OpportunityStatusUpdate' ? (status === 'won' ? 'won' : status === 'lost' || status === 'abandoned' ? 'lost' : 'status') : type === 'OpportunityCreate' ? 'lead' : type === 'OpportunityStageUpdate' ? 'stage' : type === 'OpportunityDelete' ? 'deleted' : 'opp'
+    // A deal created already marked won (a walk-in recorded after the fact) is
+    // a win as well as a lead; its id matches the status-change form so a later
+    // OpportunityStatusUpdate for the same deal dedupes rather than ringing twice.
+    const kind = type === 'OpportunityStatusUpdate' ? (status === 'won' ? 'won' : status === 'lost' || status === 'abandoned' ? 'lost' : 'status') : type === 'OpportunityCreate' ? (status === 'won' ? 'won' : 'lead') : type === 'OpportunityStageUpdate' ? 'stage' : type === 'OpportunityDelete' ? 'deleted' : 'opp'
     return {
       id: `${kind}:${oppId}:${kind === 'stage' ? (body.pipelineStageId || '') : status}`, kind, type, at, locationId,
       oppId, contactId: body.contactId || null, name: body.name || body.title || null, value: num(body.monetaryValue),

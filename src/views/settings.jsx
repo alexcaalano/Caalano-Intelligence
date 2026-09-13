@@ -1,7 +1,7 @@
 // Settings: the client editors and the Settings page. Carved out of App.jsx so it loads on first open; the
 // helpers it shares with the rest of the app are imported from there.
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { APP_VERSION, AnnotationToggle, Avatar, BIZ_TYPES, CC_CHANS, Caveat, ChangePasswordCard, ClinicSettings, DASH_AUD, DASH_MODULES, DASH_PRESETS, DEFAULT_HOURS, DOW_LABELS, FATIGUE_DEFAULTS, FAVICON, FormsSettingsTab, GeoSettings, HelpNote, OptLogSettings, PROFILE_FIELDS, ROLE_LABEL, SEED_KEYEVENTS, SETTINGS, SignOutEverywhereCard, Spinner, TAB_OPTIONS, TermsAdmin, TermsRegister, UsersAdmin, acolor, apiJson, applyAliases, clientLogoSrc, dashAudience, dashModuleFits, dedupeFetch, deleteClient, domainOf, dpClientOn, dpPipeOn, fetchDiscover, fmtDMY, fmtHours, formKeyEvents, formsDoneCount, hhmm, initials, isAdminishFE, isClientDeleted, iso, loadAliases, loadBizType, loadCampMap, loadCashOn, loadCloseOverride, loadDashboard, loadFatigueCfg, loadHours, loadKeep, loadKeyEvents, loadKeyEventsRaw, loadKpis, loadLogo, loadMetaConv, loadProfile, loadQualStage, loadSocialKpis, mkOutcomeMap, normId, presetRange, rangeLabel, rangeMaturity, rangeQuery, readNavUrl, removeCustomClient, restoreClient, roleLabelOf, saveBizType, saveCampMap, saveCashOn, saveCloseOverride, saveCustomClient, saveDashboard, saveFatigueCfg, saveHours, saveKeyEvents, saveKpis, saveLogo, saveMetaConv, saveProfile, saveQualStage, saveSocialKpis, setAlias, setDpClient, setDpPipe, setKeep, syncLogos, unorm, useDiscoverNames, useSettingsSync, writeNavUrl } from '../App.jsx'
+import { APP_VERSION, AnnotationToggle, Avatar, BIZ_TYPES, CC_CHANS, Caveat, ChangePasswordCard, ClinicSettings, DASH_AUD, DASH_MODULES, DASH_PRESETS, DEFAULT_HOURS, DOW_LABELS, FATIGUE_DEFAULTS, FAVICON, FormsSettingsTab, GeoSettings, HelpNote, OptLogSettings, PROFILE_FIELDS, ROLE_LABEL, SEED_KEYEVENTS, SETTINGS, SignOutEverywhereCard, Spinner, TAB_OPTIONS, TermsAdmin, TermsRegister, UsersAdmin, acolor, apiJson, applyAliases, clientLogoSrc, dashAudience, dashModuleFits, dedupeFetch, deleteClient, domainOf, dpClientOn, dpPipeOn, fetchDiscover, fmtDMY, fmtHours, formKeyEvents, formsDoneCount, hhmm, initials, isAdminishFE, isClientDeleted, iso, loadAliases, loadBizType, loadCampMap, loadCashOn, loadCloseOverride, loadDashboard, loadFatigueCfg, loadHours, loadKeep, loadKeyEvents, loadKeyEventsRaw, loadKpis, loadLogo, loadMetaConv, loadProfile, loadQualStage, loadSocialKpis, mkOutcomeMap, normId, presetRange, rangeLabel, rangeMaturity, rangeQuery, readNavUrl, removeCustomClient, restoreClient, roleLabelOf, saveBizType, saveCampMap, saveCashOn, saveCloseOverride, saveCustomClient, saveDashboard, saveFatigueCfg, saveHours, saveKeyEvents, saveKpis, saveLogo, saveMetaConv, saveProfile, saveQualStage, saveSocialKpis, setAlias, setDpClient, setDpPipe, setKeep, syncLogos, unorm, useDiscoverNames, useSettingsSync, writeNavUrl, normCrmUrl, saveCrmUrl, CRM_DEFAULT_URL } from '../App.jsx'
 import { fmtCurrency, fmtNumber } from '../lib/format.js'
 import { GoalsEditor } from './sales-hub.jsx'
 
@@ -1508,6 +1508,26 @@ export function LogsPanel({ clients }) {
     </div>
   )
 }
+// The CRM web address, agency-wide: every "Open in CRM" link across the app
+// uses it, so a white-label domain keeps people inside the agency's brand.
+export function CrmAddressCard() {
+  useSettingsSync()
+  const cur = (SETTINGS.ui && SETTINGS.ui.crmUrl) || ''
+  const [v, setV] = useState(cur)
+  const [saved, setSaved] = useState(false)
+  useEffect(() => { setV(cur) }, [cur])
+  const clean = normCrmUrl(v)
+  const dirty = clean !== normCrmUrl(cur)
+  return (
+    <div className="annot-set">
+      <div className="set-sec-t" style={{ marginTop: 18 }}>CRM web address <span className="cap">· agency-wide</span></div>
+      <p className="cap" style={{ marginTop: 4 }}>Where "Open in CRM" links go. Enter the white-label address your team and clients sign in at, such as <code>app.caalanosystems.com.au</code>. Leave it blank to use {CRM_DEFAULT_URL.replace('https://', '')}. Links open as <b>{clean || CRM_DEFAULT_URL}</b>.</p>
+      <div className="act-note-btns"><input type="text" inputMode="url" placeholder={CRM_DEFAULT_URL} value={v} onChange={(e) => { setV(e.target.value); setSaved(false) }} style={{ minWidth: 280 }} />
+        <button type="button" className="btn-primary act-btn" disabled={!dirty || (!!v.trim() && !clean)} onClick={() => { saveCrmUrl(v); setSaved(true) }}>Save</button>
+        {saved ? <span className="cap">Saved.</span> : v.trim() && !clean ? <span className="cap act-bad">Enter a web address such as app.example.com</span> : null}</div>
+    </div>
+  )
+}
 export function SettingsPage({ config, enabled, setEnabled, restricted = {}, setRestricted, currency, authUser, authEnabled, theme, setTheme, onPick }) {
   const [filter, setFilter] = useState('active')
   const [q, setQ] = useState('')
@@ -1586,6 +1606,7 @@ export function SettingsPage({ config, enabled, setEnabled, restricted = {}, set
             <button className={theme === 'light' ? 'on' : ''} onClick={() => setTheme && setTheme('light')}>☀ Light</button>
             <button className={theme === 'dark' ? 'on' : ''} onClick={() => setTheme && setTheme('dark')}>☾ Dark</button>
           </div>
+          {isAdmin ? <CrmAddressCard /> : null}
           {isSuper ? <AnnotationToggle /> : null}
         </div>
       )}

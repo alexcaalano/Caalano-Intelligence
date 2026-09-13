@@ -18,6 +18,19 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.606.0 - 2026-09-13 · `PENDING`
+
+**Open in CRM goes to your white-label address** - Settings, Appearance
+gains a "CRM web address" field for admins, agency-wide and saved to the
+server, and every Open in CRM link on Deals & Actions uses it, so the team
+and clients stay on the agency's own domain instead of GoHighLevel's.
+Client-side users receive the address too. Blank means GoHighLevel's own
+address. A deal created already marked won now rings the gong and counts
+as a win on the live feed, not just as a new lead. The connect page shows
+its symbols properly and says how to reconnect at agency level.
+
+---
+
 ## v3.605.0 - 2026-09-13 · `56cdaa3`
 
 **Connect from inside GoHighLevel** - an install started in the CRM

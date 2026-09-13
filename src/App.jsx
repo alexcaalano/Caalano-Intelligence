@@ -22,7 +22,7 @@ const lazyView = (load, name) => {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-export const APP_VERSION = '3.605.0'
+export const APP_VERSION = '3.606.0'
 // The business clock. Every server window is cut on the client's local day
 // (Caalano Systems location timezone), so any day the app derives on its own -
 // preset ranges, "today", CSV dates - must use the same clock rather than the
@@ -16226,6 +16226,17 @@ function loadAnnot() { const a = SETTINGS.annotations; return !!(a && a.on) }
 function saveAnnot(on) {
   SETTINGS.annotations = { on: !!on }
   writeLS(ANNOT_KEY, SETTINGS.annotations); saveSettingsRemote({ annotations: { on: !!on } }); bumpSettings()
+}
+// The CRM's web address for "Open in CRM" links: the agency's white-label
+// domain when one is set (Settings -> Appearance, agency-wide, server-saved),
+// else GoHighLevel's own. In the SaaS this is an organisation setting.
+export const CRM_DEFAULT_URL = 'https://app.gohighlevel.com'
+export const normCrmUrl = (v) => { const t = String(v || '').trim().replace(/\/+$/, ''); if (!t) return ''; const u = /^https?:\/\//i.test(t) ? t : 'https://' + t; try { const x = new URL(u); return x.protocol === 'https:' && x.hostname.includes('.') ? `https://${x.hostname}` : '' } catch { return '' } }
+export function crmBaseUrl() { return normCrmUrl(SETTINGS.ui && SETTINGS.ui.crmUrl) || CRM_DEFAULT_URL }
+export function saveCrmUrl(v) {
+  const crmUrl = normCrmUrl(v)
+  SETTINGS.ui = { ...(SETTINGS.ui || {}), crmUrl }
+  writeLS(UI_KEY, SETTINGS.ui); saveSettingsRemote({ ui: { crmUrl } }); bumpSettings()
 }
 export function Caveat({ extra, children, ...rest }) {
   const isSuper = React.useContext(SuperCtx)

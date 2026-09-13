@@ -1,7 +1,7 @@
 // Sales Hub, Goals and Deals & Actions. Carved out of App.jsx so it loads on first open; the
 // helpers it shares with the rest of the app are imported from there.
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { GOALS_KEY, REPKPI_KEY, SETTINGS, Spinner, WON_RE, bumpSettings, fmtDMY, hoursQuery, isAdminishFE, isClientRoleFE, loadCashOn, loadHours, loadKeyEvents, mergeCalKeyEvents, normKeyEvents, presetRange, rangeQuery, saveSettingsRemote, tzTodayStr, usePipeState, useSettingsSync, writeLS } from '../App.jsx'
+import { GOALS_KEY, REPKPI_KEY, SETTINGS, Spinner, WON_RE, bumpSettings, fmtDMY, hoursQuery, isAdminishFE, isClientRoleFE, loadCashOn, loadHours, loadKeyEvents, mergeCalKeyEvents, normKeyEvents, presetRange, rangeQuery, saveSettingsRemote, tzTodayStr, usePipeState, useSettingsSync, writeLS, crmBaseUrl } from '../App.jsx'
 import { fmtCurrency, fmtNumber } from '../lib/format.js'
 import { GOAL_METRICS, RATE_METRICS, SPLITS, goalActual, goalLevel, goalMetric, goalShares, goalTargetFor, goalWindow, migrateRepKpis, monthKeysFrom, newGoalId, normGoals, quarterKeysFrom, repTargetsFromGoals, repValue, validateGoal } from '../lib/goals.js'
 
@@ -798,8 +798,8 @@ export const ACT_SECTIONS = {
   unassigned: ['No rep assigned', 'Open deals with nobody responsible for them.'],
 }
 export const ACT_TIERS = [[30, '30+ days', 't30'], [21, '21+ days', 't21'], [14, '14+ days', 't14'], [7, '7+ days', 't7']]
-export const crmLink = (loc, contactId) => (loc && contactId ? `https://app.gohighlevel.com/v2/location/${encodeURIComponent(loc)}/contacts/detail/${encodeURIComponent(contactId)}` : null)
-export const crmConvLink = (loc, convId) => (loc && convId ? `https://app.gohighlevel.com/v2/location/${encodeURIComponent(loc)}/conversations/conversations/${encodeURIComponent(convId)}` : null)
+export const crmLink = (loc, contactId) => (loc && contactId ? `${crmBaseUrl()}/v2/location/${encodeURIComponent(loc)}/contacts/detail/${encodeURIComponent(contactId)}` : null)
+export const crmConvLink = (loc, convId) => (loc && convId ? `${crmBaseUrl()}/v2/location/${encodeURIComponent(loc)}/conversations/conversations/${encodeURIComponent(convId)}` : null)
 export function actWhen(ms, tz) {
   if (!ms) return '-'
   try { return new Date(ms).toLocaleString('en-AU', { timeZone: tz || undefined, weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }) } catch { return new Date(ms).toLocaleString() }

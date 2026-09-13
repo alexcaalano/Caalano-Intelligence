@@ -12,6 +12,8 @@ const lost = normLiveEvent({ type: 'OpportunityStatusUpdate', locationId: 'L1', 
 assert.equal(lost.kind, 'lost')
 const lead = normLiveEvent({ type: 'OpportunityCreate', locationId: 'L1', id: 'o3', status: 'open' })
 assert.equal(lead.kind, 'lead')
+const bornWon = normLiveEvent({ type: 'OpportunityCreate', locationId: 'L1', id: 'o1', status: 'won', monetaryValue: 900 })
+assert.equal(bornWon.kind, 'won'); assert.equal(bornWon.id, won.id, 'a deal created as won shares the win id, so a status update after it does not ring twice')
 const appt = normLiveEvent({ type: 'AppointmentCreate', locationId: 'L1', appointment: { id: 'a1', calendarId: 'cal', contactId: 'c1', appointmentStatus: 'confirmed', assignedUserId: 'u2', startTime: '2026-09-14T01:00:00Z', createdBy: { userId: 'u9' } } })
 assert.equal(appt.kind, 'booked'); assert.equal(appt.bookedBy, 'u9'); assert.equal(appt.userId, 'u2')
 assert.equal(normLiveEvent({ type: 'ContactCreate', locationId: 'L1', id: 'x' }), null, 'unused types are dropped')

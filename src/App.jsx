@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.582.0'
+const APP_VERSION = '3.583.0'
 // The business clock. Every server window is cut on the client's local day
 // (Caalano Systems location timezone), so any day the app derives on its own -
 // preset ranges, "today", CSV dates - must use the same clock rather than the
@@ -16123,9 +16123,9 @@ function HubStat({ label, value, sub, tone, big }) {
 // Attainment against the summed rep targets for the month.
 // Team gauges: which summed rep targets get a dial, and how to read the team
 // and each rep's actual for them.
-const HUB_GAUGE_DEFS = [['revenue', 'Revenue', 'money'], ['cash', 'Cash collected', 'money'], ['won', 'Deals closed', 'count'], ['booked', 'Meetings booked', 'count'], ['userBooked', 'Booked by reps', 'count'], ['held', 'Meetings held', 'count'], ['calls', 'Calls made', 'count'], ['minutes', 'Minutes on the phone', 'count'], ['leads', 'Leads', 'count']]
-const hubTeamVal = (team, key) => (key === 'held' ? team.showed : key === 'userBooked' ? team.byStaff : team[key])
-const hubRepVal = (r, key) => (key === 'held' ? r.showed : key === 'userBooked' ? r.byStaff : r[key])
+const HUB_GAUGE_DEFS = [['revenue', 'Revenue', 'money'], ['cash', 'Cash collected', 'money'], ['won', 'Deals closed', 'count'], ['booked', 'Meetings booked', 'count'], ['userBooked', 'Set by reps', 'count'], ['held', 'Meetings held', 'count'], ['calls', 'Calls made', 'count'], ['minutes', 'Minutes on the phone', 'count'], ['leads', 'Leads', 'count']]
+const hubTeamVal = (team, key) => (key === 'held' ? team.showed : key === 'userBooked' ? team.set : team[key])
+const hubRepVal = (r, key) => (key === 'held' ? r.showed : key === 'userBooked' ? r.set : r[key])
 // A half-circle dial: the arc fills with attainment, a tick marks where pace
 // says it should be today, the number in the middle is the percentage.
 function HubDial({ label, actual, target, fmt, elapsed, monthly, onClick, open }) {
@@ -16212,7 +16212,8 @@ function SalesHubView({ clientId, authUser, currency, nonce, pipe: pipeProp, onP
   const dialDefs = HUB_GAUGE_DEFS.filter(([k]) => targets[k] > 0 && (k !== 'cash' || cashOn))
   // Mini leaderboards: who leads on each thing a sales floor competes on.
   const boards = [
-    ['booked', 'Top booker', (r) => r.booked, fmtNumber, 'booked'],
+    ['set', 'Top appointment setter', (r) => r.set, fmtNumber, 'set'],
+    ['booked', 'Most appointments', (r) => r.booked, fmtNumber, 'booked'],
     ['showRate', 'Best show rate', (r) => ((r.showed + r.noShow) >= 3 ? r.showRate : null), (v) => `${v}%`, ''],
     ['minutes', 'Most on the phone', (r) => r.minutes, fmtNumber, 'min'],
     ['calls', 'Most calls', (r) => r.calls, fmtNumber, 'calls'],
@@ -16290,7 +16291,7 @@ function SalesHubView({ clientId, authUser, currency, nonce, pipe: pipeProp, onP
   const secondary = (
     <div className="hub-stats hub-secondary">
       <HubStat label="Leads" value={fmtNumber(team.leads || 0)} sub={`${team.reps} reps`} />
-      <HubStat label="Booked" value={fmtNumber(team.booked || 0)} sub={`${fmtNumber(team.byStaff || 0)} by reps · ${fmtNumber(team.byCustomer || 0)} by customers`} />
+      <HubStat label="Booked" value={fmtNumber(team.booked || 0)} sub={`${fmtNumber(team.set || 0)} set by reps · ${fmtNumber(team.byCustomer || 0)} by customers`} />
       <HubStat label="No-shows" value={fmtNumber(team.noShow || 0)} sub={`${fmtNumber(team.showed || 0)} held`} />
       <HubStat label="Calls" value={fmtNumber(team.calls || 0)} sub={`${fmtNumber(team.minutes || 0)} minutes`} />
       <HubStat label="Open pipeline" value={money(team.openValue)} sub={`${fmtNumber(team.open || 0)} deals · ${fmtNumber(team.stale || 0)} stale`} tone={team.open && team.stale / team.open > 0.4 ? 'warn' : ''} />
@@ -16399,7 +16400,7 @@ function SalesHubView({ clientId, authUser, currency, nonce, pipe: pipeProp, onP
               </button>
               {openRep === r.id ? <div className="hub-row-detail">
                 <div className="hub-detail-grid">
-                  {facts('Appointments', [['Booked', fmtNumber(r.booked)], ['By the rep', fmtNumber(r.byStaff)], ['By customers', fmtNumber(r.byCustomer)], ['Held', fmtNumber(r.showed)], ['No-show', fmtNumber(r.noShow)], ['Still to come', fmtNumber(r.upcoming)], r.unresulted ? ['Unresulted', <span className="act-bad">{fmtNumber(r.unresulted)}</span>] : null])}
+                  {facts('Appointments', [['Booked (assigned)', fmtNumber(r.booked)], ['Set by the rep', fmtNumber(r.set)], ['By customers', fmtNumber(r.byCustomer)], ['Held', fmtNumber(r.showed)], ['No-show', fmtNumber(r.noShow)], ['Still to come', fmtNumber(r.upcoming)], r.unresulted ? ['Unresulted', <span className="act-bad">{fmtNumber(r.unresulted)}</span>] : null])}
                   {facts('Pipeline now', [['Open deals', fmtNumber(r.open)], ['Open value', money(r.openValue)], ['Stale', <span className={r.stale ? 'act-bad' : ''}>{fmtNumber(r.stale)}</span>], ['7+ · 14+ · 21+ · 30+ days', `${r.staleTiers.t7} · ${r.staleTiers.t14} · ${r.staleTiers.t21} · ${r.staleTiers.t30}`], ['Oldest idle', r.oldestIdle ? `${r.oldestIdle} days` : '-']])}
                   {facts('Speed to lead', r.speedMin != null ? [['Median, in hours', repMin(r.speedMin)], ['Leads measured', fmtNumber(r.speedMeasured)], r.within5Pct != null ? ['Under 5 minutes', `${r.within5Pct}%`] : null, ['After hours', fmtNumber(r.speedAfter || 0)]] : [['Median', 'not measured']])}
                   {facts('Closing', [['Won', fmtNumber(r.won)], ['Lost', fmtNumber(r.lost)], ['Win rate', hubPct(r.winRate)], ['Average deal', r.avgDeal ? money(r.avgDeal) : '-'], ['Days to close', r.avgCloseDays != null ? r.avgCloseDays : '-'], ...((r.lostReasons || []).slice(0, 3).map((x) => [`Lost: ${x.reason}`, fmtNumber(x.count)]))])}
@@ -16609,7 +16610,7 @@ function RepLeaderboard({ rows, meId, currency }) {
 // bar with a pace mark for where the month is up to, green when on pace.
 const REP_KPI_DEFS = [
   ['revenue', 'Revenue', 'money'], ['cash', 'Cash collected', 'money'], ['won', 'Deals closed', 'count'],
-  ['booked', 'Meetings booked', 'count'], ['userBooked', 'Booked by the rep', 'count'], ['held', 'Meetings held', 'count'],
+  ['booked', 'Meetings booked', 'count'], ['userBooked', 'Set by the rep', 'count'], ['held', 'Meetings held', 'count'],
   ['showRate', 'Show rate', 'pct'], ['winRate', 'Win rate', 'pct'], ['calls', 'Calls made', 'count'], ['minutes', 'Minutes on the phone', 'count'],
   ['speedMin', 'Speed to lead (median minutes)', 'lower'], ['leads', 'Leads', 'count'],
 ]
@@ -16678,7 +16679,7 @@ function RepCockpit({ clientId, rep, currency, nonce, canEdit }) {
   const d = st.data || {}
   const ap = d.appointments || {}
   const actual = {
-    revenue: d.revenue || 0, cash: (d.cash && d.cash.collected) || 0, won: d.won || 0, booked: ap.booked || 0, userBooked: ap.byStaff || 0, held: ap.showed || 0,
+    revenue: d.revenue || 0, cash: (d.cash && d.cash.collected) || 0, won: d.won || 0, booked: ap.booked || 0, userBooked: ap.set != null ? ap.set : (ap.byStaff || 0), held: ap.showed || 0,
     showRate: ap.showRate, winRate: d.winRate, calls: (d.calls && d.calls.outbound) || 0, minutes: (d.calls && d.calls.minutes) || 0, speedMin: d.speed ? d.speed.medianMin : null, leads: d.leads || 0,
   }
   const fmt = (k, v, kind) => (v == null ? '-' : kind === 'money' ? fmtCurrency(v, currency) : kind === 'pct' ? `${v}%` : kind === 'lower' ? repMin(v) : fmtNumber(v))

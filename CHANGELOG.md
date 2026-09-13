@@ -18,6 +18,17 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.583.0 - 2026-09-13 · `PENDING`
+
+**Top appointment setter** - the Sales Hub now counts the appointments
+each person actually set (the CRM's record of who made the booking),
+whoever the appointment is assigned to. The "Top booker" board is now
+"Top appointment setter" on that count, with "Most appointments" kept
+for assigned bookings. The "Set by the rep" target, gauge and the rep
+detail use the same count, on the hub and on My results.
+
+---
+
 ## v3.582.0 - 2026-09-13 · `3647685`
 
 **Everything in the period it happened** - the Sales Hub now counts each

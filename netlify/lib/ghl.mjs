@@ -5730,6 +5730,8 @@ async function _rawAppointments(locTok, locationId, startMs, endMs) {
         startMs: Date.parse(ev.startTime), endMs: Date.parse(ev.endTime), addedMs: Date.parse(ev.dateAdded || ev.createdAt),
         status: String(ev.appointmentStatus || ev.appoinmentStatus || ev.status || '').toLowerCase(),
         userId: apptUserId(ev), title: ev.title || ev.appointmentTitle || null, by: apptBookedBy(ev),
+        // The staff member who made the booking (null when the customer self-booked).
+        bookedBy: (ev.createdBy && (ev.createdBy.userId || ev.createdBy.user_id)) || null,
       })
     }
   }))
@@ -6094,7 +6096,8 @@ export async function buildRepCard(locationId, { userId, from, to, hours = null,
   const myOppContacts = new Set()
   for (const o of (snap.opps || [])) if (o.assignedTo === userId) { const cid = o.contactId || (o.contact && (o.contact.id || o.contact._id)); if (cid) myOppContacts.add(cid) }
   const mine = rawAppts.filter((a) => (a.userId === userId || (!a.userId && a.contactId && myOppContacts.has(a.contactId))) && inPeriod(a.addedMs))
-  const ap = { booked: 0, byStaff: 0, byCustomer: 0, showed: 0, noShow: 0, cancelled: 0, unresulted: 0, upcoming: 0 }
+  const ap = { booked: 0, byStaff: 0, byCustomer: 0, showed: 0, noShow: 0, cancelled: 0, unresulted: 0, upcoming: 0, set: 0 }
+  for (const a of rawAppts) if (a.bookedBy === userId && inPeriod(a.addedMs) && !APPT_INVALID_RE.test(a.status) && !APPT_CANCEL_RE.test(a.status)) ap.set++
   for (const a of mine) {
     const st = a.status
     if (APPT_INVALID_RE.test(st)) continue
@@ -6195,13 +6198,16 @@ export async function buildSalesHub(locationId, { from, to, hours = null, staleD
   const callsByUser = new Map(((calls && calls.users) || []).map((u) => [u.userId, u]))
   const spByUser = (speed && speed.byUser) || {}
   // Appointments in the period, per rep and per calendar.
-  const apByUser = new Map(), calendars = new Map()
+  const apByUser = new Map(), calendars = new Map(), setByUser = new Map()
   // Each thing in the period it happened: a booking counts on the day it was
   // made (the rep's activity); held, no-show, still-to-come and unresulted count
   // on the appointment's own date, so this month's show rate is this month's
   // appointments whoever booked them and whenever.
   for (const a of rawAppts) {
     if (APPT_INVALID_RE.test(a.status) || APPT_CANCEL_RE.test(a.status)) continue
+    // Appointments SET by a person in the period, whoever they are assigned
+    // to: the appointment setter's own tally.
+    if (a.bookedBy && inPeriod(a.addedMs)) setByUser.set(a.bookedBy, (setByUser.get(a.bookedBy) || 0) + 1)
     const uid = a.userId; if (!uid) continue
     const bookedIn = inPeriod(a.addedMs), occursIn = inPeriod(a.startMs)
     if (!bookedIn && !occursIn) continue
@@ -6285,8 +6291,8 @@ export async function buildSalesHub(locationId, { from, to, hours = null, staleD
     for (const sdef of pi.stages) if (st === 'won' || (pos >= 0 && sdef.pos <= pos)) { t[sdef.name] = (t[sdef.name] || 0) + 1; rr[sdef.name] = (rr[sdef.name] || 0) + 1 }
   }
   const baseUsers = [...(perf.users || [])]
-  for (const uid of new Set([...wonBy.keys(), ...lostBy.keys()])) if (uid !== 'unassigned' && !baseUsers.some((u) => u.id === uid)) baseUsers.push({ id: uid, name: userName[uid] || 'User', leads: 0, qualified: 0, won: 0, lost: 0, revenue: 0, winRate: null, avgDeal: null, avgCloseDays: null, stages: {}, lostReasons: [], byPipeline: [] })
-  const reps = baseUsers.filter((u) => u.leads > 0 || (nowBy.get(u.id) || {}).open > 0 || wonBy.has(u.id) || lostBy.has(u.id)).map((u) => {
+  for (const uid of new Set([...wonBy.keys(), ...lostBy.keys(), ...setByUser.keys()])) if (uid !== 'unassigned' && !baseUsers.some((u) => u.id === uid)) baseUsers.push({ id: uid, name: userName[uid] || 'User', leads: 0, qualified: 0, won: 0, lost: 0, revenue: 0, winRate: null, avgDeal: null, avgCloseDays: null, stages: {}, lostReasons: [], byPipeline: [] })
+  const reps = baseUsers.filter((u) => u.leads > 0 || (nowBy.get(u.id) || {}).open > 0 || wonBy.has(u.id) || lostBy.has(u.id) || setByUser.has(u.id)).map((u) => {
     const ap = apByUser.get(u.id) || { booked: 0, byStaff: 0, byCustomer: 0, showed: 0, noShow: 0, upcoming: 0, unresulted: 0 }
     const w = wonBy.get(u.id) || { won: 0, revenue: 0, closeSum: 0, closeN: 0 }
     const l = lostBy.get(u.id) || { lost: 0, reasons: {} }
@@ -6295,7 +6301,7 @@ export async function buildSalesHub(locationId, { from, to, hours = null, staleD
     const n = nowBy.get(u.id) || { open: 0, openValue: 0, stale: 0, t7: 0, t14: 0, t21: 0, t30: 0, oldest: 0 }
     return {
       id: u.id, name: u.name, leads: u.leads, qualified: u.qualified, won: w.won, lost: l.lost, revenue: Math.round(w.revenue), winRate: (w.won + l.lost) ? Math.round((w.won / (w.won + l.lost)) * 100) : null, avgDeal: w.won ? Math.round(w.revenue / w.won) : null, avgCloseDays: w.closeN ? Math.round(w.closeSum / w.closeN) : null,
-      booked: ap.booked, byStaff: ap.byStaff, byCustomer: ap.byCustomer, showed: ap.showed, noShow: ap.noShow, upcoming: ap.upcoming, unresulted: ap.unresulted,
+      booked: ap.booked, byStaff: ap.byStaff, byCustomer: ap.byCustomer, set: setByUser.get(u.id) || 0, showed: ap.showed, noShow: ap.noShow, upcoming: ap.upcoming, unresulted: ap.unresulted,
       showRate: (ap.showed + ap.noShow) ? Math.round((ap.showed / (ap.showed + ap.noShow)) * 100) : null,
       calls: c ? (c.outbound || 0) : 0, connected: c ? (c.outboundConnected || 0) : 0, minutes: c ? Math.round(((c.outboundSec || 0) + (c.inboundSec || 0)) / 60) : 0,
       speedMin: sp ? sp.medianMin : null, speedMeasured: sp ? sp.measured : 0, speedAfter: sp ? sp.afterCount : 0, within5Pct: sp ? sp.within5Pct : null,
@@ -6307,7 +6313,7 @@ export async function buildSalesHub(locationId, { from, to, hours = null, staleD
   const teamShowBase = sum('showed') + sum('noShow')
   const spMed = reps.map((r) => r.speedMin).filter((v) => v != null).sort((a, b) => a - b)
   const team = {
-    reps: reps.length, leads: sum('leads'), booked: sum('booked'), byStaff: sum('byStaff'), byCustomer: sum('byCustomer'), showed: sum('showed'), noShow: sum('noShow'),
+    reps: reps.length, leads: sum('leads'), booked: sum('booked'), byStaff: sum('byStaff'), byCustomer: sum('byCustomer'), set: sum('set'), showed: sum('showed'), noShow: sum('noShow'),
     showRate: teamShowBase ? Math.round((sum('showed') / teamShowBase) * 100) : null, won: sum('won'), lost: sum('lost'), revenue: sum('revenue'),
     winRate: (sum('won') + sum('lost')) ? Math.round((sum('won') / (sum('won') + sum('lost'))) * 100) : null, cash: cashField ? sum('cash') : null, calls: sum('calls'), minutes: sum('minutes'),
     open: sum('open'), openValue: sum('openValue'), stale: sum('stale'), speedMin: speed && speed.medianMin != null ? speed.medianMin : (spMed.length ? spMed[Math.floor(spMed.length / 2)] : null),

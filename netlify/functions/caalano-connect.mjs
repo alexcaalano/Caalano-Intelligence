@@ -69,6 +69,12 @@ async function gate(req) {
 // so a signed state is always possible regardless of auth mode.
 const stateSecret = () => process.env.AUTH_SECRET || process.env.SITE_PASSWORD || process.env.GHL_CLIENT_SECRET || ''
 const STATE_KIND = 'ghl-oauth'
+// An install started inside GoHighLevel (agency Marketplace, "install for all
+// sub-accounts") redirects here with a code and no state of ours. A signed-in
+// admin is shown a confirmation page whose button posts the code back with a
+// freshly signed token, so a forged link can never complete a connection on
+// its own: it takes a deliberate click by an admin on our own page.
+const INSTALL_KIND = 'ghl-install'
 
 export default async (req) => {
   // This function shares the CRM fetch helpers, which read a per-invocation
@@ -111,15 +117,30 @@ export default async (req) => {
     return Response.redirect(a.toString(), 302)
   }
 
-  const code = url.searchParams.get('code')
+  // The Complete button on the confirmation page below.
+  let posted = null
+  if (req.method === 'POST') {
+    try { const f = await req.formData(); posted = { code: String(f.get('code') || ''), state: String(f.get('state') || '') } } catch { posted = null }
+    if (!posted || !posted.code) return page('Nothing to complete', '<p>No install code was posted.</p><p><a style="color:#9b8cff" href="/.netlify/functions/caalano-connect">Back</a></p>')
+    const okPost = await verifySession(posted.state, stateSecret()).catch(() => null)
+    if (!okPost || okPost.k !== INSTALL_KIND || okPost.code !== posted.code) return page('Connection blocked', '<p style="color:#f0435b">This confirmation has expired. Install the app again from GoHighLevel and click Complete within ten minutes.</p>')
+  }
+  const code = posted ? posted.code : url.searchParams.get('code')
   if (code) {
-    // Reject any callback whose state we didn't mint (or that has expired) - this
-    // is what stops a forged/CSRF callback from overwriting the agency token. The
-    // admin session was already required above.
+    // A callback carries either the state we minted when Re-authorise was
+    // clicked (the chooser route), or arrives with none because the install was
+    // started inside GoHighLevel. The first completes at once; the second is
+    // shown to the admin to confirm, and completes on their POST.
     const st = url.searchParams.get('state')
-    const okState = st ? await verifySession(st, stateSecret()).catch(() => null) : null
-    if (!okState || okState.k !== STATE_KIND) {
-      return page('Connection blocked', '<p style="color:#f0435b">This authorisation link is invalid or has expired. For security, start the connection again from the dashboard.</p><p><a style="color:#9b8cff" href="/.netlify/functions/caalano-connect?start=1">Start over</a></p>')
+    const okState = posted ? true : (st ? await verifySession(st, stateSecret()).catch(() => null) : null)
+    if (!posted && !(okState && okState.k === STATE_KIND)) {
+      if (st) return page('Connection blocked', '<p style="color:#f0435b">This authorisation link is invalid or has expired. For security, start the connection again from the dashboard.</p><p><a style="color:#9b8cff" href="/.netlify/functions/caalano-connect?start=1">Start again</a></p>')
+      const confirm = await signSession({ k: INSTALL_KIND, code, exp: Date.now() + 10 * 60 * 1000 }, stateSecret())
+      const esc = (v) => String(v).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;')
+      return page('Complete the connection', `<p>GoHighLevel has sent an agency install for Caalano 360 Reporting. Completing it stores the agency's access for every sub-account.</p>` +
+        `<form method="post" action="/.netlify/functions/caalano-connect"><input type="hidden" name="code" value="${esc(code)}"><input type="hidden" name="state" value="${esc(confirm)}">` +
+        `<button type="submit" style="margin-top:12px;background:#6d5efc;color:#fff;border:0;border-radius:10px;padding:12px 20px;font:inherit;font-weight:700;cursor:pointer">Complete connection</button></form>` +
+        `<p style="margin-top:16px"><a style="color:#9b8cff" href="/">Cancel and go back to the dashboard</a></p>`)
     }
     try {
       const t = await exchangeCode(code, redirectUri)
@@ -127,7 +148,7 @@ export default async (req) => {
       const badge = isCompany
         ? '<p style="color:#12b886;font-weight:700">✅ Agency (Company) token - this can read every sub-account.</p>'
         : `<p style="color:#f5a524;font-weight:700">⚠️ This is a <b>${t.userType || 'Location'}</b> token${t.companyId ? '' : ' (no companyId)'} - it can only read ONE sub-account. Re-authorise and pick your <b>Agency</b> (not a single location).</p>`
-      return page('Caalano Systems connected', `${badge}<p><a style="color:#9b8cff" href="/.netlify/functions/caalano-connect?start=1">Re-authorise</a> · <a style="color:#9b8cff" href="/">Back to dashboard</a></p>`)
+      return page('Caalano Systems connected', `${badge}${posted ? '<p>Completed from the install started in GoHighLevel.</p>' : ''}<p><a style="color:#9b8cff" href="/.netlify/functions/caalano-connect?start=1">Re-authorise</a> · <a style="color:#9b8cff" href="/">Back to dashboard</a></p>`)
     } catch (e) {
       return page('Connection failed', `<p style="color:#f0435b">${String(e.message || e)}</p><p><a style="color:#9b8cff" href="/.netlify/functions/caalano-connect?start=1">Try again</a></p>`)
     }

@@ -18,6 +18,20 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.605.0 - 2026-09-13 · `PENDING`
+
+**Connect from inside GoHighLevel** - an install started in the CRM
+itself (the agency Marketplace, "install for all sub-accounts") lands on
+the connect page with an authorisation code but without the anti-forgery
+token that the Re-authorise route carries, and used to be turned away as
+"Connection blocked". A signed-in admin now sees a confirmation page and
+a Complete connection button; the button posts the code back with a
+fresh signed token, good for ten minutes and bound to that code, so a
+forged link still cannot complete a connection on its own. The chooser
+route is unchanged.
+
+---
+
 ## v3.604.0 - 2026-09-13 · `b734ed6`
 
 **SaaS foundations, phase 0 (no user-visible change)** - the Postgres

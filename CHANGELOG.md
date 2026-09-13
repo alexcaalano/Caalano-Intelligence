@@ -20,7 +20,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ## v3.614.0 - 2026-09-13
 
-**SaaS phase 0 complete: the Blobs-to-Postgres migration.** (commit PENDING)
+**SaaS phase 0 complete: the Blobs-to-Postgres migration.** (commit 3f500c4)
 
 - `scripts/migrate-blobs-to-pg.mjs` (`npm run db:import`) copies Caalano Digital
   out of Netlify Blobs into the SaaS schema: organisation `caalano`, one

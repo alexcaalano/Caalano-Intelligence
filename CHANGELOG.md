@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.601.0 - 2026-09-13 · `PENDING`
+## v3.601.0 - 2026-09-13 · `679df03`
 
 **A switch for each sound** - Gong sound, Lead sound and Booking sound
 are now separate toggles on the hub and in TV mode, so a floor that does

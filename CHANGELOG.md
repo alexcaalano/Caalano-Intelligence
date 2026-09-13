@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.572.0 - 2026-09-13 · `PENDING`
+## v3.572.0 - 2026-09-13 · `55b233b`
 
 **Rep KPIs and the monthly cockpit** - Settings -> a client -> Rep KPIs
 lets an Agency Admin set monthly targets: a default for every rep and a

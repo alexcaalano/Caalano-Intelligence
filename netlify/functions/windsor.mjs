@@ -19,6 +19,7 @@ import { getStore } from '@netlify/blobs'
 import { currentUser, canSeeClient, isAdminish, canSeeReports , isClientRole } from '../lib/auth.mjs'
 import { isWarmRequest, triggerWarm, claimRevalidate } from '../lib/warm.mjs'
 import { readLiveEvents, liveToken } from '../lib/live.mjs'
+import { normGoals, goalWindow, goalTargetFor, goalActual, goalShares, repValue } from '../lib/goals.mjs'
 import { upstream } from '../lib/ghl.mjs'
 // Parse working-hours query params (bhDays / bhStart / bhEnd) into an hours object.
 function parseHours(url) {
@@ -2633,7 +2634,7 @@ const VIEWER_REQ_TABS = {
   // given exactly this and nothing else.
   'scope:actions': ['actions'],
   'scope:repcard': ['actions'],
-  'scope:saleshub': ['saleshub'], 'scope:hublive': ['saleshub'],
+  'scope:saleshub': ['saleshub'], 'scope:hublive': ['saleshub'], 'scope:goals': ['saleshub'],
   'scope:speedscan': ['timing'],
   // The other two sections on the Timing tab. Both were added after this map and
   // never registered in it, and the map denies by default - so a viewer granted
@@ -2795,6 +2796,16 @@ const CACHEABLE_CHANNELS = new Set(['meta', 'google', 'attribution', 'blend'])
 // per-caller filtering) - the gate below enforces that, and each builder already
 // returns cache=!filtered, so a restricted caller still rebuilds live.
 const CACHEABLE_SCOPES_NOCLIENT = new Set(['agency', 'coverage', 'clinics'])
+// Goal windows: a hub build per (client, from, to), kept for three minutes so
+// the Sales Hub's poll and the settings page do not rebuild the same quarter.
+const _goalsMemo = new Map()
+function goalsBuildMemo(client, key, fn) {
+  const k = `${client}|${key}`; const hit = _goalsMemo.get(k)
+  if (hit && Date.now() - hit.at < 180000) return hit.p
+  const p = fn().catch((e) => { _goalsMemo.delete(k); throw e })
+  _goalsMemo.set(k, { at: Date.now(), p }); if (_goalsMemo.size > 60) _goalsMemo.delete(_goalsMemo.keys().next().value)
+  return p
+}
 async function readResultCache(key) { const t = Date.now(); try { return await cacheStore().get(key, { type: 'json' }) } catch { return null } finally { upstream.blob += Date.now() - t; upstream.blobN++ } }
 function writeResultCache(key, payload) { try { cacheStore().setJSON(key, { at: Date.now(), payload }).catch(() => {}) } catch { /* non-fatal */ } }
 function cacheKeyFrom(url) {
@@ -3413,6 +3424,34 @@ export default async (req) => {
     } catch (e) { return json({ scope: 'saleshub', client, ghl: true, error: String((e && e.message) || e).slice(0, 240) }) }
   }
 
+  // Goal progress: each goal measured in its own window (this month, this
+  // quarter, or its dates) whatever period the hub is showing. The browser
+  // posts the goals it holds; one hub build per distinct window, memoised for
+  // three minutes per client. Managers only, like the hub.
+  if (scope === 'goals') {
+    const cc = clientCfg(client)
+    if (!cc || !cc.ghl) return json({ scope: 'goals', client, goals: [] })
+    if (isAccountUser(me)) return json({ error: 'Managers only.' }, 403)
+    let body = {}; try { body = req.method === 'POST' ? JSON.parse(await req.text()) : {} } catch { body = {} }
+    const goals = normGoals(body.goals || [])
+    const tz = await locationTimezone(cc.ghl).catch(() => 'Australia/Sydney')
+    const today = new Date().toLocaleDateString('en-CA', { timeZone: tz })
+    const staleDays = 7; const hours = parseHours(url)
+    const builds = new Map()
+    const buildFor = (w) => { const k = `${w.from}|${w.to}`; if (!builds.has(k)) builds.set(k, goalsBuildMemo(client, k, () => buildSalesHub(cc.ghl, { from: w.from, to: w.to, hours, staleDays }))); return builds.get(k) }
+    const out = []
+    for (const g of goals) {
+      const w = goalWindow(g, today)
+      if (w.notYet) { out.push({ id: g.id, window: w, target: goalTargetFor(g, w.key), actual: null, byRep: [] }); continue }
+      let d = null; try { d = await buildFor(w) } catch (e) { out.push({ id: g.id, window: w, target: goalTargetFor(g, w.key), actual: null, error: String((e && e.message) || e).slice(0, 160) }); continue }
+      const reps = (d && d.reps) || []
+      const target = goalTargetFor(g, w.key)
+      const shares = goalShares({ ...g, target }, reps.map((r) => r.id))
+      const byRep = reps.filter((r) => r.id !== 'unassigned' && (r.id in shares)).map((r) => ({ id: r.id, name: r.name, actual: repValue(r, g.metric, g.pipelines), share: shares[r.id] }))
+      out.push({ id: g.id, window: w, target, actual: goalActual({ ...g, target }, reps), byRep })
+    }
+    return json({ scope: 'goals', client, today, goals: out })
+  }
   // Live CRM events for the Sales Hub's gong and wins feed: the last day of
   // webhook events for this client's location. Cheap (one small Blobs read),
   // never cached, polled every 15 s by a TV. Staff and Account Admins only.

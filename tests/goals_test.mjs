@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { normGoals, goalShares, goalShareFor, validateGoal, goalLevel, repValue, goalActual, repTargetsFromGoals, migrateRepKpis } from '../src/lib/goals.js'
+import { goalWindow, goalTargetFor, monthKeysFrom, quarterKeysFrom, normGoals, goalShares, goalShareFor, validateGoal, goalLevel, repValue, goalActual, repTargetsFromGoals, migrateRepKpis } from '../netlify/lib/goals.mjs'
 
 const reps = [
   { id: 'a', revenue: 6000, won: 3, lost: 1, open: 4, showed: 8, noShow: 2, speedMin: 20, set: 5, closedByPipeline: { p1: { revenue: 6000, won: 3, lost: 1, cash: 0 } }, openByPipeline: { p1: 4 }, byPipeline: [{ id: 'p1', leads: 10 }] },
@@ -58,4 +58,24 @@ assert.deepEqual(repTargetsFromGoals(mig, 'b', ids), { revenue: 1500, booked: 20
 assert.equal(goalShareFor(mig[0], 'zz', null), 1500, 'an each goal needs no rep list')
 assert.equal(goalShareFor(biz, 'a', null), null, 'an even split needs the rep list')
 assert.equal(goalShareFor(biz, 'a', ids), 4000)
+
+// Windows and plans
+const mg = normGoals([{ id: 'w1', metric: 'revenue', target: 10000, period: 'month', split: 'each', byMonth: { '2026-10': 12000 }, endsOn: '2026-11' }])[0]
+let gw = goalWindow(mg, '2026-09-13')
+assert.equal(gw.key, '2026-09'); assert.equal(gw.from, '2026-09-01'); assert.equal(gw.to, '2026-09-30'); assert.equal(Math.round(gw.elapsed * 100), 43); assert.equal(gw.active, true)
+assert.equal(goalTargetFor(mg, '2026-09'), 10000); assert.equal(goalTargetFor(mg, '2026-10'), 12000, 'the plan overrides October')
+assert.equal(goalWindow(mg, '2026-12-01').active, false, 'stops after endsOn')
+const qg = normGoals([{ id: 'w2', metric: 'won', target: 60, period: 'quarter', byQuarter: { '2026-Q4': 80 } }])[0]
+gw = goalWindow(qg, '2026-09-13')
+assert.equal(gw.key, '2026-Q3'); assert.equal(gw.from, '2026-07-01'); assert.equal(gw.to, '2026-09-30'); assert.equal(gw.label, 'Q3 2026'); assert.equal(Math.round(gw.elapsed * 100), 82)
+assert.equal(goalTargetFor(qg, '2026-Q4'), 80)
+const rg = normGoals([{ id: 'w3', metric: 'leads', target: 50, period: 'range', from: '2026-09-10', to: '2026-09-19' }])[0]
+gw = goalWindow(rg, '2026-09-13')
+assert.equal(gw.active, true); assert.equal(gw.elapsed, 0.4); assert.equal(goalWindow(rg, '2026-09-25').ended, true); assert.equal(goalWindow(rg, '2026-09-01').notYet, true)
+assert.ok(validateGoal({ ...rg, to: '2026-09-01' }, ids)[0].includes('before'), 'range end must follow start')
+assert.deepEqual(monthKeysFrom('2026-11-05', 3), ['2026-11', '2026-12', '2027-01'])
+assert.deepEqual(quarterKeysFrom('2026-09-13', 2), ['2026-Q3', '2026-Q4'])
+// Rep targets follow the month's plan and skip quarter goals
+assert.deepEqual(repTargetsFromGoals([mg, qg], 'a', ids, '2026-10-02'), { revenue: 12000 })
+assert.deepEqual(repTargetsFromGoals([mg], 'a', ids, '2026-12-02'), {}, 'nothing once the goal has ended')
 console.log('goals_test ok')

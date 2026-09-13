@@ -8,13 +8,13 @@ import {
 import {
   fmtCurrency, fmtNumber, fmtCompact, fmtPct, pctChange,
 } from './lib/format.js'
-import { GOAL_METRICS, goalMetric, SPLITS, normGoals, newGoalId, goalShares, goalShareFor, validateGoal, goalLevel, repValue, goalActual, repTargetsFromGoals, migrateRepKpis } from './lib/goals.js'
+import { GOAL_METRICS, goalMetric, SPLITS, normGoals, newGoalId, goalShares, validateGoal, goalLevel, repValue, goalActual, repTargetsFromGoals, migrateRepKpis, goalWindow, goalTargetFor, monthKeysFrom, quarterKeysFrom } from './lib/goals.js'
 // CHANGELOG.md is loaded on demand (dynamic import) inside the Super-Admin Logs
 // panel - keeping ~200KB of markdown out of the main bundle for every visitor.
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.593.0'
+const APP_VERSION = '3.594.0'
 // The business clock. Every server window is cut on the client's local day
 // (Caalano Systems location timezone), so any day the app derives on its own -
 // preset ranges, "today", CSV dates - must use the same clock rather than the
@@ -16221,14 +16221,25 @@ function SalesHubView({ clientId, authUser, currency, nonce, pipe: pipeProp, onP
   const cashOn = !!(d.cashField && loadCashOn(clientId))
   const goalsAll = useMemo(() => loadGoals(clientId), [clientId, SETTINGS.goals, SETTINGS.repkpis]) // eslint-disable-line
   const repIdsAll = useMemo(() => reps.map((r) => r.id), [reps])
-  // Goals shown as dials: with a pipeline chosen, only goals scoped to it (the
-  // rep numbers are within it, so a business goal would read wrong); on All,
-  // business and pipeline goals but not single-rep goals (those live on My
-  // results). Rate and speed goals are per rep and shown as the team figure.
-  const hubGoals = useMemo(() => goalsAll.filter((g) => !(g.reps && g.reps.length === 1) && (d.pipelineId ? (g.pipelines && g.pipelines.includes(d.pipelineId)) : true)).map((g) => {
-    const m = goalMetric(g.metric) || []; const scoped = g.pipelines && !d.pipelineId
-    return { goal: g, key: g.id, label: g.name || m[1], sub: scoped ? g.pipelines.map((pid) => ((d.pipelines || []).find((p) => p.id === pid) || {}).name || 'Pipeline').join(', ') : (g.reps ? `${g.reps.length} reps` : null), kind: m[2], fmt: m[2] === 'money' ? money : m[2] === 'pct' ? (v) => `${Math.round(v)}%` : m[2] === 'lower' ? repMin : fmtNumber, actual: goalActual(g, reps), target: g.target }
-  }), [goalsAll, reps, d.pipelineId, d.pipelines]) // eslint-disable-line
+  const today = tzTodayStr()
+  // Goals on the hub: business and pipeline goals (a single rep's goal lives
+  // on My results), each measured by the server in its own window - this
+  // month, this quarter, or its dates - whatever period the hub is showing.
+  const hubGoalList = useMemo(() => goalsAll.filter((g) => !(g.reps && g.reps.length === 1) && !goalWindow(g, today).ended), [goalsAll, today])
+  const [prog, setProg] = useState({})
+  useEffect(() => {
+    if (!hubGoalList.length || st.status === 'loading') return
+    let dead = false
+    fetch(`/.netlify/functions/windsor?scope=goals&client=${encodeURIComponent(clientId)}${hoursQuery(loadHours(clientId))}`, { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ goals: hubGoalList }) })
+      .then((r) => r.json().catch(() => null)).then((j) => { if (!dead && j && Array.isArray(j.goals)) setProg(Object.fromEntries(j.goals.map((x) => [x.id, x]))) }).catch(() => {})
+    return () => { dead = true }
+  }, [clientId, hubGoalList, tick, st.status]) // eslint-disable-line
+  const hubGoals = useMemo(() => hubGoalList.map((g) => {
+    const m = goalMetric(g.metric) || []; const w = goalWindow(g, today); const p = prog[g.id]
+    const scope = [g.pipelines ? g.pipelines.map((pid) => ((d.pipelines || []).find((x) => x.id === pid) || {}).name || 'Pipeline').join(', ') : null, g.reps ? `${g.reps.length} reps` : null].filter(Boolean).join(' · ')
+    const fallback = g.period === 'month' && !p ? goalActual({ ...g, target: goalTargetFor(g, w.key) }, reps) : null
+    return { goal: g, key: g.id, label: g.name || m[1], sub: [w.label, scope].filter(Boolean).join(' · '), kind: m[2], fmt: m[2] === 'money' ? money : m[2] === 'pct' ? (v) => `${Math.round(v)}%` : m[2] === 'lower' ? repMin : fmtNumber, actual: p ? p.actual : fallback, target: p ? p.target : goalTargetFor(g, w.key), elapsed: w.elapsed, pace: w.active && !w.notYet, byRep: p ? p.byRep : null, notYet: !!w.notYet }
+  }), [hubGoalList, prog, reps, d.pipelines, today]) // eslint-disable-line
   const bizRevenue = goalsAll.find((g) => g.metric === 'revenue' && !g.pipelines && !g.reps)
   const targets = { revenue: bizRevenue ? bizRevenue.target : 0 }
   const now = new Date(); const dim = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate(); const day = now.getDate(); const elapsed = Math.min(1, Math.max(0.03, day / dim))
@@ -16252,7 +16263,7 @@ function SalesHubView({ clientId, authUser, currency, nonce, pipe: pipeProp, onP
     return rows.length ? { key, title, rows, fmt, unit } : null
   }).filter(Boolean)
   // Attainment per rep: revenue target first, then deals, then bookings.
-  const attain = (r) => { const t = repTargetsFromGoals(goalsAll, r.id, repIdsAll); const key = t.revenue > 0 ? 'revenue' : t.won > 0 ? 'won' : t.booked > 0 ? 'booked' : null; if (!key) return null; const a = key === 'revenue' ? r.revenue : key === 'won' ? r.won : r.booked; return { key, pct: Math.round(((a || 0) / t[key]) * 100), need: monthly ? elapsed * 100 : 100 } }
+  const attain = (r) => { const t = repTargetsFromGoals(goalsAll, r.id, repIdsAll, today); const key = t.revenue > 0 ? 'revenue' : t.won > 0 ? 'won' : t.booked > 0 ? 'booked' : null; if (!key) return null; const a = key === 'revenue' ? r.revenue : key === 'won' ? r.won : r.booked; return { key, pct: Math.round(((a || 0) / t[key]) * 100), need: monthly ? elapsed * 100 : 100 } }
   const status = (r) => { const a = attain(r); if (!a) return null; return a.pct >= a.need ? ['On pace', 'good'] : a.pct >= a.need * 0.8 ? ['At risk', 'warn'] : ['Behind', 'bad'] }
   const sorters = { revenue: (a, b) => b.revenue - a.revenue, won: (a, b) => b.won - a.won, booked: (a, b) => b.booked - a.booked, showed: (a, b) => b.showed - a.showed, showRate: (a, b) => (b.showRate ?? -1) - (a.showRate ?? -1), winRate: (a, b) => (b.winRate ?? -1) - (a.winRate ?? -1), calls: (a, b) => b.calls - a.calls, speed: (a, b) => (a.speedMin ?? 1e9) - (b.speedMin ?? 1e9), stale: (a, b) => b.stale - a.stale, attain: (a, b) => ((attain(b) || {}).pct ?? -1) - ((attain(a) || {}).pct ?? -1), leads: (a, b) => b.leads - a.leads }
   const board = [...reps].sort(sorters[sortKey] || sorters.revenue)
@@ -16407,19 +16418,18 @@ function SalesHubView({ clientId, authUser, currency, nonce, pipe: pipeProp, onP
   )
   const flagsByRep = []
   for (const f of flags) { let g = flagsByRep.find((x) => x.rep.id === f.rep.id); if (!g) { g = { rep: f.rep, tone: f.tone, items: [] }; flagsByRep.push(g) } g.items.push(f.text); if (f.tone === 'bad') g.tone = 'bad' }
-  const dials = dialDefs.length ? <div className="hub-dials">{dialDefs.map((x) => <HubDial key={x.key} label={x.label} sub={x.sub} actual={x.actual} target={x.target} fmt={x.fmt} kind={x.kind} elapsed={elapsed} monthly={monthly} open={openGauge === x.key} onClick={() => setOpenGauge(openGauge === x.key ? null : x.key)} />)}</div> : null
+  const dials = dialDefs.length ? <div className="hub-dials">{dialDefs.map((x) => <HubDial key={x.key} label={x.label} sub={x.sub} actual={x.actual} target={x.target} fmt={x.fmt} kind={x.kind} elapsed={x.elapsed} monthly={x.pace} open={openGauge === x.key} onClick={() => setOpenGauge(openGauge === x.key ? null : x.key)} />)}</div> : null
   const gaugeDetail = (() => {
     const x = openGauge ? dialDefs.find((y) => y.key === openGauge) : null
     if (!x) return null
-    const g = x.goal; const fmt = x.fmt; const share = monthly && x.kind !== 'pct' && x.kind !== 'lower' ? elapsed : 1
-    const shares = goalShares(g, repIdsAll); const inScope = new Set(Object.keys(shares))
-    const rows = reps.filter((r) => r.id !== 'unassigned' && inScope.has(r.id)).map((r) => { const t = shares[r.id]; const v = repValue(r, g.metric, g.pipelines); return { r, v: v == null ? 0 : v, t, pct: t ? Math.round(((v || 0) / t) * 100) : null } }).sort((a, b) => (x.kind === 'lower' ? a.v - b.v : b.v - a.v))
+    const g = x.goal; const fmt = x.fmt; const share = x.pace && x.kind !== 'pct' && x.kind !== 'lower' ? x.elapsed : 1
+    const rows = (x.byRep ? x.byRep.map((b) => ({ r: { id: b.id, name: b.name }, v: b.actual == null ? 0 : b.actual, t: b.share })) : (() => { const shares = goalShares({ ...g, target: x.target }, repIdsAll); return reps.filter((r) => r.id !== 'unassigned' && (r.id in shares)).map((r) => { const v = repValue(r, g.metric, g.pipelines); return { r, v: v == null ? 0 : v, t: shares[r.id] } }) })()).map((y) => ({ ...y, pct: y.t ? Math.round((y.v / y.t) * 100) : null })).sort((a, b) => (x.kind === 'lower' ? a.v - b.v : b.v - a.v))
     const max = Math.max(1, ...rows.map((y) => Math.max(y.v, y.t || 0)))
     const toneOf = (y) => (!y.t ? '' : x.kind === 'lower' ? (y.v <= y.t ? 'good' : 'bad') : y.v >= y.t * share ? 'good' : y.v >= y.t * share * 0.8 ? 'warn' : 'bad')
-    return <div className="hub-gauge-detail"><div className="rep-lb-head"><h4>{x.label} by rep</h4><span className="cap">{g.split === 'shared' && !(g.reps && g.reps.length === 1) && x.kind !== 'pct' && x.kind !== 'lower' ? 'shared team number, no slices' : monthly ? `${Math.round(elapsed * 100)}% of the month gone` : ''}</span><button type="button" className="btn-ghost sm" onClick={() => setOpenGauge(null)}>Close</button></div>
+    return <div className="hub-gauge-detail"><div className="rep-lb-head"><h4>{x.label} by rep</h4><span className="cap">{x.sub}{g.split === 'shared' && !(g.reps && g.reps.length === 1) && x.kind !== 'pct' && x.kind !== 'lower' ? ' · shared team number, no slices' : x.pace ? ` · ${Math.round(x.elapsed * 100)}% of the window gone` : ''}</span><button type="button" className="btn-ghost sm" onClick={() => setOpenGauge(null)}>Close</button></div>
       {rows.map((y) => <RepBar key={y.r.id} label={y.r.name} value={y.v} max={max} text={y.t ? `${fmt(y.v)} / ${fmt(y.t)} · ${y.pct}%` : fmt(y.v)} tone={toneOf(y)} />)}</div>
   })()
-  const gaugeCard = dialDefs.length ? <div className="card rep-cockpit"><div className="rep-cockpit-head"><h4>{monthly ? 'This month against the team\'s targets' : 'Against the team\'s monthly targets'}</h4><span className="cap">{monthly ? `Day ${day} of ${dim} · ${Math.round(elapsed * 100)}% of the month gone · ` : ''}tap a dial for the split by rep</span></div>{dials}{gaugeDetail}</div>
+  const gaugeCard = dialDefs.length ? <div className="card rep-cockpit"><div className="rep-cockpit-head"><h4>Goals</h4><span className="cap">Each goal in its own window · day {day} of {dim} · tap a dial for the split by rep</span></div>{dials}{gaugeDetail}</div>
     : (authUser && isAdminishFE(authUser.role) ? <div className="card rep-cockpit-empty"><b>No goals yet.</b> <span className="cap">Set them in Settings → this client → Goals and the gauges light up here.</span></div> : null)
   const boardsGrid = boards.length ? <div className="hub-boards">{boards.map((b) => <div className="card hub-board-card" key={b.key}><div className="hub-board-t">{b.title}</div>{b.rows.map((x, i) => <div className="hub-board-row" key={x.r.id}><span>{medal[i]}</span><span className="hub-board-n">{x.r.name}</span><b>{b.fmt(x.v)}{b.unit ? <small> {b.unit}</small> : null}</b></div>)}</div>)}</div> : null
   const sp = boards.length ? boards[spot % boards.length] : null
@@ -16735,7 +16745,7 @@ function saveGoals(clientId, goals) {
   writeLS(GOALS_KEY, SETTINGS.goals); saveSettingsRemote({ goals: { [clientId]: obj } }); bumpSettings()
 }
 // A rep's own monthly targets: their share of every goal that covers them.
-const repTargetsFor = (clientId, userId, allRepIds = null) => repTargetsFromGoals(loadGoals(clientId), userId, allRepIds)
+const repTargetsFor = (clientId, userId, allRepIds = null) => repTargetsFromGoals(loadGoals(clientId), userId, allRepIds, tzTodayStr())
 // Goals: business, pipeline and rep targets in one builder. Metric, target,
 // which pipelines, which reps, and how the number is split among them.
 function GoalsEditor({ clientId, currency }) {
@@ -16754,13 +16764,25 @@ function GoalsEditor({ clientId, currency }) {
   const pipeName = (id) => (meta.pipelines.find((p) => p.id === id) || {}).name || 'Pipeline'
   const fmtT = (g) => { const m = goalMetric(g.metric) || []; return m[2] === 'money' ? fmtCurrency(g.target, currency) : m[2] === 'pct' ? `${g.target}%` : m[2] === 'lower' ? `${g.target} min` : fmtNumber(g.target) }
   const persist = (next) => { setGoals(next); saveGoals(clientId, next); setSaved(true); setTimeout(() => setSaved(false), 2000) }
-  const blank = () => ({ id: newGoalId(), name: '', metric: 'revenue', target: '', period: 'month', pipelines: null, reps: null, split: 'even', weights: {}, shares: {} })
+  const blank = () => ({ id: newGoalId(), name: '', metric: 'revenue', target: '', period: 'month', from: '', to: '', endsOn: '', byMonth: {}, byQuarter: {}, pipelines: null, reps: null, split: 'even', weights: {}, shares: {} })
+  const today = tzTodayStr()
+  // Progress for every goal in its own window, from the same read the hub uses.
+  const [prog, setProg] = useState({})
+  useEffect(() => {
+    if (!goals.length) { setProg({}); return }
+    let dead = false
+    fetch(`/.netlify/functions/windsor?scope=goals&client=${encodeURIComponent(clientId)}${hoursQuery(loadHours(clientId))}`, { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ goals }) })
+      .then((r) => r.json().catch(() => null)).then((j) => { if (!dead && j && Array.isArray(j.goals)) setProg(Object.fromEntries(j.goals.map((x) => [x.id, x]))) }).catch(() => {})
+    return () => { dead = true }
+  }, [clientId, goals]) // eslint-disable-line
+  const periodLabel = (g) => (g.period === 'quarter' ? 'quarterly' : g.period === 'range' ? `${g.from} to ${g.to}` : 'monthly')
   const groups = [['business', 'Business and team goals', 'Every pipeline; all reps or the reps ticked.'], ['pipeline', 'Pipeline goals', 'One or more pipelines; split among the reps attached.'], ['rep', 'Rep goals', 'One rep\'s own target. Beats any share of a wider goal for the same metric.']]
   const summary = (g) => {
     const m = goalMetric(g.metric) || []
     const scope = [g.pipelines ? g.pipelines.map(pipeName).join(', ') : 'All pipelines', g.reps ? g.reps.map(nameOf).join(', ') : 'All reps'].join(' · ')
     const split = (SPLITS.find(([k]) => k === (g.reps && g.reps.length === 1 ? 'each' : g.split)) || [])[1] || ''
-    return `${m[1]} · ${fmtT(g)} monthly · ${scope}${m[2] === 'pct' || m[2] === 'lower' || (g.reps && g.reps.length === 1) ? '' : ` · ${split.toLowerCase()}`}`
+    const plan = Object.keys(g.byMonth || {}).length + Object.keys(g.byQuarter || {}).length
+    return `${m[1]} · ${fmtT(g)} ${periodLabel(g)}${plan ? ` · ${plan} planned` : ''}${g.endsOn ? ` · until ${g.endsOn}` : ''} · ${scope}${m[2] === 'pct' || m[2] === 'lower' || (g.reps && g.reps.length === 1) ? '' : ` · ${split.toLowerCase()}`}`
   }
   const form = edit ? (() => {
     const g = edit; const m = goalMetric(g.metric) || []; const isRate = m[2] === 'pct' || m[2] === 'lower'
@@ -16774,7 +16796,10 @@ function GoalsEditor({ clientId, currency }) {
         <div className="rep-lb-head"><h4>{goals.some((x) => x.id === g.id) ? 'Edit goal' : 'New goal'}</h4><button type="button" className="btn-ghost sm" onClick={() => setEdit(null)}>Cancel</button></div>
         <div className="goal-grid">
           <label className="goal-f">Metric<select value={g.metric} onChange={(e) => { const mm = goalMetric(e.target.value); set({ metric: e.target.value, pipelines: mm && !mm[3] ? null : g.pipelines }) }}>{GOAL_METRICS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></label>
-          <label className="goal-f">Target a month{m[2] === 'pct' ? ' (%)' : m[2] === 'lower' ? ' (minutes)' : m[2] === 'money' ? ` (${currency || 'AUD'})` : ''}<input type="number" min="0" step={m[2] === 'money' ? '100' : '1'} inputMode="decimal" value={g.target} onChange={(e) => set({ target: e.target.value })} /></label>
+          <label className="goal-f">Period<select value={g.period} onChange={(e) => set({ period: e.target.value })}><option value="month">Monthly, recurring</option><option value="quarter">Quarterly, recurring</option><option value="range">Custom dates, once</option></select></label>
+          <label className="goal-f">Target {g.period === 'quarter' ? 'a quarter' : g.period === 'range' ? 'for the dates' : 'a month'}{m[2] === 'pct' ? ' (%)' : m[2] === 'lower' ? ' (minutes)' : m[2] === 'money' ? ` (${currency || 'AUD'})` : ''}<input type="number" min="0" step={m[2] === 'money' ? '100' : '1'} inputMode="decimal" value={g.target} onChange={(e) => set({ target: e.target.value })} /></label>
+          {g.period === 'range' ? <><label className="goal-f">From<input type="date" value={g.from || ''} onChange={(e) => set({ from: e.target.value })} /></label><label className="goal-f">To<input type="date" value={g.to || ''} onChange={(e) => set({ to: e.target.value })} /></label></>
+            : <label className="goal-f">Runs until <span className="cap">(optional)</span><input type="month" value={g.endsOn || ''} onChange={(e) => set({ endsOn: e.target.value })} /></label>}
           <label className="goal-f">Name <span className="cap">(optional)</span><input type="text" value={g.name} placeholder={m[1] ? `${m[1]} goal` : ''} onChange={(e) => set({ name: e.target.value })} /></label>
         </div>
         <div className="goal-f"><span>Pipelines</span>{m[3] === false ? <p className="cap">{m[1]} is per rep, not per pipeline.</p> : <div className="hub-chips">
@@ -16786,6 +16811,8 @@ function GoalsEditor({ clientId, currency }) {
           {users.map((u) => <button type="button" key={u.id} className={`goal-chip ${g.reps && g.reps.includes(u.id) ? 'on' : ''}`} onClick={() => { const n = toggle(g.reps, u.id); set({ reps: n.length ? n : null }) }}>{u.name}</button>)}
           {meta.users === null ? <span className="cap">Loading reps…</span> : null}
         </div></div>
+        {g.period !== 'range' ? <div className="goal-f"><span>Plan {g.period === 'quarter' ? 'quarter by quarter' : 'month by month'} <span className="cap">(optional · blank means the default target)</span></span>
+          <div className="goal-plan">{(g.period === 'quarter' ? quarterKeysFrom(today, 4) : monthKeysFrom(today, 12)).map((k) => { const map = g.period === 'quarter' ? 'byQuarter' : 'byMonth'; const cur = (g[map] || {})[k]; return <label key={k}><span>{g.period === 'quarter' ? k.replace('-', ' ') : new Date(+k.slice(0, 4), +k.slice(5, 7) - 1, 1).toLocaleString('en-AU', { month: 'short', year: '2-digit' })}</span><input type="number" min="0" placeholder={g.target || ''} value={cur ?? ''} onChange={(e) => { const next = { ...(g[map] || {}) }; if (e.target.value === '') delete next[k]; else next[k] = e.target.value; set({ [map]: next }) }} /></label> })}</div></div> : null}
         {!isRate && !(g.reps && g.reps.length === 1) ? <label className="goal-f">How the number is shared<select value={g.split} onChange={(e) => set({ split: e.target.value })}>{SPLITS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></label> : null}
         {!isRate && (g.split === 'weighted' || g.split === 'custom') && !(g.reps && g.reps.length === 1) ? <div className="goal-f"><span>{g.split === 'weighted' ? 'Percentage per rep' : 'Amount per rep'}</span>
           <div className="goal-shares">{ids.map((id) => <label key={id}><span>{nameOf(id)}</span><input type="number" min="0" step={g.split === 'weighted' ? '1' : '1'} value={g.split === 'weighted' ? (g.weights[id] ?? '') : (g.shares[id] ?? '')} onChange={(e) => set(g.split === 'weighted' ? { weights: { ...g.weights, [id]: e.target.value } } : { shares: { ...g.shares, [id]: e.target.value } })} />{g.split === 'weighted' ? <b>= {shares[id] != null ? fmtT({ ...g, target: shares[id] }) : '-'}</b> : null}</label>)}</div>
@@ -16798,12 +16825,12 @@ function GoalsEditor({ clientId, currency }) {
   })() : null
   return (
     <div className="goals">
-      <p className="cap" style={{ marginTop: 0 }}>A goal is a metric, a monthly target, which pipelines and which reps it covers, and how the number is shared among those reps. A goal on every pipeline and every rep is a business goal; on one pipeline, a pipeline goal; on one rep, that rep's own target. Business and pipeline goals become the dials on the Sales Hub; a rep's share shows on their My results cockpit. {!goalsSaved(clientId) && goals.length ? 'The Rep KPIs set earlier are shown here as goals; save any change and they are kept as goals from then on.' : ''}</p>
+      <p className="cap" style={{ marginTop: 0 }}>A goal is a metric, a target for a period (monthly or quarterly recurring, or custom dates once), which pipelines and which reps it covers, and how the number is shared among those reps. A recurring goal can carry a plan with a different number for particular months or quarters, and can stop after a given month. A goal on every pipeline and every rep is a business goal; on one pipeline, a pipeline goal; on one rep, that rep's own target. Business and pipeline goals become the dials on the Sales Hub; a rep's share shows on their My results cockpit. {!goalsSaved(clientId) && goals.length ? 'The Rep KPIs set earlier are shown here as goals; save any change and they are kept as goals from then on.' : ''}</p>
       <div className="act-note-btns" style={{ marginBottom: 12 }}><button type="button" className="btn-primary act-btn" disabled={!!edit} onClick={() => setEdit(blank())}>New goal</button>{saved ? <span className="cap">Saved.</span> : null}</div>
       {form}
       {groups.map(([lvl, title, hint]) => { const list = goals.filter((g) => goalLevel(g) === lvl); return (
         <div className="goal-group" key={lvl}><div className="hub-sub">{title} <span className="cap">· {hint}</span></div>
-          {list.length ? list.map((g) => <div className="goal-row" key={g.id}><div><b>{g.name || (goalMetric(g.metric) || [])[1]}</b><div className="cap">{summary(g)}</div></div><div className="act-note-btns"><button type="button" className="btn-ghost sm" onClick={() => setEdit({ ...g, target: String(g.target) })}>Edit</button><button type="button" className="btn-ghost sm" onClick={() => { if (window.confirm('Delete this goal?')) persist(goals.filter((x) => x.id !== g.id)) }}>Delete</button></div></div>) : <p className="cap">None yet.</p>}
+          {list.length ? list.map((g) => { const p = prog[g.id]; const m = goalMetric(g.metric) || []; const fmtV = (v) => (v == null ? '-' : m[2] === 'money' ? fmtCurrency(v, currency) : m[2] === 'pct' ? `${v}%` : m[2] === 'lower' ? `${v} min` : fmtNumber(v)); return <div className="goal-row" key={g.id}><div><b>{g.name || m[1]}</b><div className="cap">{summary(g)}</div>{p ? <div className="cap goal-prog">{p.window.label}: <b>{fmtV(p.actual)}</b> of {fmtV(p.target)}{p.actual != null && p.target && m[2] !== 'lower' ? ` · ${Math.round((p.actual / p.target) * 100)}%` : ''}{p.window.notYet ? ' · not started' : ''}</div> : null}</div><div className="act-note-btns"><button type="button" className="btn-ghost sm" onClick={() => setEdit({ ...g, target: String(g.target), from: g.from || '', to: g.to || '', endsOn: g.endsOn || '' })}>Edit</button><button type="button" className="btn-ghost sm" onClick={() => { if (window.confirm('Delete this goal?')) persist(goals.filter((x) => x.id !== g.id)) }}>Delete</button></div></div> }) : <p className="cap">None yet.</p>}
         </div>) })}
     </div>
   )

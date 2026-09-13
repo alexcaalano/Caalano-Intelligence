@@ -18,6 +18,26 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.594.0 - 2026-09-13 · `PENDING`
+
+**Recurring, quarterly and custom-dates goals** - a goal now has a
+period: monthly recurring, quarterly recurring, or custom dates run once.
+Recurring goals can stop after a chosen month ("Runs until").
+
+**A plan month by month** - a recurring goal can carry a different number
+for particular months (or quarters), like a budget: a 12-month grid in
+the builder, blank meaning the default target. The month's number is
+what the dials, the cockpit and the rep board measure against.
+
+**Each goal in its own window** - the Sales Hub dials no longer depend on
+the period selector. Every goal is measured by the server in its own
+window, this month, this quarter, or its dates, with a pace mark for how
+far through that window it is and the window named on the dial. A
+quarter goal and a month goal sit side by side. The Goals settings list
+shows the same progress under each goal.
+
+---
+
 ## v3.593.0 - 2026-09-13 · `d04cd5a`
 
 **Goals: business, pipeline and rep targets in one builder** - Settings,

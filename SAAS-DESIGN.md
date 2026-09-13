@@ -1192,3 +1192,11 @@ read until goals are saved once. Phase 2: quarterly and custom periods,
 month history kept once a month ends, copy last month. In the SaaS schema
 this is a `goals` table (workspace, id, metric, target, period, scope
 json, split json) with a `goal_months` table for history.
+
+Update 2026-09-13 (v3.594.0): periods and plans. Goals are monthly or
+quarterly recurring (with an optional end month) or custom dates once;
+byMonth / byQuarter carry a plan that overrides the default for particular
+periods. The `goals` windsor scope measures each goal in its own window
+(one hub build per distinct window, memoised three minutes), so dials are
+independent of the hub's period selector. Still to come: a history table
+of past windows and a copy-last-month action.

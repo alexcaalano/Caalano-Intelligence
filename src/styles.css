@@ -5368,6 +5368,10 @@ button.act-tier.on { border-color: var(--text); }
 .goal-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 9px 0; border-top: 1px solid var(--border); }
 .goal-row:first-of-type { border-top: none; }
 .goal-row b { font-size: 13.5px; }
+.goal-plan { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 6px 10px; }
+.goal-plan label { display: grid; grid-template-columns: 52px 1fr; gap: 6px; align-items: center; font-weight: 600; color: var(--muted); font-size: 12px; }
+.goal-plan input { width: 100%; min-width: 0; padding: 5px 7px; }
+.goal-prog { margin-top: 2px; } .goal-prog b { color: var(--text); font-size: 12.5px; }
 .hub-gauge-detail .rep-lb-head { margin-bottom: 8px; }
 /* Mini leaderboards and the rotating spotlight. */
 .hub-boards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)); gap: 10px; }

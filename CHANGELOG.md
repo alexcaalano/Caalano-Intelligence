@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.593.0 - 2026-09-13 · `PENDING`
+## v3.593.0 - 2026-09-13 · `d04cd5a`
 
 **Goals: business, pipeline and rep targets in one builder** - Settings,
 a client, Goals replaces Rep KPIs. A goal is a metric, a monthly target,

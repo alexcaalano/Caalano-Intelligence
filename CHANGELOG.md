@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.594.0 - 2026-09-13 · `PENDING`
+## v3.594.0 - 2026-09-13 · `f350aa4`
 
 **Recurring, quarterly and custom-dates goals** - a goal now has a
 period: monthly recurring, quarterly recurring, or custom dates run once.

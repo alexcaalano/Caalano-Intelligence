@@ -935,6 +935,14 @@ can be reordered later without rework.
 self-serve (phase 2), because Finr Advisory needs Workspaces, Members,
 Connections and Billing to exist before they can be a tenant.
 
+**CRM web address (added 2026-09-13, v3.607.0).** Every "Open in CRM" link
+uses the organisation's white-label CRM domain (`org_settings.ui.crmUrl`,
+today `SETTINGS.ui.crmUrl`, set under Settings -> CRM connection). Onboarding
+for an agency-kind organisation asks for it on the Connections step, right
+after the CRM install, with GoHighLevel's own address as the default; a
+business organisation that signs in through its agency's domain enters that
+domain the same way. Blank falls back to `app.gohighlevel.com`.
+
 ## 15. Data hygiene for CRM users (raised 2026-09-12)
 
 The intelligence is only as good as what sales reps mark in the CRM: won

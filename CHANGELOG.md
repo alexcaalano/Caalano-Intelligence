@@ -18,6 +18,19 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.607.0 - 2026-09-13 · `PENDING`
+
+**Settings gets a CRM connection section** - beside Clients, for admins:
+whether Caalano Systems is connected and at what level (agency, or a
+single sub-account, which is a warning), the four steps to connect or
+reconnect at agency level from inside GoHighLevel, a Check again button,
+the CRM web address that every Open in CRM link uses (moved here from
+Appearance), and for a Super Admin the live-events webhook address with
+the events to tick. In the SaaS this becomes the Connections card, and
+agency onboarding asks for the CRM web address on that step.
+
+---
+
 ## v3.606.0 - 2026-09-13 · `469d233`
 
 **Open in CRM goes to your white-label address** - Settings, Appearance

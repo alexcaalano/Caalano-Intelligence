@@ -1508,6 +1508,47 @@ export function LogsPanel({ clients }) {
     </div>
   )
 }
+// Settings -> CRM connection: one place for everything about the agency's
+// Caalano Systems link. Connection status and how to (re)connect at agency
+// level, the CRM web address every Open in CRM link uses, and for a Super
+// Admin the live-events webhook. In the SaaS this is the Connections card.
+export function CrmConnectionSection({ isSuper, clients }) {
+  const [st, setSt] = useState({ loading: true })
+  const [hook, setHook] = useState(null)
+  const firstClient = (clients || []).find((c) => c.ghl) || (clients || [])[0]
+  const load = () => { setSt({ loading: true }); fetch('/.netlify/functions/caalano-connect?status=1', { credentials: 'same-origin' }).then((r) => r.json().catch(() => ({}))).then((j) => setSt(j && typeof j === 'object' ? j : { error: 'Could not read the connection.' })).catch(() => setSt({ error: 'Could not read the connection.' })) }
+  useEffect(load, [])
+  const agency = !!(st.connected && String(st.tokenType || '').toLowerCase() === 'company' && st.hasCompanyId)
+  const tone = st.loading ? '' : agency ? 'good' : st.connected ? 'warn' : 'bad'
+  const line = st.loading ? 'Checking…' : st.error ? st.error : !st.hasClientId ? 'The app credentials are not set on the site.' : agency ? `Connected at agency level${st.companyId ? ` (company ${st.companyId})` : ''}: every sub-account can be read.` : st.connected ? `Connected to a single sub-account only (${st.tokenType || 'location'} token). Reconnect at agency level.` : 'Not connected.'
+  return (
+    <>
+      <div className="card">
+        <h3 style={{ marginTop: 0 }}>Caalano Systems connection</h3>
+        <p className={`cap ${tone === 'bad' ? 'act-bad' : ''}`} style={{ marginTop: -4 }}><span className={`hub-livechip ${tone === 'good' ? 'on' : ''}`}>{tone === 'good' ? '●' : '○'}</span> {line}</p>
+        <div className="set-sec-t" style={{ marginTop: 14 }}>How to connect or reconnect at agency level</div>
+        <ol className="cap" style={{ margin: '6px 0 0 18px', padding: 0, lineHeight: 1.6 }}>
+          <li>Sign in here as an admin, in this browser.</li>
+          <li>In GoHighLevel, switch to the agency view, open Marketplace, find <b>Caalano 360 Reporting</b> and install it for all sub-accounts.</li>
+          <li>GoHighLevel brings you back to a Caalano360 page that says "Complete the connection". Click the button.</li>
+          <li>The next page must show the green "Agency (Company) token" line. Come back here and press Check again.</li>
+        </ol>
+        <p className="cap">Reinstalling the app inside the CRM without step 3 does not store the access here. Removing the app from the agency revokes the access until it is connected again.</p>
+        <div className="act-note-btns" style={{ marginTop: 10 }}><button type="button" className="btn-ghost sm" onClick={load}>Check again</button><a className="btn-ghost sm" href="/.netlify/functions/caalano-connect" target="_blank" rel="noreferrer">Open the connect page</a></div>
+      </div>
+      <div className="card"><CrmAddressCard /></div>
+      {isSuper ? <div className="card">
+        <div className="set-sec-t" style={{ marginTop: 0 }}>Live events webhook <span className="cap">· Super Admin only</span></div>
+        <p className="cap">The address the marketplace app posts to the moment a deal, appointment or message changes; it drives the gong and the TV cues. One address serves every connected account.</p>
+        {!hook ? <div className="act-note-btns"><button type="button" className="btn-ghost sm" onClick={() => { setHook({ loading: true }); fetch(`/.netlify/functions/windsor?scope=webhookurl${firstClient ? `&client=${encodeURIComponent(firstClient.id)}` : ''}`, { credentials: 'same-origin' }).then((r) => r.json().catch(() => ({}))).then((j) => setHook(j || {})).catch(() => setHook({ error: 'Could not load.' })) }}>Show the webhook address</button></div>
+          : hook.loading ? <p className="cap">Loading…</p> : hook.error ? <p className="cap act-bad">{hook.error}</p> : !hook.url ? <p className="cap">No site secret is set, so no webhook token can be made.</p> : <>
+            <p className="cap">In the marketplace app's Webhooks page paste this as the webhook URL and tick: {(hook.events || []).join(', ')}. {hook.signed ? 'Deliveries are signature-checked.' : 'Set GHL_WEBHOOK_PUBLIC_KEY on the site to signature-check every delivery as well.'}</p>
+            <div className="act-note-btns"><input className="act-in hub-setup-url" type="text" readOnly value={hook.url} onFocus={(e) => e.target.select()} /><button type="button" className="btn-primary act-btn" onClick={() => { try { navigator.clipboard.writeText(hook.url) } catch { /* select and copy by hand */ } }}>Copy</button></div>
+          </>}
+      </div> : null}
+    </>
+  )
+}
 // The CRM web address, agency-wide: every "Open in CRM" link across the app
 // uses it, so a white-label domain keeps people inside the agency's brand.
 export function CrmAddressCard() {
@@ -1520,7 +1561,7 @@ export function CrmAddressCard() {
   const dirty = clean !== normCrmUrl(cur)
   return (
     <div className="annot-set">
-      <div className="set-sec-t" style={{ marginTop: 18 }}>CRM web address <span className="cap">· agency-wide</span></div>
+      <div className="set-sec-t" style={{ marginTop: 0 }}>CRM web address <span className="cap">· agency-wide</span></div>
       <p className="cap" style={{ marginTop: 4 }}>Where "Open in CRM" links go. Enter the white-label address your team and clients sign in at, such as <code>app.caalanosystems.com.au</code>. Leave it blank to use {CRM_DEFAULT_URL.replace('https://', '')}. Links open as <b>{clean || CRM_DEFAULT_URL}</b>.</p>
       <div className="act-note-btns"><input type="text" inputMode="url" placeholder={CRM_DEFAULT_URL} value={v} onChange={(e) => { setV(e.target.value); setSaved(false) }} style={{ minWidth: 280 }} />
         <button type="button" className="btn-primary act-btn" disabled={!dirty || (!!v.trim() && !clean)} onClick={() => { saveCrmUrl(v); setSaved(true) }}>Save</button>
@@ -1540,7 +1581,7 @@ export function SettingsPage({ config, enabled, setEnabled, restricted = {}, set
   // Sections this person can actually reach - a deep link to one they can't
   // would otherwise render an empty page.
   const allowedSections = [
-    ...(isAdmin ? ['clients', 'fatigue', 'socialkpis', 'dailyperf'] : []),
+    ...(isAdmin ? ['clients', 'crm', 'fatigue', 'socialkpis', 'dailyperf'] : []),
     ...((!authEnabled || isAdmin) ? ['team'] : []),
     ...(authEnabled ? ['account'] : []),
     'appearance',
@@ -1585,6 +1626,7 @@ export function SettingsPage({ config, enabled, setEnabled, restricted = {}, set
     <div className="settings-page">
       <div className="set-sections">
         {isAdmin && <button className={section === 'clients' ? 'on' : ''} onClick={() => setSection('clients')}>Clients</button>}
+        {isAdmin && <button className={section === 'crm' ? 'on' : ''} onClick={() => setSection('crm')}>CRM connection</button>}
         {isAdmin && <button className={section === 'fatigue' ? 'on' : ''} onClick={() => setSection('fatigue')}>Creative fatigue</button>}
         {isAdmin && <button className={section === 'socialkpis' ? 'on' : ''} onClick={() => setSection('socialkpis')}>Organic KPIs</button>}
         {isAdmin && <button className={section === 'dailyperf' ? 'on' : ''} onClick={() => setSection('dailyperf')}>Daily performance</button>}
@@ -1606,10 +1648,10 @@ export function SettingsPage({ config, enabled, setEnabled, restricted = {}, set
             <button className={theme === 'light' ? 'on' : ''} onClick={() => setTheme && setTheme('light')}>☀ Light</button>
             <button className={theme === 'dark' ? 'on' : ''} onClick={() => setTheme && setTheme('dark')}>☾ Dark</button>
           </div>
-          {isAdmin ? <CrmAddressCard /> : null}
           {isSuper ? <AnnotationToggle /> : null}
         </div>
       )}
+      {isAdmin && section === 'crm' && <CrmConnectionSection isSuper={isSuper} clients={liveClients} />}
       {isAdmin && section === 'fatigue' && <FatigueSettings />}
       {isAdmin && section === 'socialkpis' && <SocialKpiSettings clients={config.clients} />}
       {isAdmin && section === 'dailyperf' && <DailyPerfSettings clients={config.clients} />}

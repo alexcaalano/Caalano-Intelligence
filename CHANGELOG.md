@@ -18,6 +18,14 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.584.0 - 2026-09-13 · `PENDING`
+
+**Full screen on the TV** - TV mode has a Full screen button that takes
+the whole display, browser chrome and all. Esc leaves full screen and TV
+mode together; exiting TV mode also drops out of full screen.
+
+---
+
 ## v3.583.0 - 2026-09-13 · `28174c3`
 
 **Top appointment setter** - the Sales Hub now counts the appointments

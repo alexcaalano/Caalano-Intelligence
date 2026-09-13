@@ -10,7 +10,8 @@
     "check": "node scripts/check-toplevel.mjs && node scripts/check-tdz.mjs && node scripts/check-tdz.mjs src/views/sales-hub.jsx && node scripts/check-tdz.mjs src/views/settings.jsx && node scripts/check-tdz.mjs src/views/creative.jsx && node scripts/check-tdz.mjs src/views/monthly-report.jsx && node scripts/check-undef.mjs && node scripts/check-windsor-scope.mjs",
     "test": "node scripts/run-tests.mjs",
     "db:migrate": "node db/migrate.mjs",
-    "db:status": "node db/migrate.mjs --status"
+    "db:status": "node db/migrate.mjs --status",
+    "db:import": "node scripts/migrate-blobs-to-pg.mjs"
   },
   "dependencies": {
     "@netlify/blobs": "^8.2.0",

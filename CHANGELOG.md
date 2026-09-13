@@ -18,6 +18,37 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.614.0 - 2026-09-13
+
+**SaaS phase 0 complete: the Blobs-to-Postgres migration.** (commit PENDING)
+
+- `scripts/migrate-blobs-to-pg.mjs` (`npm run db:import`) copies Caalano Digital
+  out of Netlify Blobs into the SaaS schema: organisation `caalano`, one
+  workspace per client (built-in registry plus Settings -> Clients, deleted
+  ones kept with `deleted_at`), a `windsor` connection per ad account and a
+  `ghl` connection per CRM location (the agency token sealed in when `KEK_V1`
+  is set), a user and membership per account with the same role, `saas_owner`
+  for the earliest superadmin (or `--owner`), invitations, settings sections
+  split per workspace where every key is a client id and kept on the
+  organisation otherwise, terms wording and acceptances, health and clinic
+  snapshots, social snapshots, monthly reports with their published copy,
+  live CRM events, and the audit and reliability logs.
+- Input is a backup-export file or folder (`--from`) or the live stores
+  (`--site` + `--token`). `--rehearse` runs the whole thing on an in-process
+  Postgres with no database at all; `--dry` runs against `DATABASE_URL` and
+  rolls back, so the report is real and nothing is written. Every row upserts
+  or deduplicates, so it can run again after a week of dual-writing.
+- `db/migrations/0003_terms.sql`: `terms_docs` and `terms_acceptances`
+  (with the tenant policies), which the schema had no home for.
+- The built-in client registry moved to `netlify/lib/clients.mjs`
+  (`BUILTIN_CLIENTS`); `windsor.mjs` reads a copy of it as before.
+- Test: `tests/migrate_test.mjs` runs a backup-shaped fixture through the
+  migration on PGlite, checks every table through the tenant transaction
+  under row level security, the dry run writing nothing, and a second run
+  changing only settings versions.
+
+---
+
 ## v3.613.0 - 2026-09-13 · `33d8270`
 
 **SaaS foundations, phase 0, part two (no user-visible change)** - the

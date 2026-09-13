@@ -679,7 +679,12 @@ rotation), and `PROVIDER_ADAPTERS=1` to route every Windsor read through the
 registry in production. Tests: `tests/providers_test.mjs`. On Neon: run the migrations as
 the project's default role, and give the functions their own ordinary role
 (no BYPASSRLS) with select/insert/update/delete on the tables and usage on
-the sequences. Still to do in phase 0: `scripts/migrate-blobs-to-pg.mjs`.
+the sequences. Added in v3.614.0: `scripts/migrate-blobs-to-pg.mjs`
+(`npm run db:import`) with `--rehearse` (in-process Postgres, no database
+needed) and `--dry` (real database, rolled back), `db/migrations/0003_terms.sql`
+for the terms documents and acceptances, and `tests/migrate_test.mjs`.
+Phase 0 is complete; phase 1 starts with a backup, then the Neon
+migrations and grants, then the import.
 
 **Phase 1 - Move Caalano Digital in.**
 A one-off `scripts/migrate-blobs-to-pg.mjs`: creates organisation

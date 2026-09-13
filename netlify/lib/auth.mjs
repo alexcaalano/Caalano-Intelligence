@@ -119,7 +119,7 @@ export const isClientRole = (r) => r === 'account_admin' || r === 'account_user'
 // Analytics, Lost Reasons and the Change Log were silently dropped on write.
 // 'custom' is a client's custom dashboard, offered only when a Super Admin has
 // opened that dashboard to viewers.
-export const ALL_TABS = ['overall', 'custom', 'users', 'meta', 'google', 'analytics', 'cohorts', 'forms', 'location', 'appts', 'calperf', 'clinic', 'timing', 'calls', 'lostreasons', 'optlog', 'actions']
+export const ALL_TABS = ['overall', 'custom', 'users', 'meta', 'google', 'analytics', 'cohorts', 'forms', 'location', 'appts', 'calperf', 'clinic', 'timing', 'calls', 'lostreasons', 'optlog', 'actions', 'saleshub']
 const RANK = { superadmin: 4, admin: 3, user: 2, account_admin: 1, viewer: 1, account_user: 0 }
 export const rankOf = (r) => (RANK[r] != null ? RANK[r] : 0)
 export const isAdminish = (r) => r === 'admin' || r === 'superadmin'

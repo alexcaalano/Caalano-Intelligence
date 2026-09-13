@@ -10,7 +10,7 @@
 // debug call; they live in one place (FIELDS) so they are trivial to correct.
 
 import { createHash } from 'node:crypto'
-import { buildAttribution, sampleAttribution, sampleChannels, buildCrm, auditLocation, isConnected, bookedTrends, crmTrends, attributionCoverage, wonInPeriod, monthlyDeals, oppTimestampFields, socialDMs, tagAudit, locationTimezone, locationProfile, periodBounds, listCalendars, listPipelines, ghlOpportunityRows, ghlPipelineRows, ghlUserRows, listLocations, checkLocationAccess, customClients, deletedClients, sampleForms, buildForms, buildSpeedToLead, speedLeadList, speedScanChunk, finalizeSpeed, buildAppointmentInsights, buildUserPerformance, buildUserPerformanceCombos, buildCreativePerf, buildUpdateExtra, fetchOppNotes, deriveBusinessHours, isQualified, buildCohorts as ghlCohorts, buildCcDrill, buildKeyPeople, buildStageTiming, buildEnquiryTimes, buildUserCalls, buildCallCohort, buildClinic, warmOppSnapshot, resilientFetch, startRequestBudget, buildCalPerf, clinicConfig, dayListBetween, buildActions, applyAction, ghlUserIdForEmail, buildRepCard, contactNotes, contactConversation } from '../lib/ghl.mjs'
+import { buildAttribution, sampleAttribution, sampleChannels, buildCrm, auditLocation, isConnected, bookedTrends, crmTrends, attributionCoverage, wonInPeriod, monthlyDeals, oppTimestampFields, socialDMs, tagAudit, locationTimezone, locationProfile, periodBounds, listCalendars, listPipelines, ghlOpportunityRows, ghlPipelineRows, ghlUserRows, listLocations, checkLocationAccess, customClients, deletedClients, sampleForms, buildForms, buildSpeedToLead, speedLeadList, speedScanChunk, finalizeSpeed, buildAppointmentInsights, buildUserPerformance, buildUserPerformanceCombos, buildCreativePerf, buildUpdateExtra, fetchOppNotes, deriveBusinessHours, isQualified, buildCohorts as ghlCohorts, buildCcDrill, buildKeyPeople, buildStageTiming, buildEnquiryTimes, buildUserCalls, buildCallCohort, buildClinic, warmOppSnapshot, resilientFetch, startRequestBudget, buildCalPerf, clinicConfig, dayListBetween, buildActions, applyAction, ghlUserIdForEmail, buildRepCard, contactNotes, contactConversation, buildSalesHub } from '../lib/ghl.mjs'
 import { DEMO_CLIENT_ID, DEMO_LOCATION, DEMO_META_ACCT, DEMO_GOOGLE_ACCT, DEMO_GA4_PROP, demoWindsor } from '../lib/demo.mjs'
 // Stand-in for the Windsor API key, used only when the request is for the demo
 // client. windsorFetch reads it as "generate, don't fetch".
@@ -2611,7 +2611,7 @@ async function socialMonth(soc, from, to, key) {
 const isAccountUser = (me) => !!(me && me.role === 'account_user')
 // The CRM user a person is linked to for this client (Team -> Link to CRM user), if any.
 const linkedCrmUser = (me, client) => (me && client && me.crmUsers && me.crmUsers[client]) || null
-const VIEWER_TABS_ALL = ['overall', 'users', 'meta', 'google', 'cohorts', 'forms', 'location', 'appts', 'timing', 'calls', 'lostreasons', 'optlog', 'actions']
+const VIEWER_TABS_ALL = ['overall', 'users', 'meta', 'google', 'cohorts', 'forms', 'location', 'appts', 'timing', 'calls', 'lostreasons', 'optlog', 'actions', 'saleshub']
 const VIEWER_REQ_TABS = {
   'channel:blend': ['overall'],
   'channel:meta': ['meta'],
@@ -2632,6 +2632,7 @@ const VIEWER_REQ_TABS = {
   // given exactly this and nothing else.
   'scope:actions': ['actions'],
   'scope:repcard': ['actions'],
+  'scope:saleshub': ['saleshub'],
   'scope:speedscan': ['timing'],
   // The other two sections on the Timing tab. Both were added after this map and
   // never registered in it, and the map denies by default - so a viewer granted
@@ -2785,7 +2786,7 @@ function resultTtlFor(scope, channel, to) {
 const cacheStore = () => getStore({ name: 'caalano-cache', consistency: 'strong' })
 // Scopes safe to cache: client-scoped, GET, identical for every authorised
 // caller. (Agency-wide aggregates are filtered per-caller, so they're excluded.)
-const CACHEABLE_SCOPES = new Set(['repcard', 'spenddaily', 'bizloc', 'users', 'callcohort', 'ccdrill', 'speed', 'appts', 'cohorts', 'forms', 'weekly', 'ovrow', 'health', 'updateextra', 'anomalies', 'social', 'socialtrend', 'stagetiming', 'enqtimes', 'usercalls', 'clinic', 'calperf'])
+const CACHEABLE_SCOPES = new Set(['saleshub', 'repcard', 'spenddaily', 'bizloc', 'users', 'callcohort', 'ccdrill', 'speed', 'appts', 'cohorts', 'forms', 'weekly', 'ovrow', 'health', 'updateextra', 'anomalies', 'social', 'socialtrend', 'stagetiming', 'enqtimes', 'usercalls', 'clinic', 'calperf'])
 const CACHEABLE_CHANNELS = new Set(['meta', 'google', 'attribution', 'blend'])
 // Agency-wide scopes that carry NO client param. They ARE the slowest first-load
 // calls (whole-roster Windsor + GHL fan-out), so caching them is the single
@@ -3391,6 +3392,18 @@ export default async (req) => {
     try { return json({ scope: 'crmusers', client, users: (await ghlUserRows(cc.ghl)).map((u) => ({ id: u.user_id, name: u.user_name })).filter((u) => u.id) }) }
     catch (e) { return json({ scope: 'crmusers', client, users: [], error: String((e && e.message) || e).slice(0, 200) }) }
   }
+  // The Sales Hub: the manager's view of the whole team. Staff and Account
+  // Admins; never an Account User (their view is Deals & Actions).
+  if (scope === 'saleshub') {
+    const cc = clientCfg(client)
+    if (!cc || !cc.ghl) return json({ scope: 'saleshub', client, ghl: false, error: 'This account has no Caalano Systems connection.' })
+    if (isAccountUser(me)) return json({ error: 'The Sales Hub is for managers; your view is Deals & Actions.' }, 403)
+    try {
+      const staleDays = Math.max(3, Math.min(180, Number(url.searchParams.get('stale')) || 7))
+      return json({ scope: 'saleshub', client, ghl: true, period: { from, to, preset }, ...(await buildSalesHub(cc.ghl, { from, to, hours: parseHours(url), staleDays })) })
+    } catch (e) { return json({ scope: 'saleshub', client, ghl: true, error: String((e && e.message) || e).slice(0, 240) }) }
+  }
+
   // One rep's scorecard (Deals & Actions -> My results). A client-side rep
   // always gets their own; staff may name any rep with ?user=. Cached like the
   // Users tab, keyed on the URL, so the rep filter is part of the key.

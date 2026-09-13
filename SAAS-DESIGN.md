@@ -1102,3 +1102,47 @@ actuals per product line (units and revenue by product per rep), and gross
 profit per rep. In the SaaS schema targets live in a `rep_targets` table
 (workspace, crm user or null for the default, month, kpi, value) so a
 month's target is kept once it has passed and history can be charted.
+
+---
+
+## 19. Sales Hub: the manager view (2026-09-13)
+
+Built in v3.573.0 after looking at Plecto, Spinify, boardq.io, HubSpot
+Sales Hub and Pipedrive. A new client tab, "Sales Hub", sits first in the
+Pipeline group next to Deals & Actions. Nothing existing was changed; it
+reads the same data (users, timings, appointments, deals, calls, cash) and
+the Rep KPI targets from section 18.
+
+Who sees it: Super Admin, Agency Admin, Agency User and Account Admin.
+Account Users never do (the server answers 403 for the `saleshub` scope
+and the tab is not offered). Client-role users with a tab allow-list only
+get it when it is on the list.
+
+What is on it, top to bottom:
+
+- Team gauges for the period: revenue first, always; cash collected next
+  when the client has a cash field; then deals won, meetings booked, held,
+  show rate, win rate, calls, minutes and speed to lead. Each gauge is
+  measured against the sum of the reps' monthly targets (defaults plus
+  overrides) and carries a run-rate projection for the month.
+- Coaching flags: reps behind pace, stale deals piling up, appointments
+  not resulted, inbound messages waiting, slow speed to lead. Each flag
+  names the rep so a manager knows who to talk to.
+- Rep board: one row per rep with deals, attainment against target, a
+  status chip (on pace / behind / well behind) and an expandable detail.
+- Leaderboard (same ranking as My results), wins feed for the last 7 days,
+  open deals by pipeline stage, funnel reach per pipeline, appointments by
+  calendar and rep, lost reasons.
+- Celebrations: a chime and confetti when a new win lands while the page is
+  open. Both are on by default and each has a toggle, stored per browser.
+- TV mode: a full-screen dark board for an office screen, refreshing every
+  minute (three minutes otherwise). Esc leaves it.
+
+Decisions taken with Alex on 2026-09-13: contests (Spinify-style
+head-to-heads with a prize) come later; no Slack posting; the forecast
+(weighted pipeline against target) is held as an idea, not built; revenue
+always leads, cash shown when opted in; a client tab for now rather than an
+agency-wide board.
+
+Later: contests; the forecast; agency-wide roll-up across clients; AI call
+grading feeding a "coaching" column on the rep board.

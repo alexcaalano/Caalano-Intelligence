@@ -18,6 +18,27 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.573.0 - 2026-09-13 · `PENDING`
+
+**Sales Hub (manager view)** - a new client tab in the Pipeline group for
+Super Admins, Agency Admins, Agency Users and Account Admins (never
+Account Users). Team gauges for the period lead with revenue, then cash
+collected when the client tracks it, then deals won, meetings booked and
+held, show rate, win rate, calls, minutes and speed to lead, each measured
+against the summed rep targets with a run-rate projection. Coaching flags
+name the reps behind pace, with stale deals, unresulted appointments,
+unanswered inbound messages or slow speed to lead. A rep board with
+attainment and status chips and an expandable detail per rep, the
+leaderboard, a wins feed for the last 7 days, open deals by stage, funnel
+reach per pipeline, appointments by calendar and lost reasons.
+
+**Celebrations and TV mode** - a chime and confetti when a new win lands
+while the hub is open, each with its own toggle remembered per browser.
+TV mode turns the hub into a full-screen dark board that refreshes every
+minute; Esc leaves it.
+
+---
+
 ## v3.572.0 - 2026-09-13 · `55b233b`
 
 **Rep KPIs and the monthly cockpit** - Settings -> a client -> Rep KPIs

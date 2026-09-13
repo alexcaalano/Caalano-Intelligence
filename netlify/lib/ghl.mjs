@@ -3253,7 +3253,7 @@ export async function buildSpeedToLead(locationId, from, to, opts = {}) {
     const status = stt === 'won' ? 'won' : (stt === 'lost' || stt === 'abandoned') ? 'lost' : 'open'
     const statusAt = Date.parse(o.lastStatusChangeAt || o.lastStageChangeAt || o.updatedAt || o.dateUpdated || '')
     seen.add(cid); leads.push({
-      cid, created, leadIn, channel: channelOf(utmOf(o)),
+      cid, created, leadIn, channel: channelOf(utmOf(o)), uid: o.assignedTo || null,
       won: stt === 'won', booked: !!(f && f.bookedInPeriod), shown: !!(f && f.shownByStatus), staffBookedMs: (f && f.staffBookedMs) || null, selfBookedMs: (f && f.selfBookedMs) || null,
       status, value: num(o.monetaryValue), reason: status === 'lost' ? lostReasonOf(o) : null,
       name: contactNameOf(o), email: (o.contact && o.contact.email) || null, phone: (o.contact && o.contact.phone) || null,
@@ -3356,6 +3356,17 @@ export async function buildSpeedToLead(locationId, from, to, opts = {}) {
   }
   const stats = speedStats(rows, hours, tz)
   const afterCount = afterHoursCount(results.filter((r) => !r.skipped).map((r) => r.leadIn), hours, tz)
+  // Per rep (the Sales Hub): the same statistics over each rep's own leads.
+  let byUser = null
+  if (opts.byUser) {
+    byUser = {}
+    const grp = new Map()
+    for (const r of results) { if (r.skipped || !r.uid) continue; (grp.get(r.uid) || grp.set(r.uid, []).get(r.uid)).push(r) }
+    for (const [uid, rs] of grp) {
+      const st = speedStats(rs.filter((r) => r.manual != null), hours, tz)
+      byUser[uid] = { leads: rs.length, measured: st.measured, medianMin: st.medianMin, avgMin: st.avgMin, within5Pct: st.within5Pct, afterCount: afterHoursCount(rs.map((r) => r.leadIn), hours, tz), afterMedianMin: st.after ? st.after.medianMin : null }
+    }
+  }
   // Contact rate: of the sampled leads, how many did we make human contact with -
   // a manual message OR any appointment booked. Appointments split into
   // user-booked (a staff member booked it) vs customer self-booked. A lead can be
@@ -3371,6 +3382,7 @@ export async function buildSpeedToLead(locationId, from, to, opts = {}) {
     outcome, contactRate,
     ...speedShape(stats, afterCount, onlyAuto, noOutbound),
     hours: hours ? { days: hours.days, startMin: hours.startMin, endMin: hours.endMin } : null,
+    ...(byUser ? { byUser } : {}),
     sourceBreakdown: Object.entries(srcCounts).map(([source, v]) => ({ source, count: v.count, kind: v.kind })).sort((a, b) => b.count - a.count),
     ...(opts.debug ? { debug: debugRows } : {}),
   }
@@ -6113,5 +6125,115 @@ export async function buildRepCard(locationId, { userId, from, to, hours = null,
     rank: { leads: rankOf('leads'), booked: rankOf('booked'), winRate: rankOf('winRate'), revenue: rankOf('revenue'), showRate: rankOf('showRate'), closeDays: rankOf('avgCloseDays', false) },
     team: { reps: team.length, leads: perf.leads, avgCloseDays: (() => { const v = team.map((u) => u.avgCloseDays).filter((x) => x != null); return v.length ? Math.round(v.reduce((a, b) => a + b, 0) / v.length) : null })(), avgWinRate: team.length ? Math.round(team.reduce((sum, u) => sum + (u.winRate || 0), 0) / team.length) : null, avgShowRate: (() => { const v = team.map((u) => u.showRate).filter((x) => x != null); return v.length ? Math.round(v.reduce((a, b) => a + b, 0) / v.length) : null })() },
     pipelines: perf.pipelines,
+  }
+}
+
+// --- The Sales Hub: the manager's view of the whole sales team ------------------
+// Everything the Users, Timing, Appointments and Call Reporting tabs know, per
+// rep, in one read: the board, the wins feed, the pipeline by stage, stuck
+// deals, appointments per calendar per rep, lost reasons per rep and speed to
+// lead per rep. Targets are applied on the client from Settings -> Rep KPIs.
+export async function buildSalesHub(locationId, { from, to, hours = null, staleDays = 7 } = {}) {
+  const locTok = await locationTokenOrDemo(locationId)
+  const now = Date.now()
+  const tz = await locationTimezone(locationId)
+  const fromMs = from ? zonedStartMs(from, tz) : null
+  const toMs = to ? zonedEndMs(to, tz) : null
+  const inPeriod = (ms) => Number.isFinite(ms) && (fromMs == null || ms >= fromMs) && (toMs == null || ms <= toMs)
+  const [inp, snap, rawAppts, speed, calls, cashField] = await Promise.all([
+    _userPerfInputs(locationId, from, to),
+    oppSnapshot(locTok, locationId),
+    _rawAppointments(locTok, locationId, (fromMs != null ? fromMs : now - 30 * ACT_DAY) - 7 * ACT_DAY, (toMs != null ? toMs : now) + 90 * ACT_DAY),
+    buildSpeedToLead(locationId, from, to, { sample: 200, budgetMs: 12000, hours, byUser: true }).catch(() => null),
+    buildUserCalls(locationId, from, to, true).catch(() => null),
+    oppCustomFields(locTok, locationId).then(cashFieldOf).catch(() => null),
+  ])
+  const perf = _aggregateUserPerf(inp, {})
+  const userName = {}; for (const u of (inp.userRows || [])) userName[u.id || u._id] = u.name || [u.firstName, u.lastName].filter(Boolean).join(' ') || u.email || 'User'
+  const callsByUser = new Map(((calls && calls.users) || []).map((u) => [u.userId, u]))
+  const spByUser = (speed && speed.byUser) || {}
+  // Appointments in the period, per rep and per calendar.
+  const apByUser = new Map(), calendars = new Map()
+  for (const a of rawAppts) {
+    if (!inPeriod(a.addedMs) || APPT_INVALID_RE.test(a.status) || APPT_CANCEL_RE.test(a.status)) continue
+    const uid = a.userId; if (!uid) continue
+    const b = apByUser.get(uid) || { booked: 0, byStaff: 0, byCustomer: 0, showed: 0, noShow: 0, upcoming: 0, unresulted: 0 }
+    b.booked++; if (a.by === 'self') b.byCustomer++; else b.byStaff++
+    if (apptShown(a.status)) b.showed++; else if (APPT_NOSHOW_RE.test(a.status)) b.noShow++; else if (a.startMs > now) b.upcoming++; else b.unresulted++
+    apByUser.set(uid, b)
+    const c = calendars.get(a.calendarId) || { id: a.calendarId, name: a.calendar, byRep: {} }
+    const cb = c.byRep[uid] || (c.byRep[uid] = { booked: 0, showed: 0, noShow: 0 })
+    cb.booked++; if (apptShown(a.status)) cb.showed++; else if (APPT_NOSHOW_RE.test(a.status)) cb.noShow++
+    calendars.set(a.calendarId, c)
+  }
+  // Now: open, value, stale (by tier), from the live snapshot; wins this week.
+  const nowBy = new Map()
+  const wins = []
+  const idleOf = (o) => { const u = Math.max(Date.parse(o.updatedAt) || 0, Date.parse(o.lastStatusChangeAt) || 0, Date.parse(o.lastStageChangeAt) || 0) || Date.parse(o.createdAt); return Number.isFinite(u) ? Math.max(0, Math.round((now - u) / ACT_DAY)) : null }
+  const stageOf = {}; const pipeOf = {}
+  for (const p of (inp.pipelines || [])) for (const st of (p.stages || [])) { stageOf[st.id] = st.name; pipeOf[st.id] = p.name }
+  const stageOpen = new Map()
+  for (const o of (snap.opps || [])) {
+    const st = String(o.status || '').toLowerCase()
+    const uid = o.assignedTo || null
+    if (st === 'open') {
+      const n = (uid && nowBy.get(uid)) || { open: 0, openValue: 0, stale: 0, t7: 0, t14: 0, t21: 0, t30: 0, oldest: 0 }
+      n.open++; n.openValue += num(o.monetaryValue)
+      const idle = idleOf(o)
+      if (idle != null && idle >= staleDays) { n.stale++; if (idle >= 30) n.t30++; else if (idle >= 21) n.t21++; else if (idle >= 14) n.t14++; else n.t7++; if (idle > n.oldest) n.oldest = idle }
+      if (uid) nowBy.set(uid, n)
+      const k = o.pipelineStageId || 'none'
+      const so = stageOpen.get(k) || { stageId: k, stage: stageOf[k] || 'No stage', pipeline: pipeOf[k] || '', open: 0, value: 0, stale: 0 }
+      so.open++; so.value += num(o.monetaryValue); if (idle != null && idle >= staleDays) so.stale++
+      stageOpen.set(k, so)
+    } else if (st === 'won') {
+      const w = Date.parse(o.lastStatusChangeAt || o.lastStageChangeAt || o.updatedAt || '')
+      if (Number.isFinite(w) && now - w <= 7 * ACT_DAY) wins.push({ id: o.id, name: (o.contact && (o.contact.name || [o.contact.firstName, o.contact.lastName].filter(Boolean).join(' '))) || o.name || 'Deal', value: num(o.monetaryValue), cash: cashField ? num(oppCashValue(o, cashField)) : null, userId: uid, user: userName[uid] || null, at: w, pipeline: pipeOf[o.pipelineStageId] || null })
+    }
+  }
+  wins.sort((a, b) => b.at - a.at)
+  const cashOf = (uid) => {
+    if (!cashField) return null
+    let sum = 0
+    for (const o of (snap.opps || [])) { if (o.assignedTo !== uid || String(o.status || '').toLowerCase() !== 'won') continue; const w = Date.parse(o.lastStatusChangeAt || o.lastStageChangeAt || o.updatedAt || ''); if (inPeriod(w)) sum += num(oppCashValue(o, cashField)) }
+    return Math.round(sum)
+  }
+  const reps = (perf.users || []).filter((u) => u.leads > 0 || (nowBy.get(u.id) || {}).open > 0).map((u) => {
+    const ap = apByUser.get(u.id) || { booked: 0, byStaff: 0, byCustomer: 0, showed: 0, noShow: 0, upcoming: 0, unresulted: 0 }
+    const c = callsByUser.get(u.id)
+    const sp = spByUser[u.id] || null
+    const n = nowBy.get(u.id) || { open: 0, openValue: 0, stale: 0, t7: 0, t14: 0, t21: 0, t30: 0, oldest: 0 }
+    return {
+      id: u.id, name: u.name, leads: u.leads, qualified: u.qualified, won: u.won, lost: u.lost, revenue: u.revenue, winRate: u.winRate, avgDeal: u.avgDeal, avgCloseDays: u.avgCloseDays,
+      booked: ap.booked, byStaff: ap.byStaff, byCustomer: ap.byCustomer, showed: ap.showed, noShow: ap.noShow, upcoming: ap.upcoming, unresulted: ap.unresulted,
+      showRate: (ap.showed + ap.noShow) ? Math.round((ap.showed / (ap.showed + ap.noShow)) * 100) : null,
+      calls: c ? (c.outbound || 0) : 0, connected: c ? (c.outboundConnected || 0) : 0, minutes: c ? Math.round(((c.outboundSec || 0) + (c.inboundSec || 0)) / 60) : 0,
+      speedMin: sp ? sp.medianMin : null, speedMeasured: sp ? sp.measured : 0, speedAfter: sp ? sp.afterCount : 0, within5Pct: sp ? sp.within5Pct : null,
+      cash: cashOf(u.id), open: n.open, openValue: Math.round(n.openValue), stale: n.stale, staleTiers: { t7: n.t7, t14: n.t14, t21: n.t21, t30: n.t30 }, oldestIdle: n.oldest,
+      stages: u.stages, lostReasons: u.lostReasons, byPipeline: u.byPipeline,
+    }
+  }).sort((a, b) => (b.revenue - a.revenue) || (b.won - a.won) || (b.booked - a.booked))
+  const sum = (k) => reps.reduce((a, r) => a + (r[k] || 0), 0)
+  const teamShowBase = sum('showed') + sum('noShow')
+  const spMed = reps.map((r) => r.speedMin).filter((v) => v != null).sort((a, b) => a - b)
+  const team = {
+    reps: reps.length, leads: sum('leads'), booked: sum('booked'), byStaff: sum('byStaff'), byCustomer: sum('byCustomer'), showed: sum('showed'), noShow: sum('noShow'),
+    showRate: teamShowBase ? Math.round((sum('showed') / teamShowBase) * 100) : null, won: sum('won'), lost: sum('lost'), revenue: sum('revenue'),
+    winRate: sum('leads') ? Math.round((sum('won') / sum('leads')) * 100) : null, cash: cashField ? sum('cash') : null, calls: sum('calls'), minutes: sum('minutes'),
+    open: sum('open'), openValue: sum('openValue'), stale: sum('stale'), speedMin: speed && speed.medianMin != null ? speed.medianMin : (spMed.length ? spMed[Math.floor(spMed.length / 2)] : null),
+    speedAfter: speed && speed.after ? speed.after.count : null, speedFull: !!(speed && speed.full),
+  }
+  // Stage reach across the team (from the per-rep stage counts).
+  const reachMap = {}
+  for (const r of reps) for (const [k, v] of Object.entries(r.stages || {})) reachMap[k] = (reachMap[k] || 0) + v
+  const pipelines = (perf.pipelines || []).map((p) => ({ id: p.id, name: p.name, stages: (p.stages || []).map((name) => ({ name, reached: reachMap[name] || 0 })) }))
+  const lostByReason = {}
+  for (const r of reps) for (const lr of (r.lostReasons || [])) lostByReason[lr.reason] = (lostByReason[lr.reason] || 0) + lr.count
+  return {
+    connected: true, tz, period: { from, to }, cashField: cashField || null, staleDays,
+    team, reps, wins: wins.slice(0, 40),
+    pipelines, stageOpen: [...stageOpen.values()].map((x) => ({ ...x, value: Math.round(x.value) })).sort((a, b) => b.open - a.open),
+    calendars: [...calendars.values()], lostByReason: Object.entries(lostByReason).map(([reason, count]) => ({ reason, count })).sort((a, b) => b.count - a.count),
+    speedHours: speed && speed.hours ? speed.hours : null,
   }
 }

@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.572.0'
+const APP_VERSION = '3.573.0'
 // The business clock. Every server window is cut on the client's local day
 // (Caalano Systems location timezone), so any day the app derives on its own -
 // preset ranges, "today", CSV dates - must use the same clock rather than the
@@ -8379,7 +8379,7 @@ function ExecReach({ reach, multi, kef, cc, pcc, clientId, money, spend, chanLab
 const V2_TAB_GROUPS = [
   ['Overview', ['overall', 'custom', 'clinic']],
   ['Acquisition', ['meta', 'google', 'analytics', 'optlog']],
-  ['Pipeline', ['actions', 'cohorts', 'users', 'calls', 'appts', 'calperf', 'timing', 'lostreasons']],
+  ['Pipeline', ['saleshub', 'actions', 'cohorts', 'users', 'calls', 'appts', 'calperf', 'timing', 'lostreasons']],
   ['Audience', ['forms', 'location']],
 ]
 function v2TabGroups(tabs) {
@@ -15993,6 +15993,231 @@ function OptimisationLog({ clientId, sheet, embedded = false }) {
     </div>
   )
 }
+// ---- Sales Hub: the manager's view --------------------------------------------
+// One tab for whoever runs the team: the month against the summed rep targets,
+// the rep board with attainment and a status chip, the leaderboard and the wins
+// feed (with a celebration when a new one lands), the pipeline by stage and who
+// is sitting on stuck deals, appointments per calendar per rep, speed to lead
+// per rep, lost reasons per rep, and coaching flags that say who needs help and
+// on what. TV mode is the same data full screen for a wall. Reads one scope,
+// built from the same code as Users, Timing, Appointments and Call Reporting.
+const HUB_PERIODS = [['this_month', 'This month'], ['last_month', 'Last month'], ['last_7d', 'Last 7 days'], ['last_30d', 'Last 30 days'], ['last_90d', 'Last 90 days']]
+const HUB_PREFS_KEY = 'caalano_hub_prefs'
+function hubPrefs() { try { return { confetti: true, sound: true, ...(JSON.parse(localStorage.getItem(HUB_PREFS_KEY) || '{}')) } } catch { return { confetti: true, sound: true } } }
+function saveHubPrefs(p) { try { localStorage.setItem(HUB_PREFS_KEY, JSON.stringify(p)) } catch { /* private mode */ } }
+// A short rising chime from the browser's own synth: no file, no download.
+function hubChime() {
+  try {
+    const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return
+    const ac = new AC(); const t0 = ac.currentTime
+    ;[[523, 0], [659, 0.12], [784, 0.24], [1047, 0.36]].forEach(([f, dt]) => {
+      const o = ac.createOscillator(), g = ac.createGain(); o.type = 'sine'; o.frequency.value = f
+      g.gain.setValueAtTime(0.0001, t0 + dt); g.gain.exponentialRampToValueAtTime(0.25, t0 + dt + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t0 + dt + 0.5)
+      o.connect(g); g.connect(ac.destination); o.start(t0 + dt); o.stop(t0 + dt + 0.55)
+    })
+    setTimeout(() => { try { ac.close() } catch { /* ignore */ } }, 1500)
+  } catch { /* no audio */ }
+}
+// Confetti on a canvas over the page, two seconds, then gone.
+function hubConfetti() {
+  try {
+    const c = document.createElement('canvas'); c.className = 'hub-confetti'; c.width = window.innerWidth; c.height = window.innerHeight; document.body.appendChild(c)
+    const ctx = c.getContext('2d'); const cols = ['#6c5ce7', '#17b26a', '#f0435b', '#d4a017', '#1f4fbf', '#ff8c42']
+    const bits = Array.from({ length: 160 }, () => ({ x: Math.random() * c.width, y: -20 - Math.random() * c.height * 0.4, w: 6 + Math.random() * 6, h: 8 + Math.random() * 8, vx: (Math.random() - 0.5) * 3, vy: 2 + Math.random() * 4, r: Math.random() * Math.PI, vr: (Math.random() - 0.5) * 0.3, col: cols[Math.floor(Math.random() * cols.length)] }))
+    const t0 = performance.now()
+    const tick = (t) => {
+      ctx.clearRect(0, 0, c.width, c.height)
+      for (const b of bits) { b.x += b.vx; b.y += b.vy; b.r += b.vr; ctx.save(); ctx.translate(b.x, b.y); ctx.rotate(b.r); ctx.fillStyle = b.col; ctx.fillRect(-b.w / 2, -b.h / 2, b.w, b.h); ctx.restore() }
+      if (t - t0 < 2600) requestAnimationFrame(tick); else c.remove()
+    }
+    requestAnimationFrame(tick)
+  } catch { /* ignore */ }
+}
+const hubPct = (v) => (v == null ? '-' : `${v}%`)
+function HubStat({ label, value, sub, tone, big }) {
+  return <div className={`hub-stat ${tone || ''} ${big ? 'big' : ''}`}><div className="hub-stat-l">{label}</div><div className="hub-stat-v">{value}</div>{sub ? <div className="hub-stat-s">{sub}</div> : null}</div>
+}
+// Attainment against the summed rep targets for the month.
+function hubTargetsSum(clientId, reps) {
+  const k = loadRepKpis(clientId)
+  const out = {}
+  for (const r of reps) { const t = { ...k.default, ...((k.byUser || {})[r.id] || {}) }; for (const [key, v] of Object.entries(t)) if (Number(v) > 0 && !['showRate', 'winRate', 'speedMin'].includes(key)) out[key] = (out[key] || 0) + Number(v) }
+  return out
+}
+function SalesHubView({ clientId, authUser, currency, nonce }) {
+  const [period, setPeriod] = useState('this_month')
+  const [stale, setStale] = useState(7)
+  const [tick, setTick] = useState(0)
+  const [st, setSt] = useState({ status: 'loading', data: null })
+  const [tv, setTv] = useState(false)
+  const [prefs, setPrefs] = useState(hubPrefs)
+  const [sortKey, setSortKey] = useState('revenue')
+  const [openRep, setOpenRep] = useState(null)
+  const seenWins = useRef(null)
+  const [celebrate, setCelebrate] = useState(null)
+  useSettingsSync()
+  useEffect(() => {
+    let dead = false
+    setSt((s) => ({ status: s.data ? 'refreshing' : 'loading', data: s.data }))
+    const r = presetRange(period)
+    fetch(`/.netlify/functions/windsor?scope=saleshub&client=${encodeURIComponent(clientId)}&${rangeQuery(r)}&preset=${period}&stale=${stale}${hoursQuery(loadHours(clientId))}${tick || nonce ? `&_r=${tick}.${nonce || 0}` : ''}`, { credentials: 'same-origin' })
+      .then((x) => x.json().catch(() => ({ error: `server ${x.status}` })))
+      .then((j) => {
+        if (dead) return
+        setSt({ status: j && j.error && !j.team ? 'err' : 'ok', data: j })
+        // A win that was not on the last read is worth a party.
+        const ids = new Set(((j && j.wins) || []).map((w) => w.id))
+        if (seenWins.current) { const fresh = ((j && j.wins) || []).filter((w) => !seenWins.current.has(w.id)); if (fresh.length) { setCelebrate(fresh[0]); if (prefs.confetti) hubConfetti(); if (prefs.sound) hubChime(); setTimeout(() => setCelebrate(null), 9000) } }
+        seenWins.current = ids
+      })
+      .catch((e) => { if (!dead) setSt({ status: 'err', data: { error: String((e && e.message) || e) } }) })
+    return () => { dead = true }
+  }, [clientId, period, stale, tick, nonce]) // eslint-disable-line
+  useEffect(() => { const iv = setInterval(() => { if (document.visibilityState === 'visible') setTick((t) => t + 1) }, tv ? 60000 : 180000); return () => clearInterval(iv) }, [tv])
+  useEffect(() => { if (!tv) return; const onKey = (e) => { if (e.key === 'Escape') setTv(false) }; window.addEventListener('keydown', onKey); document.body.classList.add('hub-tv-on'); return () => { window.removeEventListener('keydown', onKey); document.body.classList.remove('hub-tv-on') } }, [tv])
+  const d = st.data || {}
+  const team = d.team || {}
+  const reps = d.reps || []
+  const money = (v) => fmtCurrency(v || 0, currency)
+  const cashOn = !!(d.cashField && loadCashOn(clientId))
+  const targets = useMemo(() => hubTargetsSum(clientId, reps), [clientId, reps, SETTINGS.repkpis]) // eslint-disable-line
+  const now = new Date(); const dim = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate(); const day = now.getDate(); const elapsed = Math.min(1, Math.max(0.03, day / dim))
+  const monthly = period === 'this_month'
+  const gauge = (key, label, actual, fmt) => {
+    const t = targets[key]; if (!t) return null
+    const ratio = Math.min(1, (actual || 0) / t); const need = t * (monthly ? elapsed : 1)
+    const tone = (actual || 0) >= need ? 'good' : (actual || 0) >= need * 0.8 ? 'warn' : 'bad'
+    const proj = monthly && elapsed > 0.1 ? Math.round((actual || 0) / elapsed) : null
+    return <div className={`rep-kpi ${tone}`} key={key}><div className="rep-kpi-l"><span>{label}</span><b>{fmt(actual || 0)}<small> / {fmt(t)}</small></b></div><div className="rep-kpi-t"><div className="rep-kpi-f" style={{ width: `${Math.round(ratio * 100)}%` }} />{monthly ? <div className="rep-kpi-pace" style={{ left: `${Math.round(elapsed * 100)}%` }} /> : null}</div><div className="cap">{(actual || 0) >= t ? 'target hit' : `${fmt(t - (actual || 0))} to go${proj != null ? ` · on this run rate the month ends at ${fmt(proj)}` : ''}`}</div></div>
+  }
+  const gauges = [gauge('revenue', 'Revenue', team.revenue, money), cashOn ? gauge('cash', 'Cash collected', team.cash, money) : null, gauge('won', 'Deals closed', team.won, fmtNumber), gauge('booked', 'Meetings booked', team.booked, fmtNumber), gauge('held', 'Meetings held', team.showed, fmtNumber), gauge('calls', 'Calls made', team.calls, fmtNumber), gauge('leads', 'Leads', team.leads, fmtNumber)].filter(Boolean)
+  // Attainment per rep: revenue target first, then deals, then bookings.
+  const attain = (r) => { const k = loadRepKpis(clientId); const t = { ...k.default, ...((k.byUser || {})[r.id] || {}) }; const key = t.revenue > 0 ? 'revenue' : t.won > 0 ? 'won' : t.booked > 0 ? 'booked' : null; if (!key) return null; const a = key === 'revenue' ? r.revenue : key === 'won' ? r.won : r.booked; return { key, pct: Math.round(((a || 0) / t[key]) * 100), need: monthly ? elapsed * 100 : 100 } }
+  const status = (r) => { const a = attain(r); if (!a) return null; return a.pct >= a.need ? ['On pace', 'good'] : a.pct >= a.need * 0.8 ? ['At risk', 'warn'] : ['Behind', 'bad'] }
+  const sorters = { revenue: (a, b) => b.revenue - a.revenue, won: (a, b) => b.won - a.won, booked: (a, b) => b.booked - a.booked, showed: (a, b) => b.showed - a.showed, showRate: (a, b) => (b.showRate ?? -1) - (a.showRate ?? -1), winRate: (a, b) => (b.winRate ?? -1) - (a.winRate ?? -1), calls: (a, b) => b.calls - a.calls, speed: (a, b) => (a.speedMin ?? 1e9) - (b.speedMin ?? 1e9), stale: (a, b) => b.stale - a.stale, attain: (a, b) => ((attain(b) || {}).pct ?? -1) - ((attain(a) || {}).pct ?? -1), leads: (a, b) => b.leads - a.leads }
+  const board = [...reps].sort(sorters[sortKey] || sorters.revenue)
+  // Coaching flags: specific, and each one points at a rep.
+  const flags = useMemo(() => {
+    const out = []
+    const teamSpeed = team.speedMin
+    for (const r of reps) {
+      if (r.speedMin != null && teamSpeed != null && r.speedMeasured >= 3 && r.speedMin > Math.max(teamSpeed * 2, teamSpeed + 30)) out.push({ rep: r, tone: 'bad', text: `Speed to lead ${repMin(r.speedMin)} against the team's ${repMin(teamSpeed)}` })
+      if (r.staleTiers && r.staleTiers.t30 >= 3) out.push({ rep: r, tone: 'bad', text: `${r.staleTiers.t30} deals untouched for 30+ days` })
+      else if (r.stale >= 8) out.push({ rep: r, tone: 'warn', text: `${r.stale} stale deals` })
+      if (r.showRate != null && team.showRate != null && (r.showed + r.noShow) >= 5 && r.showRate < team.showRate - 15) out.push({ rep: r, tone: 'warn', text: `Show rate ${r.showRate}% against the team's ${team.showRate}%` })
+      if (r.unresulted >= 3) out.push({ rep: r, tone: 'warn', text: `${r.unresulted} appointments past their time with no result` })
+      if (r.leads >= 8 && r.booked === 0 && r.byStaff === 0) out.push({ rep: r, tone: 'warn', text: `${r.leads} leads and no appointment booked` })
+      const s = status(r); if (s && s[1] === 'bad') out.push({ rep: r, tone: 'bad', text: `Behind pace on ${(attain(r) || {}).key === 'revenue' ? 'revenue' : (attain(r) || {}).key === 'won' ? 'deals' : 'bookings'}: ${(attain(r) || {}).pct}% of target with ${Math.round(elapsed * 100)}% of the month gone` })
+    }
+    return out.sort((a, b) => (a.tone === 'bad' ? 0 : 1) - (b.tone === 'bad' ? 0 : 1)).slice(0, 12)
+  }, [reps, team]) // eslint-disable-line
+  const stageMax = Math.max(1, ...(d.stageOpen || []).map((s) => s.open))
+  const funnel = (d.pipelines || []).find((p) => p.stages.some((s) => s.reached))
+  const head = (
+    <div className="act-bar">
+      <div className="act-filters">
+        <label className="act-sel"><select value={period} onChange={(e) => setPeriod(e.target.value)}>{HUB_PERIODS.map(([id, l]) => <option key={id} value={id}>{l}</option>)}</select></label>
+        <label className="act-sel"><select value={stale} onChange={(e) => setStale(Number(e.target.value))}><option value={7}>Stale after 7 days</option><option value={14}>Stale after 14 days</option><option value={30}>Stale after 30 days</option></select></label>
+        <button type="button" className="btn-ghost sm" disabled={st.status === 'refreshing'} onClick={() => setTick((t) => t + 1)}>{st.status === 'refreshing' ? 'Refreshing…' : 'Refresh'}</button>
+        <button type="button" className="btn-primary act-btn" onClick={() => setTv(true)}>📺 TV mode</button>
+      </div>
+    </div>
+  )
+  if (st.status === 'loading') return <div className="act-wrap">{head}<div className="card"><Spinner label="Adding up the team…" /></div></div>
+  if (st.status === 'err') return <div className="act-wrap">{head}<div className="card"><p className="cap act-bad" style={{ margin: 0 }}>{d.error || 'Could not load.'}</p></div></div>
+  if (d.ghl === false) return <div className="card"><p className="cap">{d.error || 'This account has no Caalano Systems connection.'}</p></div>
+  const lbTop = [...reps].sort((a, b) => b.revenue - a.revenue || b.won - a.won).slice(0, 3)
+  const medal = ['🥇', '🥈', '🥉']
+  const winsFeed = (limit) => (d.wins || []).slice(0, limit).map((w) => <div className="hub-win" key={w.id}><span className="hub-win-m">🎉</span><div><b>{w.user || 'Someone'}</b> closed <b>{w.name}</b>{w.value ? ` for ${money(w.value)}` : ''}{cashOn && w.cash ? ` · ${money(w.cash)} collected` : ''}</div><span className="cap">{actHrs(Math.round((Date.now() - w.at) / 3600000))}</span></div>)
+  const leaderboard = (
+    <div className="card rep-card hub-lb">
+      <div className="rep-lb-head"><h4>Leaderboard</h4><span className="cap">by revenue{(HUB_PERIODS.find(([id]) => id === period) || [])[1] ? ` · ${(HUB_PERIODS.find(([id]) => id === period) || [])[1].toLowerCase()}` : ''}</span></div>
+      <div className="rep-podium">{lbTop.map((r, i) => <div key={r.id} className={`rep-pod p${i + 1}`}><div className="rep-pod-m">{medal[i]}</div><b>{r.name}</b><div className="rep-pod-v">{money(r.revenue)}</div><div className="cap">{r.won} won · {r.booked} booked</div></div>)}</div>
+      <div className="rep-lb-rows">{[...reps].sort((a, b) => b.revenue - a.revenue || b.won - a.won).map((r, i) => <div key={r.id} className="rep-lb-row hub-lb-row"><span>{i + 1}</span><span className="rep-lb-name">{r.name}</span><span>{money(r.revenue)}</span><span>{r.won} won</span><span>{r.booked} booked</span><span>{r.showed} held</span></div>)}</div>
+    </div>
+  )
+  if (tv) {
+    return (
+      <div className="hub-tv">
+        <div className="hub-tv-head"><div><b>{(d.period && d.period.from) || ''}</b> <span>Sales Hub · {(HUB_PERIODS.find(([id]) => id === period) || [])[1]}{monthly ? ` · day ${day} of ${dim}` : ''}</span></div>
+          <div className="hub-tv-ctl">
+            <label className="alloc-check"><input type="checkbox" checked={prefs.confetti} onChange={(e) => { const p = { ...prefs, confetti: e.target.checked }; setPrefs(p); saveHubPrefs(p) }} /> Confetti</label>
+            <label className="alloc-check"><input type="checkbox" checked={prefs.sound} onChange={(e) => { const p = { ...prefs, sound: e.target.checked }; setPrefs(p); saveHubPrefs(p) }} /> Sound</label>
+            <button type="button" className="btn-ghost sm" onClick={() => { if (prefs.confetti) hubConfetti(); if (prefs.sound) hubChime() }}>Test</button>
+            <button type="button" className="btn-ghost sm" onClick={() => setTv(false)}>Exit (Esc)</button>
+          </div></div>
+        {celebrate ? <div className="hub-celebrate">🎉 <b>{celebrate.user || 'Someone'}</b> just closed <b>{celebrate.name}</b>{celebrate.value ? ` for ${money(celebrate.value)}` : ''}!</div> : null}
+        <div className="hub-tv-grid">
+          <div className="hub-tv-col">
+            <div className="hub-stats">
+              <HubStat label="Revenue" value={money(team.revenue)} sub={targets.revenue ? `of ${money(targets.revenue)} target` : null} tone={targets.revenue ? ((team.revenue || 0) >= targets.revenue * (monthly ? elapsed : 1) ? 'good' : 'warn') : ''} big />
+              {cashOn ? <HubStat label="Cash collected" value={money(team.cash)} big /> : null}
+              <HubStat label="Deals closed" value={fmtNumber(team.won || 0)} sub={`${hubPct(team.winRate)} win rate`} big />
+              <HubStat label="Meetings booked" value={fmtNumber(team.booked || 0)} sub={`${fmtNumber(team.showed || 0)} held · ${hubPct(team.showRate)} show rate`} big />
+              <HubStat label="Speed to lead" value={team.speedMin != null ? repMin(team.speedMin) : '-'} sub="team median, in hours" big />
+            </div>
+            {gauges.length ? <div className="card rep-cockpit"><div className="rep-cockpit-grid">{gauges}</div></div> : null}
+          </div>
+          <div className="hub-tv-col">{leaderboard}<div className="card rep-card"><h4>Latest wins</h4>{(d.wins || []).length ? winsFeed(8) : <p className="cap">No wins in the last 7 days yet.</p>}</div></div>
+        </div>
+      </div>
+    )
+  }
+  return (
+    <div className="act-wrap hub-wrap">
+      {head}
+      {celebrate ? <div className="hub-celebrate">🎉 <b>{celebrate.user || 'Someone'}</b> just closed <b>{celebrate.name}</b>{celebrate.value ? ` for ${money(celebrate.value)}` : ''}!</div> : null}
+      <div className="hub-stats">
+        <HubStat label="Revenue" value={money(team.revenue)} sub={targets.revenue ? `of ${money(targets.revenue)} team target` : `${fmtNumber(team.won || 0)} deals`} tone={targets.revenue ? ((team.revenue || 0) >= targets.revenue * (monthly ? elapsed : 1) ? 'good' : 'warn') : ''} big />
+        {cashOn ? <HubStat label="Cash collected" value={money(team.cash)} sub={team.revenue ? `${Math.round(((team.cash || 0) / team.revenue) * 100)}% of won value` : null} /> : null}
+        <HubStat label="Deals closed" value={fmtNumber(team.won || 0)} sub={`${hubPct(team.winRate)} win rate · ${fmtNumber(team.lost || 0)} lost`} />
+        <HubStat label="Leads" value={fmtNumber(team.leads || 0)} sub={`${team.reps} reps`} />
+        <HubStat label="Booked" value={fmtNumber(team.booked || 0)} sub={`${fmtNumber(team.byStaff || 0)} by reps · ${fmtNumber(team.byCustomer || 0)} by customers`} />
+        <HubStat label="Held" value={fmtNumber(team.showed || 0)} sub={`${hubPct(team.showRate)} show rate · ${fmtNumber(team.noShow || 0)} no-shows`} tone={team.showRate != null ? (team.showRate >= 80 ? 'good' : team.showRate >= 65 ? '' : 'warn') : ''} />
+        <HubStat label="Speed to lead" value={team.speedMin != null ? repMin(team.speedMin) : '-'} sub={`team median, in hours${team.speedAfter ? ` · ${team.speedAfter} after hours` : ''}`} tone={team.speedMin != null ? (team.speedMin <= 15 ? 'good' : team.speedMin <= 60 ? '' : 'warn') : ''} />
+        <HubStat label="Calls" value={fmtNumber(team.calls || 0)} sub={`${fmtNumber(team.minutes || 0)} minutes`} />
+        <HubStat label="Open pipeline" value={money(team.openValue)} sub={`${fmtNumber(team.open || 0)} deals · ${fmtNumber(team.stale || 0)} stale`} tone={team.open && team.stale / team.open > 0.4 ? 'warn' : ''} />
+      </div>
+      {gauges.length ? <div className="card rep-cockpit"><div className="rep-cockpit-head"><h4>{monthly ? `This month against the team's targets` : 'Against the team\'s monthly targets'}</h4>{monthly ? <span className="cap">Day {day} of {dim} · {Math.round(elapsed * 100)}% of the month gone</span> : null}</div><div className="rep-cockpit-grid">{gauges}</div></div>
+        : (authUser && isAdminishFE(authUser.role) ? <div className="card rep-cockpit-empty"><b>No rep targets yet.</b> <span className="cap">Set them in Settings → this client → Rep KPIs and the month gauges appear here.</span></div> : null)}
+      {flags.length ? <div className="card hub-flags"><h4>Coaching flags</h4>{flags.map((f, i) => <button type="button" className={`hub-flag ${f.tone}`} key={i} onClick={() => setOpenRep(openRep === f.rep.id ? null : f.rep.id)}><b>{f.rep.name}</b><span>{f.text}</span></button>)}</div> : null}
+      <div className="card hub-board">
+        <div className="rep-lb-head"><h4>Rep board</h4><label className="act-sel">Sort<select value={sortKey} onChange={(e) => setSortKey(e.target.value)}><option value="revenue">Revenue</option><option value="attain">Attainment</option><option value="won">Won</option><option value="booked">Booked</option><option value="showed">Held</option><option value="showRate">Show rate</option><option value="winRate">Win rate</option><option value="calls">Calls</option><option value="speed">Speed to lead</option><option value="stale">Stale</option><option value="leads">Leads</option></select></label></div>
+        <div className="hub-board-rows">
+          <div className="hub-row head"><span>Rep</span><span>Leads</span><span>Booked</span><span>Held</span><span>Show</span><span>Won</span><span>Revenue</span>{cashOn ? <span>Cash</span> : null}<span>Win</span><span>Calls</span><span>Min</span><span>Speed</span><span>Open</span><span>Stale</span><span>Target</span></div>
+          {board.map((r) => { const a = attain(r); const s = status(r); return (
+            <React.Fragment key={r.id}>
+              <button type="button" className={`hub-row ${openRep === r.id ? 'open' : ''}`} onClick={() => setOpenRep(openRep === r.id ? null : r.id)}>
+                <span className="hub-row-name"><b>{r.name}</b>{s ? <em className={`hub-chip ${s[1]}`}>{s[0]}</em> : null}</span>
+                <span>{fmtNumber(r.leads)}</span><span>{fmtNumber(r.booked)}</span><span>{fmtNumber(r.showed)}</span><span>{hubPct(r.showRate)}</span><span>{fmtNumber(r.won)}</span><span>{money(r.revenue)}</span>{cashOn ? <span>{r.cash == null ? '-' : money(r.cash)}</span> : null}<span>{hubPct(r.winRate)}</span><span>{fmtNumber(r.calls)}</span><span>{fmtNumber(r.minutes)}</span><span>{r.speedMin != null ? repMin(r.speedMin) : '-'}</span><span>{fmtNumber(r.open)}</span><span className={r.staleTiers && r.staleTiers.t30 ? 'act-bad' : ''}>{fmtNumber(r.stale)}</span>
+                <span>{a ? <span className="hub-attain"><i style={{ width: `${Math.min(100, a.pct)}%` }} className={s ? s[1] : ''} />{a.pct}%</span> : <span className="cap">-</span>}</span>
+              </button>
+              {openRep === r.id ? <div className="hub-row-detail">
+                <div className="hub-detail-grid">
+                  <div><b>Appointments</b><div className="cap">{r.booked} booked · {r.byStaff} by them, {r.byCustomer} by customers · {r.showed} held · {r.noShow} no-show · {r.upcoming} to come{r.unresulted ? ` · ${r.unresulted} unresulted` : ''}</div></div>
+                  <div><b>Pipeline now</b><div className="cap">{r.open} open worth {money(r.openValue)} · {r.stale} stale ({r.staleTiers.t7} at 7+, {r.staleTiers.t14} at 14+, {r.staleTiers.t21} at 21+, {r.staleTiers.t30} at 30+){r.oldestIdle ? ` · oldest ${r.oldestIdle} days` : ''}</div></div>
+                  <div><b>Speed to lead</b><div className="cap">{r.speedMin != null ? `median ${repMin(r.speedMin)} in hours · ${r.speedMeasured} leads measured${r.within5Pct != null ? ` · ${r.within5Pct}% under 5 min` : ''}${r.speedAfter ? ` · ${r.speedAfter} after hours` : ''}` : 'not measured'}</div></div>
+                  <div><b>Lost reasons</b><div className="cap">{(r.lostReasons || []).length ? r.lostReasons.slice(0, 4).map((x) => `${x.reason} ${x.count}`).join(' · ') : 'nothing lost'}{r.avgCloseDays != null ? ` · ${r.avgCloseDays} days to close` : ''}</div></div>
+                </div>
+                {Object.keys(r.stages || {}).length ? <div className="hub-stage-line">{funnel ? funnel.stages.map((s) => <span key={s.name}><b>{(r.stages || {})[s.name] || 0}</b> {s.name}</span>) : null}</div> : null}
+              </div> : null}
+            </React.Fragment>
+          ) })}
+        </div>
+      </div>
+      <div className="rep-grid">
+        {leaderboard}
+        <div className="card rep-card"><h4>Latest wins</h4>{(d.wins || []).length ? winsFeed(10) : <p className="cap">No wins in the last 7 days yet.</p>}</div>
+        <div className="card rep-card"><h4>Open deals by stage</h4>{(d.stageOpen || []).length ? d.stageOpen.map((s) => <RepBar key={s.stageId} label={`${s.stage}${s.pipeline && (d.pipelines || []).length > 1 ? ` · ${s.pipeline}` : ''}`} value={s.open} max={stageMax} text={`${fmtNumber(s.open)} · ${money(s.value)}${s.stale ? ` · ${s.stale} stale` : ''}`} tone={s.stale && s.stale / s.open > 0.5 ? 'warn' : ''} />) : <p className="cap">No open deals.</p>}</div>
+        <div className="card rep-card"><h4>How far the team's leads got</h4>{funnel ? funnel.stages.map((s, i) => <RepBar key={s.name} label={s.name} value={s.reached} max={Math.max(1, funnel.stages[0].reached)} text={`${fmtNumber(s.reached)}${i ? ` · ${funnel.stages[i - 1].reached ? Math.round((s.reached / funnel.stages[i - 1].reached) * 100) : 0}% of previous` : ''}`} />) : <p className="cap">No leads in this period.</p>}</div>
+        <div className="card rep-card"><h4>Appointments by calendar</h4>{(d.calendars || []).length ? d.calendars.map((c) => { const tot = Object.values(c.byRep).reduce((a, b) => ({ booked: a.booked + b.booked, showed: a.showed + b.showed, noShow: a.noShow + b.noShow }), { booked: 0, showed: 0, noShow: 0 }); const sr = (tot.showed + tot.noShow) ? Math.round((tot.showed / (tot.showed + tot.noShow)) * 100) : null; return <div className="hub-cal" key={c.id}><div className="rep-bar-l"><span><b>{c.name}</b></span><b>{tot.booked} booked · {tot.showed} held · {hubPct(sr)}</b></div><div className="cap">{Object.entries(c.byRep).sort((x, y) => y[1].booked - x[1].booked).slice(0, 6).map(([uid, b]) => { const rr = reps.find((x) => x.id === uid); const s2 = (b.showed + b.noShow) ? Math.round((b.showed / (b.showed + b.noShow)) * 100) : null; return `${rr ? rr.name : 'Unassigned'} ${b.booked}${s2 != null ? ` (${s2}%)` : ''}` }).join(' · ')}</div></div> }) : <p className="cap">No appointments in this period.</p>}</div>
+        <div className="card rep-card"><h4>Lost reasons</h4>{(d.lostByReason || []).length ? d.lostByReason.slice(0, 8).map((x) => <RepBar key={x.reason} label={x.reason} value={x.count} max={d.lostByReason[0].count} tone="bad" text={`${fmtNumber(x.count)} · ${reps.filter((r) => (r.lostReasons || []).some((y) => y.reason === x.reason)).sort((a, b) => ((b.lostReasons.find((y) => y.reason === x.reason) || {}).count || 0) - ((a.lostReasons.find((y) => y.reason === x.reason) || {}).count || 0)).slice(0, 2).map((r) => `${r.name} ${(r.lostReasons.find((y) => y.reason === x.reason) || {}).count}`).join(', ')}`} />) : <p className="cap">Nothing lost in this period.</p>}</div>
+      </div>
+      <p className="cap act-foot">Leads are deals created in the period, per assigned rep. Won and lost count deals from those leads. Open and stale are what is on the desk now. Speed to lead follows the client's business-hours rule and counts the first reply a person sent{team.speedFull ? ', measured on every lead' : ', measured on as many leads as the read allowed'}. Calls come from the CRM's call export. Re-reads every 3 minutes, every minute in TV mode.</p>
+    </div>
+  )
+}
+
 // ---- Deals & Actions ---------------------------------------------------------
 // The rep's own app: three screens, swapped with one tap. "My results" is the
 // scorecard and the leaderboard and is the home screen for anyone the CRM
@@ -16796,7 +17021,7 @@ function ClientWorkspace({ client, index, data, config, range, nonce, wonBasis =
   if (cfg.meta || client.meta) allTabs.push({ id: 'meta', label: 'Meta Ads' })
   if (cfg.google || client.google) allTabs.push({ id: 'google', label: 'Google Ads' })
   if (cfg.ga4 || client.ga4) allTabs.push({ id: 'analytics', label: 'Analytics' })
-  if (cfg.ghl) allTabs.push({ id: 'actions', label: 'Deals & Actions' }, { id: 'cohorts', label: 'Cohorts' }, { id: 'users', label: 'Users' }, { id: 'calls', label: 'Call Reporting' }, { id: 'forms', label: 'Forms' }, { id: 'location', label: 'Location' }, { id: 'appts', label: 'Appointments' }, { id: 'calperf', label: 'Calendars' }, { id: 'timing', label: 'Timing' }, { id: 'lostreasons', label: 'Lost Reasons' })
+  if (cfg.ghl) allTabs.push({ id: 'saleshub', label: 'Sales Hub' }, { id: 'actions', label: 'Deals & Actions' }, { id: 'cohorts', label: 'Cohorts' }, { id: 'users', label: 'Users' }, { id: 'calls', label: 'Call Reporting' }, { id: 'forms', label: 'Forms' }, { id: 'location', label: 'Location' }, { id: 'appts', label: 'Appointments' }, { id: 'calperf', label: 'Calendars' }, { id: 'timing', label: 'Timing' }, { id: 'lostreasons', label: 'Lost Reasons' })
   // Change log: the platform change histories plus the Optimisation Log sheet.
   // Shows for any client with an ad account OR a linked sheet - either source is
   // enough to have something to say. The tab id stays `optlog` so existing viewer
@@ -16880,6 +17105,7 @@ function ClientWorkspace({ client, index, data, config, range, nonce, wonBasis =
         {curTab === 'timing' && <><EnquiryTimesSection clientId={client.id} range={range} nonce={nonce} pipe={pipe} onPipe={setPipe} /><TimingView clientId={client.id} range={range} nonce={nonce} currency={data.currency} /><StageTimingSection clientId={client.id} nonce={nonce} /></>}
         {curTab === 'lostreasons' && <LostReasonsView clientId={client.id} range={range} nonce={nonce} currency={data.currency} pipeName={pipeName} />}
         {curTab === 'actions' && <DealsActionsView clientId={client.id} authUser={authUser} currency={data.currency} nonce={nonce} />}
+        {curTab === 'saleshub' && <SalesHubView clientId={client.id} authUser={authUser} currency={data.currency} nonce={nonce} />}
         {curTab === 'calperf' && <CalPerfView clientId={client.id} range={range} nonce={nonce} />}
         {curTab === 'clinic' && <ClinicView clientId={client.id} currency={data.currency} nonce={nonce} />}
         {curTab === 'optlog' && <ChangeLogTab clientId={client.id} range={range} nonce={nonce} hasMeta={!!(cfg.meta || client.meta)} hasGoogle={!!(cfg.google || client.google)} />}
@@ -19140,6 +19366,7 @@ const isClientRoleFE = (r) => r === 'account_admin' || r === 'account_user' || r
 function allowedTabsFE(user, offered) {
   if (!user) return offered
   if (user.role === 'account_user') { const only = offered.filter((t) => t.id === 'actions'); return only.length ? only : offered.slice(0, 1) }
+  if (isClientRoleFE(user.role) && !Array.isArray(user.tabs)) return offered.filter((t) => t.id !== 'saleshub')
   if (!isClientRoleFE(user.role) || !Array.isArray(user.tabs)) return offered
   const keep = offered.filter((t) => user.tabs.includes(t.id))
   return keep.length ? keep : offered.slice(0, 1)
@@ -19326,7 +19553,7 @@ const TAB_OPTIONS = [
   { id: 'calls', label: 'Call Reporting' }, { id: 'forms', label: 'Forms' }, { id: 'location', label: 'Location' },
   { id: 'appts', label: 'Appointments' }, { id: 'calperf', label: 'Calendars' }, { id: 'clinic', label: 'Clinic' },
   { id: 'timing', label: 'Timing' }, { id: 'lostreasons', label: 'Lost Reasons' }, { id: 'optlog', label: 'Optimisation Log' },
-  { id: 'actions', label: 'Deals & Actions' },
+  { id: 'actions', label: 'Deals & Actions' }, { id: 'saleshub', label: 'Sales Hub' },
 ]
 function ClientPicker({ clients, selected, onToggle }) {
   if (!clients || !clients.length) return <div className="cap">No clients available.</div>
@@ -19355,7 +19582,7 @@ function offeredTabsFor(c) {
   if (c.meta) out.push({ id: 'meta', label: 'Meta Ads' })
   if (c.google) out.push({ id: 'google', label: 'Google Ads' })
   if (c.ga4) out.push({ id: 'analytics', label: 'Analytics' })
-  if (c.ghl) out.push({ id: 'actions', label: 'Deals & Actions' }, { id: 'cohorts', label: 'Cohorts' }, { id: 'users', label: 'Users' }, { id: 'calls', label: 'Call Reporting' }, { id: 'forms', label: 'Forms' }, { id: 'location', label: 'Location' }, { id: 'appts', label: 'Appointments' }, { id: 'calperf', label: 'Calendars' }, { id: 'timing', label: 'Timing' }, { id: 'lostreasons', label: 'Lost Reasons' })
+  if (c.ghl) out.push({ id: 'saleshub', label: 'Sales Hub' }, { id: 'actions', label: 'Deals & Actions' }, { id: 'cohorts', label: 'Cohorts' }, { id: 'users', label: 'Users' }, { id: 'calls', label: 'Call Reporting' }, { id: 'forms', label: 'Forms' }, { id: 'location', label: 'Location' }, { id: 'appts', label: 'Appointments' }, { id: 'calperf', label: 'Calendars' }, { id: 'timing', label: 'Timing' }, { id: 'lostreasons', label: 'Lost Reasons' })
   // The Change Log was offered by the workspace but never by this list, so it
   // could not be ticked for a viewer at all - a tab that existed for admins and
   // was ungrantable to anyone else. Same condition as the workspace uses.

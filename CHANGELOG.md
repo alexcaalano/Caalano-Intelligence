@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.608.0 - 2026-09-13 · `PENDING`
+## v3.608.0 - 2026-09-13 · `73a88ab`
 
 **Conversations read like the CRM's** - a thread now opens at its newest
 message instead of the top. Rows that are not messages, the CRM's

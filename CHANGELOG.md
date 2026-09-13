@@ -18,6 +18,15 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.587.0 - 2026-09-13 · `PENDING`
+
+**Most cash collected** - when a client has a cash-collected field
+selected in Settings, the Sales Hub gets a "Most cash collected" board
+by rep alongside the cash tile, the cash dial and the cash column on the
+rep board. Cash counts by close date, like revenue.
+
+---
+
 ## v3.586.0 - 2026-09-13 · `0a084b7`
 
 **Ten seconds to change your mind** - on Deals & Actions, pressing Save

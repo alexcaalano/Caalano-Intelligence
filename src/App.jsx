@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.586.0'
+const APP_VERSION = '3.587.0'
 // The business clock. Every server window is cut on the client's local day
 // (Caalano Systems location timezone), so any day the app derives on its own -
 // preset ranges, "today", CSV dates - must use the same clock rather than the
@@ -16226,6 +16226,7 @@ function SalesHubView({ clientId, authUser, currency, nonce, pipe: pipeProp, onP
     ['won', 'Most deals closed', (r) => r.won, fmtNumber, 'won'],
     ['resultRate', 'Highest result rate', (r) => (r.decided >= 3 ? r.resultRate : null), (v) => `${v}%`, 'resulted'],
     ['openValue', 'Biggest open pipeline', (r) => r.openValue, money, 'open'],
+    ...(cashOn ? [['cash', 'Most cash collected', (r) => r.cash, money, 'collected']] : []),
   ].map(([key, title, get, fmt, unit, dir]) => {
     const rows = reps.filter((r) => r.id !== 'unassigned').map((r) => ({ r, v: get(r) })).filter((x) => x.v != null && (dir === 'asc' || x.v > 0)).sort(dir === 'asc' ? (a, b) => a.v - b.v : (a, b) => b.v - a.v).slice(0, 3)
     return rows.length ? { key, title, rows, fmt, unit } : null

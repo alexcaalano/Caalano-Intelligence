@@ -1200,3 +1200,11 @@ periods. The `goals` windsor scope measures each goal in its own window
 (one hub build per distinct window, memoised three minutes), so dials are
 independent of the hub's period selector. Still to come: a history table
 of past windows and a copy-last-month action.
+
+Update 2026-09-13 (v3.595.0): the Month by month board. windsor
+scope=goalhistory measures every posted goal over the last six months (and
+three quarters) with one memoised hub build per period; the board shows
+target over actual per cell with hit / close / missed tones and lets
+admins type future targets in place (the plan). In the SaaS schema past
+periods' actuals should be materialised into goal_months at month end
+rather than rebuilt on read.

@@ -18,6 +18,20 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.595.0 - 2026-09-13 · `PENDING`
+
+**Month by month** - a second screen on the Sales Hub, next to the live
+board. Every goal is a row, grouped business, pipeline and rep; the last
+six months and the next three are columns. Each cell shows the period's
+target on top and what happened underneath, green for hit, amber for
+close, red for missed, with the current month judged on pace, and a hit
+count at the end of the row. Admins type targets straight into the
+cells to plan coming months, the budget, and press Save targets. A
+quarter grid does the same for quarterly goals; custom-dates goals get a
+row each.
+
+---
+
 ## v3.594.0 - 2026-09-13 · `f350aa4`
 
 **Recurring, quarterly and custom-dates goals** - a goal now has a

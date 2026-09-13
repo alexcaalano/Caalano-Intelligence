@@ -14,7 +14,7 @@ import { GOAL_METRICS, goalMetric, SPLITS, normGoals, newGoalId, goalShares, val
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.594.0'
+const APP_VERSION = '3.595.0'
 // The business clock. Every server window is cut on the client's local day
 // (Caalano Systems location timezone), so any day the app derives on its own -
 // preset ranges, "today", CSV dates - must use the same clock rather than the
@@ -16163,6 +16163,74 @@ function hubFunnelStages(clientId, p) {
   const picked = all.filter((st) => wanted.has(st.name)).map((st) => ({ ...st, label: wanted.get(st.name) }))
   return { stages: picked.length ? picked : all.map((st) => ({ ...st, label: st.name })), keyed: picked.length > 0 }
 }
+// Month by month: every goal against what happened, past months and the
+// current one, with the coming months' targets typed in place (the budget).
+// Quarterly goals get a quarter grid; custom-dates goals a row each.
+function HubPlanBoard({ clientId, goals, currency, canEdit, today }) {
+  const [hist, setHist] = useState({ status: 'loading', data: null })
+  const [draft, setDraft] = useState(goals)
+  const [dirty, setDirty] = useState(false)
+  useEffect(() => { setDraft(goals); setDirty(false) }, [goals])
+  useEffect(() => {
+    if (!goals.length) { setHist({ status: 'ok', data: { months: [], quarters: [], rows: [] } }); return }
+    let dead = false; setHist((h) => ({ status: h.data ? 'refreshing' : 'loading', data: h.data }))
+    fetch(`/.netlify/functions/windsor?scope=goalhistory&client=${encodeURIComponent(clientId)}${hoursQuery(loadHours(clientId))}`, { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ goals, months: 5 }) })
+      .then((r) => r.json().catch(() => ({ error: `server ${r.status}` }))).then((j) => { if (!dead) setHist({ status: j && j.error ? 'err' : 'ok', data: j }) }).catch((e) => { if (!dead) setHist({ status: 'err', data: { error: String((e && e.message) || e) } }) })
+    return () => { dead = true }
+  }, [clientId, goals]) // eslint-disable-line
+  const d = hist.data || {}
+  const cellOf = (id, key) => { const r = (d.rows || []).find((x) => x.id === id); return r && r.cells ? r.cells[key] : null }
+  const fmtFor = (g) => { const m = goalMetric(g.metric) || []; return (v) => (v == null ? '-' : m[2] === 'money' ? fmtCurrency(v, currency) : m[2] === 'pct' ? `${Math.round(v)}%` : m[2] === 'lower' ? repMin(v) : fmtNumber(v)) }
+  const kindOf = (g) => (goalMetric(g.metric) || [])[2]
+  const curM = today.slice(0, 7); const curQ = goalWindow({ period: 'quarter' }, today).key
+  const tone = (g, cell, key, isCurrent) => {
+    if (!cell || cell.actual == null || !cell.target) return ''
+    const k = kindOf(g)
+    if (k === 'lower') return cell.actual <= cell.target ? 'good' : cell.actual <= cell.target * 1.5 ? 'warn' : 'bad'
+    const pct = cell.actual / cell.target; const need = isCurrent && k !== 'pct' ? goalWindow(g, today).elapsed : 1
+    return pct >= need ? 'good' : pct >= need * 0.8 ? 'warn' : 'bad'
+  }
+  const setTarget = (g, map, key, val) => {
+    setDirty(true)
+    setDraft((cur) => cur.map((x) => { if (x.id !== g.id) return x; const next = { ...(x[map] || {}) }; const n = Number(val); if (!val || !(n > 0) || n === x.target) delete next[key]; else next[key] = n; return { ...x, [map]: next } }))
+  }
+  const futureM = monthKeysFrom(today, 4).slice(1), futureQ = quarterKeysFrom(today, 2).slice(1)
+  const monthCols = [...(d.months || []), ...futureM], quarterCols = [...(d.quarters || []), ...futureQ]
+  const mLabel = (k) => new Date(+k.slice(0, 4), +k.slice(5, 7) - 1, 1).toLocaleString('en-AU', { month: 'short', year: '2-digit' })
+  const groups = [['business', 'Business and team'], ['pipeline', 'Pipeline'], ['rep', 'Rep']]
+  const grid = (period, cols, map, isCur, label) => {
+    const rows = draft.filter((g) => g.period === period)
+    if (!rows.length) return null
+    return (
+      <div className="card plan-card">
+        <div className="rep-lb-head"><h4>{period === 'quarter' ? 'Quarter by quarter' : 'Month by month'}</h4><span className="cap">target on top, what happened underneath · green hit, amber close, red missed · {isCur === curM || isCur === curQ ? 'the current period is judged on pace' : ''}</span></div>
+        <div className="table-wrap"><table className="mini-tbl plan-tbl">
+          <thead><tr><th className="lft">Goal</th>{cols.map((k) => <th key={k} className={k === isCur ? 'cur' : k > isCur ? 'fut' : ''}>{label(k)}</th>)}<th>Hit</th></tr></thead>
+          <tbody>{groups.map(([lvl, title]) => { const list = rows.filter((g) => goalLevel(g) === lvl); return list.length ? [<tr key={lvl + '-h'} className="plan-grp"><td colSpan={cols.length + 2}>{title}</td></tr>, ...list.map((g) => { const f = fmtFor(g); let hit = 0, n = 0; return (
+            <tr key={g.id}><td className="lft"><b>{g.name || (goalMetric(g.metric) || [])[1]}</b><div className="cap">{(goalMetric(g.metric) || [])[1]}{g.pipelines ? ' · ' + g.pipelines.length + ' pipeline' + (g.pipelines.length > 1 ? 's' : '') : ''}{g.reps ? ' · ' + g.reps.length + ' rep' + (g.reps.length > 1 ? 's' : '') : ''}</div></td>
+              {cols.map((k) => { const cell = cellOf(g.id, k); const target = goalTargetFor(g, k); const t = k < isCur && cell && cell.actual != null ? tone(g, cell, k, false) : k === isCur ? tone(g, cell, k, true) : ''; if (k < isCur && cell && cell.actual != null) { n++; if (t === 'good') hit++ } const planned = (g[map] || {})[k] != null; return (
+                <td key={k} className={`plan-cell ${t} ${k === isCur ? 'cur' : k > isCur ? 'fut' : ''}`}>
+                  {canEdit ? <input type="number" min="0" className={`plan-in ${planned ? 'planned' : ''}`} value={planned ? g[map][k] : ''} placeholder={String(g.target)} onChange={(e) => setTarget(g, map, k, e.target.value)} title={planned ? 'Planned for this period' : 'Default target; type to plan this period'} /> : <div className="plan-t">{f(target)}</div>}
+                  {k <= isCur ? <div className="plan-a">{cell ? f(cell.actual) : hist.status === 'loading' ? '…' : '-'}{cell && cell.actual != null && target && kindOf(g) !== 'lower' ? <small> {Math.round((cell.actual / target) * 100)}%</small> : null}</div> : <div className="plan-a cap">planned</div>}
+                </td>) })}
+              <td className="plan-hit">{n ? `${hit} / ${n}` : '-'}</td>
+            </tr>) })] : null })}</tbody>
+        </table></div>
+      </div>
+    )
+  }
+  const ranges = draft.filter((g) => g.period === 'range')
+  return (
+    <div className="plan-board">
+      {hist.status === 'err' ? <p className="cap act-bad">{d.error || 'Could not load the history.'}</p> : null}
+      {canEdit ? <div className="act-note-btns plan-save"><button type="button" className="btn-primary act-btn" disabled={!dirty} onClick={() => { saveGoals(clientId, draft); setDirty(false) }}>Save targets</button>{dirty ? <span className="cap">Unsaved changes to the plan.</span> : <span className="cap">Type in a cell to plan that period; blank means the default target.</span>}</div> : null}
+      {grid('month', monthCols, 'byMonth', curM, mLabel)}
+      {grid('quarter', quarterCols, 'byQuarter', curQ, (k) => k.replace('-', ' '))}
+      {ranges.length ? <div className="card plan-card"><div className="rep-lb-head"><h4>Custom dates</h4></div>{ranges.map((g) => { const w = goalWindow(g, today); const cell = cellOf(g.id, w.key); const f = fmtFor(g); const t = cell ? tone(g, cell, w.key, w.active) : ''; return <div className="hub-win" key={g.id}><div><b>{g.name || (goalMetric(g.metric) || [])[1]}</b> <span className="cap">{w.label}{w.notYet ? ' · not started' : w.ended ? ' · ended' : ''}</span></div><span className={`plan-range ${t}`}>{cell ? `${f(cell.actual)} of ${f(g.target)}` : `target ${f(g.target)}`}</span></div> })}</div> : null}
+      {!draft.length ? <div className="card rep-cockpit-empty"><b>No goals yet.</b> <span className="cap">Add them in Settings → this client → Goals, then plan them here month by month.</span></div> : null}
+    </div>
+  )
+}
 function SalesHubView({ clientId, authUser, currency, nonce, pipe: pipeProp, onPipe, pipes: pipesProp }) {
   // Follows the workspace's pipeline picker like every other tab: one
   // pipeline recalculates everything within it; "All" keeps each pipeline's
@@ -16177,6 +16245,7 @@ function SalesHubView({ clientId, authUser, currency, nonce, pipe: pipeProp, onP
   const [sortKey, setSortKey] = useState('revenue')
   const [openRep, setOpenRep] = useState(null)
   const [openGauge, setOpenGauge] = useState(null)
+  const [screen, setScreen] = useState('live')
   const [spot, setSpot] = useState(0)
   const [live, setLive] = useState({ ok: null, latest: 0, wins: [] })
   const [setup, setSetup] = useState(null)
@@ -16323,6 +16392,7 @@ function SalesHubView({ clientId, authUser, currency, nonce, pipe: pipeProp, onP
   const head = (
     <div className="act-bar hub-bar">
       <div className="act-filters">
+        <div className="act-seg hub-screens"><button type="button" className={screen === 'live' ? 'on' : ''} onClick={() => setScreen('live')}>Live board</button><button type="button" className={screen === 'plan' ? 'on' : ''} onClick={() => setScreen('plan')}>Month by month</button></div>
         <label className="act-sel"><select value={period} onChange={(e) => setPeriod(e.target.value)}>{HUB_PERIODS.map(([id, l]) => <option key={id} value={id}>{l}</option>)}</select></label>
         <label className="act-sel"><select value={stale} onChange={(e) => setStale(Number(e.target.value))}><option value={7}>Stale after 7 days</option><option value={14}>Stale after 14 days</option><option value={30}>Stale after 30 days</option></select></label>
         <button type="button" className="btn-ghost sm" disabled={st.status === 'refreshing'} onClick={() => setTick((t) => t + 1)}>{st.status === 'refreshing' ? 'Refreshing…' : 'Refresh'}</button>
@@ -16453,6 +16523,16 @@ function SalesHubView({ clientId, authUser, currency, nonce, pipe: pipeProp, onP
           <div className="hub-tv-col">{spotlight}{boardsGrid}{!dialDefs.length && authUser && isAdminishFE(authUser.role) ? <p className="cap">Set goals in Settings and the gauges light up here.</p> : null}</div>
         </div>
         <div className="hub-tv-brand"><span className="hub-tv-brand-p">Powered by</span> <b>Caalano<span>360</span></b></div>
+      </div>
+    )
+  }
+  if (screen === 'plan') {
+    return (
+      <div className="act-wrap hub-wrap">
+        {head}
+        {celebrate ? <HubGong key={celebrate.key} win={celebrate} currency={currency} onDone={() => { clearTimeout(strikeT.current); setCelebrate(null) }} /> : null}
+        <HubPlanBoard clientId={clientId} goals={goalsAll} currency={currency} canEdit={!!(authUser && isAdminishFE(authUser.role))} today={today} />
+        <p className="cap act-foot">Each period is measured on the same basis as the live board: won, lost and cash by close date, bookings by booking date, held and show rate by appointment date, leads by the date they came in. A blank cell uses the goal's default target; a typed number plans that period.</p>
       </div>
     )
   }

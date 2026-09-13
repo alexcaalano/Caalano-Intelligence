@@ -1236,3 +1236,38 @@ target over actual per cell with hit / close / missed tones and lets
 admins type future targets in place (the plan). In the SaaS schema past
 periods' actuals should be materialised into goal_months at month end
 rather than rebuilt on read.
+
+## 22. Addresses: ids for tenancy, words for screens (decided 2026-09-13)
+
+Today an address is one flat query string with the client's slug in it
+(`?v=clients&c=norwest-mdc&t=saleshub`). That cannot survive two agencies
+that both call a client "acme", it puts client names into links, and a
+renamed client breaks every bookmark. Phase 1 replaces it with path
+addresses in the shape GoHighLevel uses, where the tenant segments are ids
+and the screen segments are words:
+
+```
+/a/{agencyId}/w/{workspaceId}/sales-hub
+/a/{agencyId}/w/{workspaceId}/deals/conversations/{conversationId}
+/a/{agencyId}/settings/crm
+/a/{agencyId}/w/{workspaceId}/sales-hub?period=this_month&pipeline={pipelineId}
+```
+
+- **Public ids.** `organisations.public_id` and `workspaces.public_id`: 20
+  characters, URL-safe, random, unique, generated on insert, indexed. The
+  uuid primary keys never appear in an address. Ids are not secrets; every
+  request is still checked against the signed-in person's membership.
+- **Words for screens, query string for state.** Screen names stay
+  readable (`sales-hub`, `deals`, `settings/crm`); period, pipeline, tab
+  and other transient state stay in the query string, as GoHighLevel keeps
+  `category` and `tab`.
+- **Old links keep working.** A redirect table maps every `?v=&c=&t=`
+  shape in use today, including the monthly report deep links clients
+  hold, to the new address, kept for at least a year.
+- **Routing.** A small router in the app (the app has none today; the
+  Netlify `/* -> index.html` rewrite already serves any path), with the
+  edge gate's `excludedPath` list unchanged.
+
+Scheduled for phase 1 alongside the workspace table, because doing it
+against today's slugs would mean doing it twice.
+

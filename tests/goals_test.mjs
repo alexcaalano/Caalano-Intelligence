@@ -78,4 +78,13 @@ assert.deepEqual(quarterKeysFrom('2026-09-13', 2), ['2026-Q3', '2026-Q4'])
 // Rep targets follow the month's plan and skip quarter goals
 assert.deepEqual(repTargetsFromGoals([mg, qg], 'a', ids, '2026-10-02'), { revenue: 12000 })
 assert.deepEqual(repTargetsFromGoals([mg], 'a', ids, '2026-12-02'), {}, 'nothing once the goal has ended')
+// Average deal value: rebuilt from revenue and wins, never averaged or split
+const ad = normGoals([{ id: 'ad1', metric: 'avgDeal', target: 2500, split: 'even' }])[0]
+assert.equal(ad.split, 'each', 'an average is every rep\'s own target')
+assert.equal(goalActual(ad, reps), 2000, '8000 over 4 wins, not the mean of the reps\' averages')
+assert.equal(goalShareFor(ad, 'b', ids), 2500)
+assert.equal(repValue(reps[0], 'avgDeal', ['p1']), 2000)
+assert.equal(repValue(reps[2], 'avgDeal', ['p1']), null, 'no wins, no average')
+assert.equal(goalActual(normGoals([{ id: 'ad2', metric: 'avgDeal', target: 900, pipelines: ['p1'] }])[0], reps), 1625, '6500 over 4 wins in p1')
+assert.deepEqual(validateGoal({ ...ad, split: 'custom', shares: {} }, ids), [], 'no share sums to check on an average')
 console.log('goals_test ok')

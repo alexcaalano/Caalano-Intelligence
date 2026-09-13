@@ -18,6 +18,22 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.599.0 - 2026-09-13 · `PENDING`
+
+**Average deal value, and a hub that shows it is working** - Average deal
+value (revenue over won deals) is now a Sales Hub tile, a "Biggest
+average deal" leaderboard, a figure on each pipeline's Focus card, and a
+goal metric: set it for the business, a pipeline or a rep, and it becomes
+a dial on the hub, a row on Month by month and a bar on the rep's My
+results. Like win rate it is judged against the target itself, never on
+pace, every rep carries the same target, and pipeline goals for it are
+never added together. Pressing Focus on a pipeline (or Refresh) now dims
+the board and shows a progress bar naming what is loading, instead of
+looking stuck for the seconds a rebuild takes. The no-show count sits
+inside the Meetings held tile.
+
+---
+
 ## v3.598.0 - 2026-09-13 · `f3f00f1`
 
 **Month by month: who and what, and filters** - every row now names its

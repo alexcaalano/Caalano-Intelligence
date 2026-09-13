@@ -6328,7 +6328,7 @@ export async function buildSalesHub(locationId, { from, to, hours = null, staleD
   const team = {
     reps: reps.length, leads: sum('leads'), booked: sum('booked'), byStaff: sum('byStaff'), byCustomer: sum('byCustomer'), set: sum('set'), showed: sum('showed'), noShow: sum('noShow'),
     showRate: teamShowBase ? Math.round((sum('showed') / teamShowBase) * 100) : null, won: sum('won'), lost: sum('lost'), revenue: sum('revenue'),
-    winRate: (sum('won') + sum('lost')) ? Math.round((sum('won') / (sum('won') + sum('lost'))) * 100) : null, cash: cashField ? sum('cash') : null, calls: sum('calls'), minutes: sum('minutes'),
+    winRate: (sum('won') + sum('lost')) ? Math.round((sum('won') / (sum('won') + sum('lost'))) * 100) : null, avgDeal: sum('won') ? Math.round(sum('revenue') / sum('won')) : null, cash: cashField ? sum('cash') : null, calls: sum('calls'), minutes: sum('minutes'),
     decided: sum('won') + sum('lost'), resultRate: (sum('won') + sum('lost') + sum('open')) ? Math.round(((sum('won') + sum('lost')) / (sum('won') + sum('lost') + sum('open'))) * 100) : null,
     open: sum('open'), openValue: sum('openValue'), stale: sum('stale'), speedMin: speed && speed.medianMin != null ? speed.medianMin : (spMed.length ? spMed[Math.floor(spMed.length / 2)] : null),
     speedAfter: speed && speed.after ? speed.after.count : null, speedFull: !!(speed && speed.full),
@@ -6347,7 +6347,7 @@ export async function buildSalesHub(locationId, { from, to, hours = null, staleD
     const wp = wonByPipe.get(p.id) || { won: 0, revenue: 0 }; const won = wp.won, revenue = wp.revenue
     return {
       id: p.id, name: p.name, stages: (p.stages || []).map((name) => ({ name, reached: t[name] || 0 })),
-      leads, won, lost: lostN, revenue: Math.round(revenue), winRate: (won + lostN) ? Math.round((won / (won + lostN)) * 100) : null, open: ob.open, openValue: Math.round(ob.openValue), stale: ob.stale,
+      leads, won, lost: lostN, revenue: Math.round(revenue), winRate: (won + lostN) ? Math.round((won / (won + lostN)) * 100) : null, avgDeal: won ? Math.round(revenue / won) : null, open: ob.open, openValue: Math.round(ob.openValue), stale: ob.stale,
       lostReasons: Object.entries(l).map(([reason, count]) => ({ reason, count })).sort((a, b) => b.count - a.count),
     }
   }).filter((p) => p.id === pipeline || p.leads > 0 || p.open > 0 || p.won > 0 || p.lost > 0)

@@ -21,6 +21,7 @@
 // a pipeline (appointments, calls and speed are per rep, not per pipeline).
 export const GOAL_METRICS = [
   ['revenue', 'Revenue', 'money', true], ['cash', 'Cash collected', 'money', true], ['won', 'Deals closed', 'count', true],
+  ['avgDeal', 'Average deal value', 'money', true],
   ['leads', 'Leads', 'count', true], ['winRate', 'Win rate', 'pct', true], ['resultRate', 'Result rate', 'pct', true],
   ['booked', 'Meetings booked', 'count', false], ['userBooked', 'Appointments set', 'count', false], ['held', 'Meetings held', 'count', false],
   ['showRate', 'Show rate', 'pct', false], ['calls', 'Calls made', 'count', false], ['minutes', 'Minutes on the phone', 'count', false],
@@ -28,7 +29,11 @@ export const GOAL_METRICS = [
 ]
 export const goalMetric = (key) => GOAL_METRICS.find((m) => m[0] === key) || null
 export const SPLITS = [['shared', 'Shared team number'], ['each', 'Each rep gets this target'], ['even', 'Split evenly'], ['weighted', 'Split by percentage'], ['custom', 'Custom amount per rep']]
-const RATE = new Set(['winRate', 'resultRate', 'showRate', 'speedMin'])
+// Metrics that are a rate or an average rather than a total: every attached
+// rep carries the same target, nothing is split, nothing is judged on pace,
+// and pipeline goals for them are never added together.
+const RATE = new Set(['winRate', 'resultRate', 'showRate', 'speedMin', 'avgDeal'])
+export const RATE_METRICS = RATE
 
 export function normGoals(v) {
   const arr = Array.isArray(v) ? v : (v && Array.isArray(v.goals)) ? v.goals : []
@@ -40,7 +45,7 @@ export function normGoals(v) {
     byQuarter: Object.fromEntries(Object.entries(g.byQuarter || {}).filter(([k, v]) => /^\d{4}-Q[1-4]$/.test(k) && Number(v) > 0).map(([k, v]) => [k, Number(v)])),
     pipelines: Array.isArray(g.pipelines) && g.pipelines.length ? g.pipelines.map(String) : null,
     reps: Array.isArray(g.reps) && g.reps.length ? g.reps.map(String) : null,
-    split: (Array.isArray(g.reps) && g.reps.length === 1) ? 'each' : ['shared', 'each', 'even', 'weighted', 'custom'].includes(g.split) ? g.split : (RATE.has(g.metric) ? 'each' : 'shared'),
+    split: (RATE.has(g.metric) || (Array.isArray(g.reps) && g.reps.length === 1)) ? 'each' : ['shared', 'each', 'even', 'weighted', 'custom'].includes(g.split) ? g.split : 'shared',
     weights: g.weights && typeof g.weights === 'object' ? g.weights : {}, shares: g.shares && typeof g.shares === 'object' ? g.shares : {},
   }))
 }
@@ -127,6 +132,7 @@ export function repValue(rep, metric, pipelines) {
   if (metric === 'leads') return sum((pid) => ((rep.byPipeline || []).find((b) => b.id === pid) || {}).leads || 0)
   if (metric === 'open') return sum((pid) => (rep.openByPipeline || {})[pid] || 0)
   if (metric === 'winRate') { const w = repValue(rep, 'won', pipelines), l = repValue(rep, 'lost', pipelines); return (w + l) ? Math.round((w / (w + l)) * 100) : null }
+  if (metric === 'avgDeal') { const w = repValue(rep, 'won', pipelines); return w ? Math.round(repValue(rep, 'revenue', pipelines) / w) : null }
   if (metric === 'resultRate') { const w = repValue(rep, 'won', pipelines), l = repValue(rep, 'lost', pipelines), o = repValue(rep, 'open', pipelines); return (w + l + o) ? Math.round(((w + l) / (w + l + o)) * 100) : null }
   return null
 }
@@ -139,6 +145,7 @@ export function goalActual(goal, reps) {
   const sum = (metric) => inScope.reduce((a, r) => a + (repValue(r, metric, P) || 0), 0)
   if (goal.metric === 'winRate') { const w = sum('won'), l = sum('lost'); return (w + l) ? Math.round((w / (w + l)) * 100) : null }
   if (goal.metric === 'resultRate') { const w = sum('won'), l = sum('lost'), o = P ? sum('open') : inScope.reduce((a, r) => a + (r.open || 0), 0); return (w + l + o) ? Math.round(((w + l) / (w + l + o)) * 100) : null }
+  if (goal.metric === 'avgDeal') { const w = sum('won'); return w ? Math.round(sum('revenue') / w) : null }
   if (goal.metric === 'showRate') { const s = inScope.reduce((a, r) => a + (r.showed || 0), 0), n = inScope.reduce((a, r) => a + (r.noShow || 0), 0); return (s + n) ? Math.round((s / (s + n)) * 100) : null }
   if (goal.metric === 'speedMin') { const v = inScope.map((r) => r.speedMin).filter((x) => x != null).sort((a, b) => a - b); return v.length ? v[Math.floor(v.length / 2)] : null }
   return sum(goal.metric)

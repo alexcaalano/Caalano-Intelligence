@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.613.0 - 2026-09-13 · `PENDING`
+## v3.613.0 - 2026-09-13 · `33d8270`
 
 **SaaS foundations, phase 0, part two (no user-visible change)** - the
 provider adapter layer from the SaaS design: a registry every data

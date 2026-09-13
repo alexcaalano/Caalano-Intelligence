@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.611.0 - 2026-09-13 · `PENDING`
+## v3.611.0 - 2026-09-13 · `21e9308`
 
 **Wins on old leads count, cash per pipeline, boards spread evenly** -
 the Sales Hub now reads the won-deals snapshot as well as the general

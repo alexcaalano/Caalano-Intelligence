@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.575.0 - 2026-09-13 · `PENDING`
+## v3.575.0 - 2026-09-13 · `8003dba`
 
 **Hit the gong** - a new deal on the Sales Hub now strikes a gong instead
 of a chime: a low struck-metal ring with a shimmer that fades over about

@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.584.0 - 2026-09-13 · `PENDING`
+## v3.584.0 - 2026-09-13 · `a3d5b6a`
 
 **Full screen on the TV** - TV mode has a Full screen button that takes
 the whole display, browser chrome and all. Esc leaves full screen and TV

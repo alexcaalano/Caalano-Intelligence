@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.586.0 - 2026-09-13 · `PENDING`
+## v3.586.0 - 2026-09-13 · `0a084b7`
 
 **Ten seconds to change your mind** - on Deals & Actions, pressing Save
 on an appointment result, Confirm on an upcoming appointment, Mark won,

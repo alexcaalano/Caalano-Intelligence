@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.574.0 - 2026-09-13 · `PENDING`
+## v3.574.0 - 2026-09-13 · `21d9257`
 
 **Pick the reply channel** - the conversation panel in Deals & Actions
 now has a "Reply by" picker. It defaults to the channel the contact last

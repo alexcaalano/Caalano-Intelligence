@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.591.0 - 2026-09-13 · `PENDING`
+## v3.591.0 - 2026-09-13 · `b983bec`
 
 **Gauges centred** - the target dials sit centred across the row, on the
 TV and on the tab, whether there are two of them or nine.

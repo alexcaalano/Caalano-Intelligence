@@ -18,6 +18,16 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.588.0 - 2026-09-13 · `PENDING`
+
+**TV mode tidy** - the header now reads "September 2026 · Sales Hub ·
+month to date · day 13 of 30" and TV mode is always month to date. The
+mini boards line up: a stacked-card margin rule was pushing every board
+after the first down by 12 px inside the grid, on the TV and on the tab.
+A single dial no longer stretches across the whole row.
+
+---
+
 ## v3.587.0 - 2026-09-13 · `2b7b6c3`
 
 **Most cash collected** - when a client has a cash-collected field

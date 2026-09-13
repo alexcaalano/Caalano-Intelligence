@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.587.0'
+const APP_VERSION = '3.588.0'
 // The business clock. Every server window is cut on the client's local day
 // (Caalano Systems location timezone), so any day the app derives on its own -
 // preset ranges, "today", CSV dates - must use the same clock rather than the
@@ -16204,6 +16204,7 @@ function SalesHubView({ clientId, authUser, currency, nonce, pipe: pipeProp, onP
     return () => { dead = true }
   }, [clientId, period, stale, pipeSel, tick, nonce]) // eslint-disable-line
   useEffect(() => { const iv = setInterval(() => { if (document.visibilityState === 'visible') setTick((t) => t + 1) }, tv ? 60000 : 180000); return () => clearInterval(iv) }, [tv])
+  useEffect(() => { if (tv && period !== 'this_month') setPeriod('this_month') }, [tv]) // eslint-disable-line
   useEffect(() => { if (!tv) return; const onKey = (e) => { if (e.key === 'Escape') setTv(false) }; window.addEventListener('keydown', onKey); document.body.classList.add('hub-tv-on'); return () => { window.removeEventListener('keydown', onKey); document.body.classList.remove('hub-tv-on'); try { if (document.fullscreenElement) document.exitFullscreen() } catch { /* ignore */ } } }, [tv])
   const d = st.data || {}
   const team = d.team || {}
@@ -16405,7 +16406,7 @@ function SalesHubView({ clientId, authUser, currency, nonce, pipe: pipeProp, onP
   if (tv) {
     return (
       <div className="hub-tv">
-        <div className="hub-tv-head"><div><b>{(d.period && d.period.from) || ''}</b> <span>Sales Hub · {(HUB_PERIODS.find(([id]) => id === period) || [])[1]}{focus ? ` · ${focus.name}` : ''}{monthly ? ` · day ${day} of ${dim}` : ''}</span></div>
+        <div className="hub-tv-head"><div><b>{new Date().toLocaleString('en-AU', { month: 'long', year: 'numeric' })}</b> <span>Sales Hub · month to date{focus ? ` · ${focus.name}` : ''} · day {day} of {dim}</span></div>
           <div className="hub-tv-ctl">
             <label className="alloc-check"><input type="checkbox" checked={prefs.confetti} onChange={(e) => { const p = { ...prefs, confetti: e.target.checked }; setPrefs(p); saveHubPrefs(p) }} /> Confetti</label>
             <label className="alloc-check"><input type="checkbox" checked={prefs.sound} onChange={(e) => { const p = { ...prefs, sound: e.target.checked }; setPrefs(p); saveHubPrefs(p) }} /> Gong</label>

@@ -746,11 +746,12 @@ organisation level, and the sign-in gains an organisation switcher.
       Supabase/Neon, Railway/Fly, Anthropic for insights, Stripe), retention
       (30 days after deletion), breach notice window, and the Australian
       Privacy Act 1988 / APPs; GDPR clauses if a tenant is in the EU.
+      Drafted 2026-09-13: `docs/legal/DATA-PROCESSING-AGREEMENT.md`, awaiting legal review.
 - [ ] **Public privacy policy** at a stable URL (Meta and Google both
-      require it during review).
+      require it during review). Drafted: `docs/legal/PRIVACY-POLICY.md`.
 - [ ] **Terms of Use v1.5** already names the entity; add a SaaS
       subscription schedule (plan, fees, cancellation, data on exit).
-- [ ] **Data deletion endpoint** and a documented deletion path.
+- [ ] **Data deletion endpoint** and a documented deletion path. Path drafted: `docs/legal/DATA-DELETION.md`; the Meta callback endpoint is phase 3.
 - [ ] **Sub-processor list** published and kept current.
 - [ ] Security contact `alex@caalanodigital.com.au` on the site.
 - [ ] Meta App Review and Google OAuth verification submissions prepared

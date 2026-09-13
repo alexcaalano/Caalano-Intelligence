@@ -18,6 +18,16 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.574.0 - 2026-09-13 · `PENDING`
+
+**Pick the reply channel** - the conversation panel in Deals & Actions
+now has a "Reply by" picker. It defaults to the channel the contact last
+wrote on (an inbound SMS gets an SMS back) and offers every channel seen
+in the thread, plus SMS when the contact has a number and e-mail when they
+have an address. E-mail replies can carry a subject.
+
+---
+
 ## v3.573.0 - 2026-09-13 · `d41edc5`
 
 **Sales Hub (manager view)** - a new client tab in the Pipeline group for

@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.573.0'
+const APP_VERSION = '3.574.0'
 // The business clock. Every server window is cut on the client's local day
 // (Caalano Systems location timezone), so any day the app derives on its own -
 // preset ranges, "today", CSV dates - must use the same clock rather than the
@@ -16280,10 +16280,13 @@ function ActNotes({ clientId, contactId, canWrite, write, busy, userName }) {
 // The contact's conversation: the last messages, a reply on the same channel
 // (which marks the row handled), and the close-as-lost that an "I'm not
 // interested" message usually deserves.
+const ACT_CHANNELS = { SMS: 'SMS', Email: 'Email', WhatsApp: 'WhatsApp', FB: 'Facebook', IG: 'Instagram', Live_Chat: 'Live chat' }
 function ActConversation({ clientId, row, data, canWrite, write, busy, loc, userName, keep = false, label = 'Open & reply' }) {
   const [open, setOpen] = useState(false)
   const [st, setSt] = useState({ status: 'idle', conv: null })
   const [text, setText] = useState('')
+  const [subject, setSubject] = useState('')
+  const [channel, setChannel] = useState('')
   const [reason, setReason] = useState('')
   const load = () => {
     setSt((s) => ({ ...s, status: 'loading' }))
@@ -16295,18 +16298,27 @@ function ActConversation({ clientId, row, data, canWrite, write, busy, loc, user
   }
   if (!open) return <button type="button" className={`${keep ? 'btn-ghost' : 'btn-primary'} act-btn`} onClick={() => { setOpen(true); load() }}>{label}</button>
   const conv = st.conv || {}
-  const replyType = conv.replyType || 'SMS'
-  const canReply = canWrite && ['SMS', 'WhatsApp', 'FB', 'IG', 'Live_Chat', 'Email'].includes(replyType)
+  // Reply channel: defaults to the one the contact last wrote on (an inbound
+  // SMS gets an SMS back); the picker offers every channel seen in the thread
+  // plus SMS / e-mail when the contact has a number / address on file.
+  const channels = Array.from(new Set([...(conv.channels || []), ...(row.phone ? ['SMS'] : []), ...(row.email ? ['Email'] : [])])).filter((c) => ACT_CHANNELS[c])
+  const replyType = channel && channels.includes(channel) ? channel : (conv.replyType || channels[0] || 'SMS')
+  const canReply = canWrite && !!ACT_CHANNELS[replyType]
   return (
     <div className="act-panel act-conv">
-      <div className="act-panel-head"><b>Conversation</b><span className="cap">{replyType === 'Live_Chat' ? 'Live chat' : replyType}</span><button type="button" className="btn-ghost sm" onClick={() => setOpen(false)}>Close</button></div>
+      <div className="act-panel-head"><b>Conversation</b>
+        {channels.length > 1 ? <label className="act-chan cap">Reply by
+          <select value={replyType} onChange={(e) => setChannel(e.target.value)}>{channels.map((c) => <option key={c} value={c}>{ACT_CHANNELS[c]}</option>)}</select>
+        </label> : <span className="cap">{ACT_CHANNELS[replyType] || replyType}</span>}
+        <button type="button" className="btn-ghost sm" onClick={() => setOpen(false)}>Close</button></div>
       {st.status === 'loading' ? <p className="cap">Loading messages…</p> : st.status === 'err' ? <p className="cap act-bad">{st.error}</p> : !(conv.messages || []).length ? <p className="cap">No messages found.</p> : (
         <div className="act-msgs">{conv.messages.map((m) => <div key={m.id} className={`act-msg-b ${m.direction === 'inbound' ? 'in' : 'out'}`}><div>{m.body || <i className="cap">({String(m.type || 'message').replace(/^TYPE_/, '').toLowerCase()})</i>}</div><div className="cap">{m.at ? new Date(m.at).toLocaleString('en-AU', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }) : ''}{m.direction === 'outbound' ? (m.userId ? ` · ${(userName && userName[m.userId]) || 'staff'}` : ' · automation') : ''}</div></div>)}</div>
       )}
       {canReply ? <div className="act-note">
-        <textarea value={text} onChange={(e) => setText(e.target.value)} placeholder={`Reply by ${replyType === 'Live_Chat' ? 'live chat' : replyType}…`} rows={2} />
+        {replyType === 'Email' ? <input className="act-in" type="text" value={subject} onChange={(e) => setSubject(e.target.value)} placeholder="Subject (optional)" maxLength={200} /> : null}
+        <textarea value={text} onChange={(e) => setText(e.target.value)} placeholder={`Reply by ${ACT_CHANNELS[replyType] || replyType}…`} rows={2} />
         <div className="act-note-btns">
-          <button type="button" className="btn-primary act-btn" disabled={busy || !text.trim()} onClick={async () => { const ok = await write({ op: 'reply', contactId: row.contactId, conversationId: conv.id || row.id, type: replyType, body: text.trim() }, row.id, null, !keep); if (ok && keep) { setText(''); load() } }}>{keep ? 'Send' : 'Send & mark handled'}</button>
+          <button type="button" className="btn-primary act-btn" disabled={busy || !text.trim()} onClick={async () => { const ok = await write({ op: 'reply', contactId: row.contactId, conversationId: conv.id || row.id, type: replyType, body: text.trim(), ...(replyType === 'Email' && subject.trim() ? { subject: subject.trim() } : {}) }, row.id, null, !keep); if (ok && keep) { setText(''); load() } }}>{keep ? 'Send' : 'Send & mark handled'}</button>
           <ActOpen href={crmConvLink(loc, row.id)} label="Open in CRM" />
         </div>
       </div> : <div className="act-ctl"><ActOpen href={crmConvLink(loc, row.id)} label="Reply in CRM" /></div>}

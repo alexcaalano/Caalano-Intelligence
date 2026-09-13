@@ -5739,7 +5739,7 @@ async function _inboundUnreplied(locTok, locationId) {
   const auto = [] // last message outbound but not by a person: check whether an inbound sits unanswered behind it
   let page = 0, startAfter = null
   const conv = (c) => ({
-    id: c.id || c._id, contactId: c.contactId || null, name: c.fullName || c.contactName || c.email || c.phone || 'Unknown',
+    id: c.id || c._id, contactId: c.contactId || null, name: c.fullName || c.contactName || c.email || c.phone || 'Unknown', email: c.email || null, phone: c.phone || null,
     lastMs: Number(c.lastMessageDate) || Date.parse(c.lastMessageDate) || null, type: c.lastMessageType || c.type || null,
     snippet: String(c.lastMessageBody || '').slice(0, 160), unread: Number(c.unreadCount) || 0, userId: c.assignedTo || null,
   })
@@ -5808,9 +5808,29 @@ export async function contactConversation(locationId, { contactId = null, conver
     body: htmlToText(m.body || (m.meta && m.meta.email && m.meta.email.subject) || '').slice(0, 2000),
     at: Date.parse(m.dateAdded || m.dateUpdated || m.createdAt) || null, userId: msgUserId(m) || null, source: m.source || null, status: m.status || null,
   })).filter((m) => m.at).sort((a, b) => a.at - b.at).slice(-30)
-  const lastIn = [...messages].reverse().find((m) => m.direction === 'inbound')
-  const replyType = CONV_TYPE_TO_SEND[(lastIn && lastIn.type) || ''] || CONV_TYPE_TO_SEND[(messages[messages.length - 1] || {}).type || ''] || 'SMS'
-  return { id: convId, messages, replyType }
+  const { replyType, channels } = convChannels(messages)
+  return { id: convId, messages, replyType, channels }
+}
+// The channels a reply can go on for this conversation, most recent first, and
+// the default: the channel of the contact's last inbound message (a text gets a
+// text back), else the last message of any kind, else SMS. Extra channels the
+// contact has not used yet (an e-mail address on file, say) are added by the
+// caller; the CRM refuses a send the contact cannot receive.
+const CONV_SENDABLE = ['SMS', 'Email', 'WhatsApp', 'FB', 'IG', 'Live_Chat']
+export function convChannels(messages, { email = null, phone = null } = {}) {
+  const seen = []
+  for (const m of [...(messages || [])].sort((a, b) => (b.at || 0) - (a.at || 0))) {
+    const t = CONV_TYPE_TO_SEND[m.type || '']
+    if (t && CONV_SENDABLE.includes(t) && !seen.includes(t)) seen.push(t)
+  }
+  const lastIn = [...(messages || [])].sort((a, b) => (b.at || 0) - (a.at || 0)).find((m) => m.direction === 'inbound')
+  const inType = CONV_TYPE_TO_SEND[(lastIn && lastIn.type) || '']
+  const replyType = (inType && CONV_SENDABLE.includes(inType) ? inType : null) || seen[0] || (phone ? 'SMS' : email ? 'Email' : 'SMS')
+  const channels = [...seen]
+  if (phone && !channels.includes('SMS')) channels.push('SMS')
+  if (email && !channels.includes('Email')) channels.push('Email')
+  if (!channels.includes(replyType)) channels.unshift(replyType)
+  return { replyType, channels }
 }
 // Which CRM user is this signed-in person? Matched by e-mail against the
 // location's user list, so "mine" means the deals the CRM says are theirs.

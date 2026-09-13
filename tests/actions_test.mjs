@@ -3,7 +3,7 @@
 // carries the fields the rows render, "mine" narrows to one rep, fixed rows
 // disappear until the snapshot catches up, and every write is validated.
 import assert from 'node:assert/strict'
-import { buildActions, applyAction, ghlUserIdForEmail } from '../netlify/lib/ghl.mjs'
+import { buildActions, applyAction, ghlUserIdForEmail, convChannels } from '../netlify/lib/ghl.mjs'
 import { DEMO_LOCATION, demoData } from '../netlify/lib/demo.mjs'
 import { ALL_TABS } from '../netlify/lib/auth.mjs'
 
@@ -80,3 +80,23 @@ console.log('actions_test (repcard) ok')
   assert.equal(htmlToText('a &amp; b<br>c'), 'a & b\nc')
 }
 console.log('actions_test (html) ok')
+
+// Reply channel: default to what the contact last wrote on; offer the rest.
+{
+  const msgs = [
+    { type: 'TYPE_EMAIL', direction: 'outbound', at: 1000 },
+    { type: 'TYPE_SMS', direction: 'inbound', at: 2000 },
+    { type: 'TYPE_EMAIL', direction: 'outbound', at: 3000 },
+  ]
+  const a = convChannels(msgs)
+  assert.equal(a.replyType, 'SMS', 'inbound SMS gets an SMS back even after an outbound e-mail')
+  assert.deepEqual(a.channels, ['Email', 'SMS'], 'channels seen in the thread, most recent first')
+  const b = convChannels([{ type: 'TYPE_WHATSAPP', direction: 'inbound', at: 5 }], { email: 'a@b.c', phone: '+61' })
+  assert.equal(b.replyType, 'WhatsApp')
+  assert.deepEqual(b.channels, ['WhatsApp', 'SMS', 'Email'], 'contact details add channels not yet used')
+  const c = convChannels([{ type: 'TYPE_CALL', direction: 'inbound', at: 5 }], { email: 'a@b.c' })
+  assert.equal(c.replyType, 'Email', 'a call is not a reply channel; fall back to what the contact has')
+  assert.deepEqual(c.channels, ['Email'])
+  assert.equal(convChannels([]).replyType, 'SMS')
+  console.log('ok convChannels')
+}

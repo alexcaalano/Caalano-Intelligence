@@ -26,7 +26,7 @@ ok(cards.length >= 70, `card modules registered (${cards.length})`)
 for (const t of cards) { ok(tabIds.has(t.split(':')[0]) && rendered.has(t.split(':')[0]), `card module ${t} belongs to a rendered tab`); ok(cardBlkIds.has(t), `card module ${t} is wrapped as a block`) }
 for (const id of cardBlkIds) ok(types.includes(id), `block ${id} is offered as a module`)
 for (const p of DASH_PRESETS) { ok(p.types.length > 0, `preset ${p.key} has modules`); for (const t of p.types) ok(types.includes(t), `preset ${p.key} uses a known module (${t})`) }
-ok(/'dashboards'\]/.test(fs.readFileSync(new URL('../netlify/functions/settings.mjs', import.meta.url), 'utf8')), 'the server accepts the dashboards section')
+ok(/const SECTIONS = \[[^\]]*'dashboards'/.test(fs.readFileSync(new URL('../netlify/functions/settings.mjs', import.meta.url), 'utf8')), 'the server accepts the dashboards section')
 ok(/id: 'custom'/.test(src) && /\['overall', 'custom', 'clinic'\]/.test(src), 'the custom tab is offered and grouped under Overview')
 // Permissions parity: every tab the app lets you tick must survive the server's
 // save filter, and the custom dashboard must be one of them.

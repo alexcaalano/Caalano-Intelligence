@@ -6011,7 +6011,7 @@ export async function buildRepCard(locationId, { userId, from, to, hours = null,
   const fromMs = from ? zonedStartMs(from, tz) : null
   const toMs = to ? zonedEndMs(to, tz) : null
   const inPeriod = (ms) => Number.isFinite(ms) && (fromMs == null || ms >= fromMs) && (toMs == null || ms <= toMs)
-  const [inp, snap, rawAppts, speed] = await Promise.all([
+  const [inp, snap, rawAppts, speed, calls, cashField] = await Promise.all([
     _userPerfInputs(locationId, from, to),
     oppSnapshot(locTok, locationId),
     _rawAppointments(locTok, locationId, (fromMs != null ? fromMs : now - 30 * ACT_DAY) - 7 * ACT_DAY, (toMs != null ? toMs : now) + 90 * ACT_DAY),
@@ -6019,8 +6019,25 @@ export async function buildRepCard(locationId, { userId, from, to, hours = null,
     // it finishes in time, else per-lead reads up to the budget (the card says
     // how many it measured).
     buildSpeedToLead(locationId, from, to, { sample: 200, budgetMs: 12000, hours, userId }).catch(() => null),
+    // Calls made and minutes on the phone, per rep, from the call export.
+    buildUserCalls(locationId, from, to, true).catch(() => null),
+    oppCustomFields(locTok, locationId).then(cashFieldOf).catch(() => null),
   ])
   const perf = _aggregateUserPerf(inp, {})
+  const callsByUser = new Map(((calls && calls.users) || []).map((u) => [u.userId, u]))
+  const callsOf = (uid) => { const c = callsByUser.get(uid); return c ? { outbound: c.outbound || 0, connected: c.outboundConnected || 0, minutes: Math.round(((c.outboundSec || 0) + (c.inboundSec || 0)) / 60), inbound: c.inbound || 0 } : { outbound: 0, connected: 0, minutes: 0, inbound: 0 } }
+  // Cash collected on the rep's wins closed in the period (the client's cash field).
+  const cashOf = (uid) => {
+    if (!cashField) return null
+    let sum = 0
+    for (const o of (snap.opps || [])) {
+      if (o.assignedTo !== uid || String(o.status || '').toLowerCase() !== 'won') continue
+      const w = Date.parse(o.lastStatusChangeAt || o.lastStageChangeAt || o.updatedAt || '')
+      if (!inPeriod(w)) continue
+      sum += num(oppCashValue(o, cashField))
+    }
+    return Math.round(sum)
+  }
   const me = (perf.users || []).find((u) => u.id === userId) || null
   const team = (perf.users || []).filter((u) => u.leads > 0)
   const rankOf = (key, desc = true) => {
@@ -6079,7 +6096,8 @@ export async function buildRepCard(locationId, { userId, from, to, hours = null,
   }
   const leaderboard = team.map((u) => {
     const b = apByUser.get(u.id) || { booked: 0, showed: 0, noShow: 0 }
-    return { id: u.id, name: u.name, me: u.id === userId, leads: u.leads, booked: b.booked, showed: b.showed, noShow: b.noShow, showRate: (b.showed + b.noShow) ? Math.round((b.showed / (b.showed + b.noShow)) * 100) : null, won: u.won, lost: u.lost, revenue: u.revenue, winRate: u.winRate, open: u.open }
+    const c = callsOf(u.id)
+    return { id: u.id, name: u.name, me: u.id === userId, leads: u.leads, booked: b.booked, showed: b.showed, noShow: b.noShow, showRate: (b.showed + b.noShow) ? Math.round((b.showed / (b.showed + b.noShow)) * 100) : null, won: u.won, lost: u.lost, revenue: u.revenue, winRate: u.winRate, open: u.open, calls: c.outbound, minutes: c.minutes, cash: cashOf(u.id) }
   }).sort((a, b) => (b.won - a.won) || (b.revenue - a.revenue) || (b.booked - a.booked))
   return {
     connected: true, tz, userId, leaderboard, name: me ? me.name : ((inp.userRows || []).find((u) => (u.id || u._id) === userId) || {}).name || null,
@@ -6089,7 +6107,7 @@ export async function buildRepCard(locationId, { userId, from, to, hours = null,
     winRate: me ? me.winRate : null, avgDeal: me ? me.avgDeal : null, avgCloseDays: me ? me.avgCloseDays : null,
     bookRate: me ? me.bookRate : null, pipelineValue: me ? me.pipelineValue : 0, wonValue: me ? me.wonValue : 0, lostValue: me ? me.lostValue : 0,
     stages: me ? me.stages : {}, stageOpen: me ? me.stageOpen : {}, lostReasons: me ? me.lostReasons : [], byPipeline: me ? me.byPipeline : [],
-    appointments: ap, byCalendar,
+    appointments: ap, byCalendar, calls: callsOf(userId), cash: { field: cashField || null, collected: cashOf(userId) },
     speed: sp ? { full: !!sp.full, medianMin: sp.medianMin ?? null, avgMin: sp.avgMin ?? null, within5Pct: sp.within5Pct ?? null, measured: sp.measured ?? null, measuredAll: sp.measuredAll ?? null, sampled: sp.sampled ?? null, totalLeads: sp.totalLeads ?? null, inHours: sp.totalLeads != null ? sp.totalLeads - ((sp.after && sp.after.count) || 0) : null, buckets: sp.buckets || null, after: sp.after || null, hours: sp.hours || null, viaAppt: sp.viaAppt ?? null, viaMessage: sp.viaMessage ?? null } : null,
     now: { open: openNow.length, openValue: Math.round(openValue), stale },
     rank: { leads: rankOf('leads'), booked: rankOf('booked'), winRate: rankOf('winRate'), revenue: rankOf('revenue'), showRate: rankOf('showRate'), closeDays: rankOf('avgCloseDays', false) },

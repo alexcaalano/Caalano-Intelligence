@@ -18,6 +18,26 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.572.0 - 2026-09-13 · `PENDING`
+
+**Rep KPIs and the monthly cockpit** - Settings -> a client -> Rep KPIs
+lets an Agency Admin set monthly targets: a default for every rep and a
+number per rep that overrides it, for revenue, cash collected, deals
+closed, meetings booked, booked by the rep, meetings held, show rate, win
+rate, calls made, minutes on the phone, speed to lead and leads. My results
+now opens with "This month": one bar per tracked target with a pace mark
+at how far through the month it is, green when on pace, amber a little
+behind, red well behind, and a line saying what is left and what pace
+says should be done by today. Rates and speed compare straight against the
+target.
+
+**Calls, minutes and cash per rep** - calls made, connected calls and
+minutes on the phone come from the call export; cash collected from the
+client's cash-collected field. Both are tiles on My results, columns on
+the leaderboard (sortable), and rows on Compare.
+
+---
+
 ## v3.571.0 - 2026-09-13 · `d81c929`
 
 **Upcoming appointments** - a new section at the top of the Action list:

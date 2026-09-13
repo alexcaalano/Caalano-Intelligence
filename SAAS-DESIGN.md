@@ -1083,3 +1083,22 @@ is optional: unlinked people match by e-mail. An Account User's Live deals
 and Action list are always their own; My results keeps the leaderboard
 because every deal is visible in the CRM anyway; Compare is Account Admin
 and above.
+
+## 18. The rep cockpit: monthly KPI targets per rep (2026-09-13)
+
+Built in v3.572.0. An Agency Admin sets monthly targets per client under
+Settings -> Rep KPIs: a default for every rep and per-rep overrides, for
+revenue, cash collected, deals closed, meetings booked, booked by the rep,
+meetings held, show rate, win rate, calls made, minutes on the phone, speed
+to lead and leads. My results opens with "This month": one bar per tracked
+target with a pace mark at the share of the month elapsed, green when on
+pace, amber a little behind, red well behind; rates and speed compare
+straight against the target. Calls and minutes come from the call export,
+cash from the client's cash-collected field, and both also sit on the
+leaderboard and the compare view.
+
+Later, with the product register (PRODUCT-REGISTER-DESIGN.md): targets and
+actuals per product line (units and revenue by product per rep), and gross
+profit per rep. In the SaaS schema targets live in a `rep_targets` table
+(workspace, crm user or null for the default, month, kpi, value) so a
+month's target is kept once it has passed and history can be charted.

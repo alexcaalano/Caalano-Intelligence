@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.571.0'
+const APP_VERSION = '3.572.0'
 // The business clock. Every server window is cut on the client's local day
 // (Caalano Systems location timezone), so any day the app derives on its own -
 // preset ranges, "today", CSV dates - must use the same clock rather than the
@@ -4207,6 +4207,7 @@ const KEV_KEY = 'caalano_keyevents'
 const ANNOT_KEY = 'caalano_annot'   // global: show the methodology prose or not
 const FORECAST_KEY = 'caalano_forecasts'   // { [scenarioId]: scenario } - saved Funnel Forecaster scenarios, shared
 const DASH_KEY = 'caalano_dashboards'  // { clientId: { name, chan, modules: [{ type, title? }] } } - Super Admin custom dashboards
+const REPKPI_KEY = 'caalano_repkpis'       // { clientId: { default: {kpi: n}, byUser: { crmUserId: {kpi: n} } } } monthly rep targets
 const GEO_KEY = 'caalano_geo'             // { clientId: { mode, origin, place, radiusKm, byPipeline } }
 const CLINIC_CFG_KEY = 'caalano_clinic'   // { clientId: { cals: { [calendarId]: 'clinical'|'triage' } } }
 const ENABLED_KEY = 'caalano_enabled'
@@ -4263,7 +4264,7 @@ const UI_LAYOUT_KEY = 'caalano_ui_layout'      // 'v1' | 'v2' - this browser's o
 const PDFDL_KEY = 'caalano_pdfdl'                // { clientId: bool } - per-client "clients may download the report PDF" (admin-toggled)
 const readLS = (k) => { try { return JSON.parse(localStorage.getItem(k) || '{}') } catch { return {} } }
 const writeLS = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)) } catch {} }
-const SETTINGS = { campmap: readLS(CMAP_KEY), kpis: readLS(KPI_KEY), keyevents: readLS(KEV_KEY), annotations: readLS(ANNOT_KEY), enabled: readLS(ENABLED_KEY), restricted: readLS(RESTRICTED_KEY), insights: readLS(AI_KEY), clients: readLS(CLIENTS_KEY), formmeta: readLS(FORMMETA_KEY), metaconv: readLS(METACONV_KEY), creativemeta: readLS(CREATIVEMETA_KEY), creativetax: readLS(CREATIVETAX_KEY), clientctx: readLS(CLIENTCTX_KEY), fatigue: readLS(FATIGUE_KEY), competitors: readLS(COMPETITORS_KEY), socialkpis: readLS(SOCIALKPIS_KEY), optlog: readLS(OPTLOG_KEY), qualstage: readLS(QUALSTAGE_KEY), aliases: readLS(ALIASES_KEY), logos: readLS(LOGOS_KEY), curator: readLS(CURATOR_KEY), profile: readLS(PROFILE_KEY), dailyperf: readLS(DAILYPERF_KEY), adnames: readLS(ADNAMES_KEY), pdfdl: readLS(PDFDL_KEY), clinic: readLS(CLINIC_CFG_KEY), geo: readLS(GEO_KEY), forecasts: readLS(FORECAST_KEY), ui: readLS(UI_KEY), dashboards: readLS(DASH_KEY), loaded: false }
+const SETTINGS = { campmap: readLS(CMAP_KEY), kpis: readLS(KPI_KEY), keyevents: readLS(KEV_KEY), annotations: readLS(ANNOT_KEY), enabled: readLS(ENABLED_KEY), restricted: readLS(RESTRICTED_KEY), insights: readLS(AI_KEY), clients: readLS(CLIENTS_KEY), formmeta: readLS(FORMMETA_KEY), metaconv: readLS(METACONV_KEY), creativemeta: readLS(CREATIVEMETA_KEY), creativetax: readLS(CREATIVETAX_KEY), clientctx: readLS(CLIENTCTX_KEY), fatigue: readLS(FATIGUE_KEY), competitors: readLS(COMPETITORS_KEY), socialkpis: readLS(SOCIALKPIS_KEY), optlog: readLS(OPTLOG_KEY), qualstage: readLS(QUALSTAGE_KEY), aliases: readLS(ALIASES_KEY), logos: readLS(LOGOS_KEY), curator: readLS(CURATOR_KEY), profile: readLS(PROFILE_KEY), dailyperf: readLS(DAILYPERF_KEY), adnames: readLS(ADNAMES_KEY), pdfdl: readLS(PDFDL_KEY), clinic: readLS(CLINIC_CFG_KEY), geo: readLS(GEO_KEY), forecasts: readLS(FORECAST_KEY), ui: readLS(UI_KEY), dashboards: readLS(DASH_KEY), repkpis: readLS(REPKPI_KEY), loaded: false }
 const settingsSubs = new Set()
 const bumpSettings = () => { for (const fn of settingsSubs) fn() }
 function onSettings(fn) { settingsSubs.add(fn); return () => settingsSubs.delete(fn) }
@@ -4293,8 +4294,8 @@ async function hydrateSettings() {
       // First run: migrate whatever this browser holds up to the server.
       saveSettingsRemote({ campmap: SETTINGS.campmap, kpis: SETTINGS.kpis, keyevents: SETTINGS.keyevents, enabled: SETTINGS.enabled, restricted: SETTINGS.restricted, insights: SETTINGS.insights, clients: SETTINGS.clients, formmeta: SETTINGS.formmeta, metaconv: SETTINGS.metaconv, creativemeta: SETTINGS.creativemeta, creativetax: SETTINGS.creativetax, clientctx: SETTINGS.clientctx, fatigue: SETTINGS.fatigue })
     } else {
-      for (const s of ['campmap', 'kpis', 'keyevents', 'enabled', 'restricted', 'insights', 'clients', 'formmeta', 'metaconv', 'creativemeta', 'creativetax', 'clientctx', 'fatigue', 'competitors', 'socialkpis', 'optlog', 'qualstage', 'aliases', 'logos', 'curator', 'profile', 'dailyperf', 'adnames', 'pdfdl', 'geo', 'annotations', 'forecasts', 'ui', 'dashboards']) SETTINGS[s] = { ...SETTINGS[s], ...(d[s] || {}) }
-      writeLS(CMAP_KEY, SETTINGS.campmap); writeLS(KPI_KEY, SETTINGS.kpis); writeLS(KEV_KEY, SETTINGS.keyevents); writeLS(ENABLED_KEY, SETTINGS.enabled); writeLS(RESTRICTED_KEY, SETTINGS.restricted); writeLS(AI_KEY, SETTINGS.insights); writeLS(CLIENTS_KEY, SETTINGS.clients); writeLS(FORMMETA_KEY, SETTINGS.formmeta); writeLS(METACONV_KEY, SETTINGS.metaconv); writeLS(CREATIVEMETA_KEY, SETTINGS.creativemeta); writeLS(CREATIVETAX_KEY, SETTINGS.creativetax); writeLS(CLIENTCTX_KEY, SETTINGS.clientctx); writeLS(FATIGUE_KEY, SETTINGS.fatigue); writeLS(COMPETITORS_KEY, SETTINGS.competitors); writeLS(SOCIALKPIS_KEY, SETTINGS.socialkpis); writeLS(OPTLOG_KEY, SETTINGS.optlog); writeLS(QUALSTAGE_KEY, SETTINGS.qualstage); writeLS(ALIASES_KEY, SETTINGS.aliases); writeLS(LOGOS_KEY, SETTINGS.logos); writeLS(CURATOR_KEY, SETTINGS.curator); writeLS(PROFILE_KEY, SETTINGS.profile); writeLS(DAILYPERF_KEY, SETTINGS.dailyperf); writeLS(ADNAMES_KEY, SETTINGS.adnames); writeLS(PDFDL_KEY, SETTINGS.pdfdl); writeLS(FORECAST_KEY, SETTINGS.forecasts); writeLS(UI_KEY, SETTINGS.ui); writeLS(DASH_KEY, SETTINGS.dashboards); writeLS(GEO_KEY, SETTINGS.geo); writeLS(ANNOT_KEY, SETTINGS.annotations)
+      for (const s of ['campmap', 'kpis', 'keyevents', 'enabled', 'restricted', 'insights', 'clients', 'formmeta', 'metaconv', 'creativemeta', 'creativetax', 'clientctx', 'fatigue', 'competitors', 'socialkpis', 'optlog', 'qualstage', 'aliases', 'logos', 'curator', 'profile', 'dailyperf', 'adnames', 'pdfdl', 'geo', 'annotations', 'forecasts', 'ui', 'dashboards', 'repkpis']) SETTINGS[s] = { ...SETTINGS[s], ...(d[s] || {}) }
+      writeLS(CMAP_KEY, SETTINGS.campmap); writeLS(KPI_KEY, SETTINGS.kpis); writeLS(KEV_KEY, SETTINGS.keyevents); writeLS(ENABLED_KEY, SETTINGS.enabled); writeLS(RESTRICTED_KEY, SETTINGS.restricted); writeLS(AI_KEY, SETTINGS.insights); writeLS(CLIENTS_KEY, SETTINGS.clients); writeLS(FORMMETA_KEY, SETTINGS.formmeta); writeLS(METACONV_KEY, SETTINGS.metaconv); writeLS(CREATIVEMETA_KEY, SETTINGS.creativemeta); writeLS(CREATIVETAX_KEY, SETTINGS.creativetax); writeLS(CLIENTCTX_KEY, SETTINGS.clientctx); writeLS(FATIGUE_KEY, SETTINGS.fatigue); writeLS(COMPETITORS_KEY, SETTINGS.competitors); writeLS(SOCIALKPIS_KEY, SETTINGS.socialkpis); writeLS(OPTLOG_KEY, SETTINGS.optlog); writeLS(QUALSTAGE_KEY, SETTINGS.qualstage); writeLS(ALIASES_KEY, SETTINGS.aliases); writeLS(LOGOS_KEY, SETTINGS.logos); writeLS(CURATOR_KEY, SETTINGS.curator); writeLS(PROFILE_KEY, SETTINGS.profile); writeLS(DAILYPERF_KEY, SETTINGS.dailyperf); writeLS(ADNAMES_KEY, SETTINGS.adnames); writeLS(PDFDL_KEY, SETTINGS.pdfdl); writeLS(FORECAST_KEY, SETTINGS.forecasts); writeLS(UI_KEY, SETTINGS.ui); writeLS(DASH_KEY, SETTINGS.dashboards); writeLS(GEO_KEY, SETTINGS.geo); writeLS(REPKPI_KEY, SETTINGS.repkpis); writeLS(ANNOT_KEY, SETTINGS.annotations)
     }
   } catch { /* offline: keep the localStorage cache */ }
   SETTINGS.loaded = true
@@ -16126,7 +16127,7 @@ function ActDealControls({ d, data, busy, write, currency }) {
 }
 // ---- My results: the rep scorecard and the leaderboard -------------------------
 const REP_PERIODS = [['last_7d', 'Last 7 days'], ['last_14d', 'Last 14 days'], ['last_30d', 'Last 30 days'], ['this_month', 'This month'], ['last_month', 'Last month'], ['last_90d', 'Last 90 days']]
-const LB_KEYS = [['won', 'Closed deals'], ['revenue', 'Revenue'], ['booked', 'Booked'], ['showed', 'Shown'], ['winRate', 'Win rate'], ['showRate', 'Show rate'], ['leads', 'Leads']]
+const LB_KEYS = [['won', 'Closed deals'], ['revenue', 'Revenue'], ['cash', 'Cash collected'], ['booked', 'Booked'], ['showed', 'Shown'], ['winRate', 'Win rate'], ['showRate', 'Show rate'], ['calls', 'Calls made'], ['minutes', 'Minutes on the phone'], ['leads', 'Leads']]
 const repMin = (m) => (m == null ? '-' : m < 60 ? `${Math.round(m)} min` : m < 1440 ? `${(m / 60).toFixed(1)} h` : `${(m / 1440).toFixed(1)} d`)
 function RepTile({ label, value, sub, tone, rank }) {
   return <div className={`rep-tile ${tone || ''}`}><div className="rep-tile-l">{label}{rank ? <span className="rep-rank">#{rank.rank}</span> : null}</div><div className="rep-tile-v">{value}</div>{sub ? <div className="rep-tile-s">{sub}</div> : null}</div>
@@ -16138,7 +16139,7 @@ function RepBar({ label, value, max, text, tone }) {
 function RepLeaderboard({ rows, meId, currency }) {
   const [key, setKey] = useState('won')
   const money = (v) => fmtCurrency(v || 0, currency)
-  const fmt = (r, k) => (k === 'revenue' ? money(r[k]) : k === 'winRate' || k === 'showRate' ? (r[k] == null ? '-' : `${r[k]}%`) : fmtNumber(r[k] || 0))
+  const fmt = (r, k) => (k === 'revenue' || k === 'cash' ? (r[k] == null ? '-' : money(r[k])) : k === 'winRate' || k === 'showRate' ? (r[k] == null ? '-' : `${r[k]}%`) : fmtNumber(r[k] || 0))
   const sorted = [...(rows || [])].sort((a, b) => ((b[key] == null ? -1 : b[key]) - (a[key] == null ? -1 : a[key])) || (b.won - a.won) || (b.revenue - a.revenue))
   const top = sorted.slice(0, 3)
   const mePos = sorted.findIndex((r) => r.id === meId)
@@ -16150,13 +16151,111 @@ function RepLeaderboard({ rows, meId, currency }) {
         <div className="rep-podium">{top.map((r, i) => <div key={r.id} className={`rep-pod ${r.id === meId ? 'me' : ''} p${i + 1}`}><div className="rep-pod-m">{medal[i]}</div><b>{r.name}{r.id === meId ? ' (you)' : ''}</b><div className="rep-pod-v">{fmt(r, key)}</div><div className="cap">{key === 'won' ? money(r.revenue) : `${r.won} won`}</div></div>)}</div>
         {mePos >= 0 ? <p className="rep-lb-me">You are <b>#{mePos + 1} of {sorted.length}</b> on {LB_KEYS.find(([k]) => k === key)[1].toLowerCase()}{mePos > 0 ? `, ${key === 'revenue' ? money(sorted[mePos - 1][key] - sorted[mePos][key]) : `${Math.max(0, (sorted[mePos - 1][key] || 0) - (sorted[mePos][key] || 0))}${key.endsWith('Rate') ? ' points' : ''}`} behind ${sorted[mePos - 1].name}` : ' - top of the board'}.</p> : null}
         <div className="rep-lb-rows">
-          <div className="rep-lb-row head"><span>#</span><span>Rep</span><span>Leads</span><span>Booked</span><span>Shown</span><span>Won</span><span>Revenue</span><span>Win</span><span>Show</span></div>
-          {sorted.map((r, i) => <div key={r.id} className={`rep-lb-row ${r.id === meId ? 'me' : ''}`}><span>{i + 1}</span><span className="rep-lb-name">{r.name}</span><span>{fmtNumber(r.leads)}</span><span>{fmtNumber(r.booked)}</span><span>{fmtNumber(r.showed)}</span><span>{fmtNumber(r.won)}</span><span>{money(r.revenue)}</span><span>{r.winRate == null ? '-' : `${r.winRate}%`}</span><span>{r.showRate == null ? '-' : `${r.showRate}%`}</span></div>)}
+          <div className="rep-lb-row head"><span>#</span><span>Rep</span><span>Leads</span><span>Booked</span><span>Shown</span><span>Won</span><span>Revenue</span><span>Win</span><span>Show</span><span>Calls</span><span>Min</span></div>
+          {sorted.map((r, i) => <div key={r.id} className={`rep-lb-row ${r.id === meId ? 'me' : ''}`}><span>{i + 1}</span><span className="rep-lb-name">{r.name}</span><span>{fmtNumber(r.leads)}</span><span>{fmtNumber(r.booked)}</span><span>{fmtNumber(r.showed)}</span><span>{fmtNumber(r.won)}</span><span>{money(r.revenue)}</span><span>{r.winRate == null ? '-' : `${r.winRate}%`}</span><span>{r.showRate == null ? '-' : `${r.showRate}%`}</span><span>{fmtNumber(r.calls || 0)}</span><span>{fmtNumber(r.minutes || 0)}</span></div>)}
         </div>
       </>}
     </div>
   )
 }
+// ---- Rep KPIs: monthly targets per rep, and the cockpit that tracks them ------
+// An Agency Admin sets monthly targets per client (a default for every rep,
+// overridable per rep). My results opens with "This month": each target as a
+// bar with a pace mark for where the month is up to, green when on pace.
+const REP_KPI_DEFS = [
+  ['revenue', 'Revenue', 'money'], ['cash', 'Cash collected', 'money'], ['won', 'Deals closed', 'count'],
+  ['booked', 'Meetings booked', 'count'], ['userBooked', 'Booked by the rep', 'count'], ['held', 'Meetings held', 'count'],
+  ['showRate', 'Show rate', 'pct'], ['winRate', 'Win rate', 'pct'], ['calls', 'Calls made', 'count'], ['minutes', 'Minutes on the phone', 'count'],
+  ['speedMin', 'Speed to lead (median minutes)', 'lower'], ['leads', 'Leads', 'count'],
+]
+function loadRepKpis(clientId) { const v = (SETTINGS.repkpis && SETTINGS.repkpis[clientId]) || {}; return { default: v.default || {}, byUser: v.byUser || {} } }
+function saveRepKpis(clientId, obj) {
+  SETTINGS.repkpis = { ...(SETTINGS.repkpis || {}), [clientId]: obj }
+  writeLS(REPKPI_KEY, SETTINGS.repkpis); saveSettingsRemote({ repkpis: { [clientId]: obj } }); bumpSettings()
+}
+const repTargetsFor = (clientId, userId) => { const k = loadRepKpis(clientId); const o = { ...k.default, ...((userId && k.byUser[userId]) || {}) }; for (const key of Object.keys(o)) if (!(Number(o[key]) > 0)) delete o[key]; return o }
+function RepKpiEditor({ clientId }) {
+  const [reps, setReps] = useState(null)
+  const [v, setV] = useState(() => loadRepKpis(clientId))
+  const [dirty, setDirty] = useState(false)
+  const [saved, setSaved] = useState(false)
+  useEffect(() => { setV(loadRepKpis(clientId)); setDirty(false) }, [clientId])
+  useEffect(() => {
+    fetch(`/.netlify/functions/windsor?scope=crmusers&client=${encodeURIComponent(clientId)}`, { credentials: 'same-origin' })
+      .then((r) => r.json().catch(() => ({ users: [] }))).then((j) => setReps((j && j.users) || [])).catch(() => setReps([]))
+  }, [clientId])
+  const set = (scope, key, val) => {
+    setDirty(true); setSaved(false)
+    setV((cur) => {
+      const n = Number(val); const next = { default: { ...cur.default }, byUser: { ...cur.byUser } }
+      if (scope === 'default') { if (n > 0) next.default[key] = n; else delete next.default[key] }
+      else { const u = { ...(next.byUser[scope] || {}) }; if (n > 0) u[key] = n; else delete u[key]; if (Object.keys(u).length) next.byUser[scope] = u; else delete next.byUser[scope] }
+      return next
+    })
+  }
+  const save = () => { saveRepKpis(clientId, v); setDirty(false); setSaved(true) }
+  const cols = [['default', 'Every rep (default)'], ...((reps || []).map((r) => [r.id, r.name]))]
+  return (
+    <div className="repkpi">
+      <p className="cap" style={{ marginTop: 0 }}>Monthly targets. The default applies to every rep; a number under a rep's name overrides it for them. Leave blank to not track that one. Reps see these as progress bars on My results, with a pace mark for how far through the month it is.</p>
+      <div className="table-wrap"><table className="mini-tbl repkpi-tbl">
+        <thead><tr><th className="lft">Target per month</th>{cols.map(([id, name]) => <th key={id} className="lft">{name}</th>)}</tr></thead>
+        <tbody>{REP_KPI_DEFS.map(([key, label, kind]) => (
+          <tr key={key}><td className="lft"><b>{label}</b>{kind === 'lower' ? <span className="cap"> · lower is better</span> : kind === 'pct' ? <span className="cap"> · %</span> : null}</td>
+            {cols.map(([id]) => { const val = id === 'default' ? v.default[key] : (v.byUser[id] || {})[key]; const ph = id === 'default' ? '-' : (v.default[key] != null ? String(v.default[key]) : '-')
+              return <td key={id}><input className="act-in repkpi-in" type="number" min="0" inputMode="decimal" placeholder={ph} value={val == null ? '' : val} onChange={(e) => set(id, key, e.target.value)} /></td> })}
+          </tr>
+        ))}</tbody>
+      </table></div>
+      {reps && !reps.length ? <p className="cap">No CRM users found for this account yet, so only the default column is shown.</p> : null}
+      <div className="act-ctl" style={{ marginTop: 10 }}><button type="button" className="btn-primary" disabled={!dirty} onClick={save}>Save targets</button>{saved ? <span className="cap" style={{ color: 'var(--pos)' }}>Saved.</span> : null}</div>
+    </div>
+  )
+}
+// The month so far against the targets: one bar per tracked KPI. Pace = the
+// share of the month elapsed; on pace is green, a little behind amber, well
+// behind red. Rates and speed compare straight against the target.
+function RepCockpit({ clientId, rep, currency, nonce, canEdit }) {
+  const st = useRepCard(clientId, rep, 'this_month', nonce)
+  useSettingsSync()
+  const targets = repTargetsFor(clientId, rep)
+  const keys = REP_KPI_DEFS.filter(([k]) => targets[k] > 0)
+  const now = new Date()
+  const dim = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()
+  const day = now.getDate()
+  const elapsed = Math.min(1, Math.max(0.03, day / dim))
+  if (!keys.length) return canEdit ? <div className="card rep-cockpit-empty"><b>No monthly targets yet.</b> <span className="cap">Set them in Settings → this client → Rep KPIs, and this becomes the rep's cockpit.</span></div> : null
+  const d = st.data || {}
+  const ap = d.appointments || {}
+  const actual = {
+    revenue: d.revenue || 0, cash: (d.cash && d.cash.collected) || 0, won: d.won || 0, booked: ap.booked || 0, userBooked: ap.byStaff || 0, held: ap.showed || 0,
+    showRate: ap.showRate, winRate: d.winRate, calls: (d.calls && d.calls.outbound) || 0, minutes: (d.calls && d.calls.minutes) || 0, speedMin: d.speed ? d.speed.medianMin : null, leads: d.leads || 0,
+  }
+  const fmt = (k, v, kind) => (v == null ? '-' : kind === 'money' ? fmtCurrency(v, currency) : kind === 'pct' ? `${v}%` : kind === 'lower' ? repMin(v) : fmtNumber(v))
+  const monthName = now.toLocaleString('en-AU', { month: 'long' })
+  return (
+    <div className="card rep-cockpit">
+      <div className="rep-cockpit-head"><h4>This month · {monthName}</h4><span className="cap">Day {day} of {dim} · {Math.round(elapsed * 100)}% of the month gone{st.status === 'loading' ? ' · updating…' : ''}</span></div>
+      <div className="rep-cockpit-grid">
+        {keys.map(([k, label, kind]) => {
+          const t = targets[k], a = actual[k]
+          let ratio, status, sub
+          if (kind === 'lower') { ratio = a == null ? 0 : Math.min(1, t / Math.max(a, 0.01)); status = a == null ? '' : a <= t ? 'good' : a <= t * 1.5 ? 'warn' : 'bad'; sub = a == null ? 'not measured yet' : a <= t ? 'inside target' : `${repMin(a - t)} over target` }
+          else if (kind === 'pct') { ratio = a == null ? 0 : Math.min(1, a / t); status = a == null ? '' : a >= t ? 'good' : a >= t * 0.85 ? 'warn' : 'bad'; sub = a == null ? 'nothing to rate yet' : a >= t ? 'on target' : `${t - a} points short` }
+          else { ratio = Math.min(1, (a || 0) / t); const paceNeed = t * elapsed; status = (a || 0) >= paceNeed ? 'good' : (a || 0) >= paceNeed * 0.8 ? 'warn' : 'bad'; const left = Math.max(0, t - (a || 0)); sub = (a || 0) >= t ? 'target hit' : `${fmt(k, left, kind)} to go · pace says ${fmt(k, Math.round(paceNeed), kind)} by today` }
+          return (
+            <div className={`rep-kpi ${status}`} key={k}>
+              <div className="rep-kpi-l"><span>{label}</span><b>{fmt(k, a, kind)}<small> / {fmt(k, t, kind)}</small></b></div>
+              <div className="rep-kpi-t"><div className="rep-kpi-f" style={{ width: `${Math.round(ratio * 100)}%` }} />{kind === 'count' || kind === 'money' ? <div className="rep-kpi-pace" style={{ left: `${Math.round(elapsed * 100)}%` }} title="Where the month is up to" /> : null}</div>
+              <div className="cap">{sub}</div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 // The client's own key events (Settings -> Key events), read for one rep: a
 // stage event is the leads that reached that stage, a calendar event is the
 // appointments booked on that calendar (with how many showed).
@@ -16233,6 +16332,7 @@ function RepCardView({ clientId, authUser, currency, reps, meId, nonce, onGoActi
     <div className="act-wrap rep-wrap">
       {head}
       <div className="rep-head"><b>{d.name || 'Rep'}</b><span className="cap">{label}{d.period && d.period.from ? ` · ${d.period.from} to ${d.period.to}` : ''}</span></div>
+      <RepCockpit clientId={clientId} rep={d.userId} currency={currency} nonce={nonce} canEdit={!!(authUser && isAdminishFE(authUser.role))} />
       <div className="rep-tiles">
         <RepTile label="Leads" value={fmtNumber(d.leads || 0)} rank={rk.leads} sub={rk.leads && rk.leads.of > 1 ? `of ${rk.leads.of} reps` : null} />
         <RepTile label="Booked" value={fmtNumber(ap.booked || 0)} rank={rk.booked} sub={ap.booked ? `${ap.byStaff} by you · ${ap.byCustomer} by the customer` : (d.bookRate != null ? `${d.bookRate}% of leads` : null)} />
@@ -16242,6 +16342,8 @@ function RepCardView({ clientId, authUser, currency, reps, meId, nonce, onGoActi
         <RepTile label="Lost" value={fmtNumber(d.lost || 0)} sub={d.lostReasons && d.lostReasons[0] ? `mostly "${d.lostReasons[0].reason}"` : null} />
         <RepTile label="Open now" value={fmtNumber(now.open || 0)} sub={now.openValue ? money(now.openValue) + ' in play' : null} />
         <RepTile label="Stale" value={fmtNumber(stale.count || 0)} sub={stale.count ? `of ${stale.of} open · avg ${stale.avgIdle} days idle · oldest ${stale.oldest}` : (stale.of ? `of ${stale.of} open · ${stale.threshold}+ days` : null)} tone={stale.count ? 'warn' : 'good'} />
+        {d.calls ? <RepTile label="Calls made" value={fmtNumber(d.calls.outbound || 0)} sub={`${fmtNumber(d.calls.connected || 0)} connected · ${fmtNumber(d.calls.minutes || 0)} min on the phone`} /> : null}
+        {d.cash && d.cash.field ? <RepTile label="Cash collected" value={money(d.cash.collected || 0)} sub={d.revenue ? `${Math.round(((d.cash.collected || 0) / d.revenue) * 100)}% of won value` : null} tone="good" /> : null}
         <RepTile label="Days to close" value={d.avgCloseDays != null ? `${d.avgCloseDays} d` : '-'} rank={rk.closeDays} sub={d.avgCloseDays != null ? `average deal cycle${team.avgCloseDays != null ? ` · team ${team.avgCloseDays} d` : ''}` : 'no wins in this period'} tone={d.avgCloseDays != null && team.avgCloseDays != null ? (d.avgCloseDays <= team.avgCloseDays ? 'good' : 'warn') : ''} />
         <RepTile label="Speed to lead" value={sp && sp.medianMin != null ? repMin(sp.medianMin) : '-'} sub={sp ? (sp.medianMin != null ? `median · ${sp.within5Pct != null ? `${sp.within5Pct}% under 5 min` : ''}` : 'no replies measured') : 'not measured'} tone={sp && sp.medianMin != null ? (sp.medianMin <= 5 ? 'good' : sp.medianMin <= 60 ? '' : 'warn') : ''} />
       </div>
@@ -16325,6 +16427,9 @@ function RepCompareView({ clientId, currency, reps, meId, nonce }) {
     ['Speed to lead (median, in hours)', (d) => d.speed && d.speed.medianMin, (v) => (v == null ? '-' : repMin(v)), 'low'],
     ['Replied under 5 min', (d) => d.speed && d.speed.within5Pct, (v) => (v == null ? '-' : `${v}%`), 'high'],
     ['Days to close', (d) => d.avgCloseDays, (v) => (v == null ? '-' : `${v} d`), 'low'],
+    ['Calls made', (d) => d.calls && d.calls.outbound, (v) => fmtNumber(v || 0), 'high'],
+    ['Minutes on the phone', (d) => d.calls && d.calls.minutes, (v) => fmtNumber(v || 0), 'high'],
+    ['Cash collected', (d) => d.cash && d.cash.collected, (v) => (v == null ? '-' : money(v)), 'high'],
   ]
   const better = (va, vb, dir) => { if (!dir || va == null || vb == null || va === vb) return [false, false]; return dir === 'high' ? [va > vb, vb > va] : [va < vb, vb < va] }
   const stageNames = (() => { const out = []; for (const p of (da.pipelines || db.pipelines || [])) for (const s of (p.stages || [])) if (!out.includes(s)) out.push(s); return out })()
@@ -18835,6 +18940,7 @@ function SettingsEditModal({ client: c, names, currency, canManageAccounts, onCl
   if (c.ghl) tabs.push(['forms', 'Forms', 'Tracking', 'Form → pipeline, and notes'])
   if (c.meta || c.google || c.ghl) tabs.push(['kpis', 'KPI targets', 'Targets', 'Budget, funnel and efficiency targets'])
   if (c.ghl) tabs.push(['geo', 'Catchment', 'Targets', 'Where the leads should come from'])
+  if (c.ghl) tabs.push(['repkpis', 'Rep KPIs', 'Targets', 'Monthly targets per rep'])
   if (c.ghl && bizType === 'clinic') tabs.push(['clinic', 'Clinic', 'Operations', 'Practitioners and appointment types'])
   tabs.push(['optlog', 'Optimisation Log', 'Operations', 'The Google Sheet of changes made'])
   if (c.ghl && (c.meta || c.google)) tabs.push(['diagnostics', 'Diagnostics', 'Operations', 'Is tracking actually working'])
@@ -18916,6 +19022,7 @@ function SettingsEditModal({ client: c, names, currency, canManageAccounts, onCl
           {tab === 'timing' && <div className="set-tabpane"><TimingSettings clientId={c.id} hasMeta={!!c.meta} /></div>}
           {tab === 'dashboard' && canManageAccounts && <div className="set-tabpane"><div className="set-sec-t">Custom dashboard</div><DashboardBuilder client={c} /></div>}
           {tab === 'geo' && <GeoSettings clientId={c.id} />}
+          {tab === 'repkpis' && <div className="set-tabpane"><div className="set-sec-t">Rep KPIs - monthly targets per rep</div><RepKpiEditor clientId={c.id} /></div>}
           {tab === 'clinic' && <ClinicSettings clientId={c.id} nonce={sig} />}
           {tab === 'metaconv' && <div className="set-tabpane"><div className="set-sec-t">Meta conversions - primary &amp; secondary results</div><MetaConversionsEditor clientId={c.id} currency={currency} /></div>}
           {tab === 'links' && <div className="set-tabpane"><div className="set-sec-t">Link campaigns to pipelines</div><CampaignLinker clientId={c.id} embedded nonce={sig} /></div>}

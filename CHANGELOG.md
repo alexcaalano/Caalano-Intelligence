@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.573.0 - 2026-09-13 · `PENDING`
+## v3.573.0 - 2026-09-13 · `d41edc5`
 
 **Sales Hub (manager view)** - a new client tab in the Pipeline group for
 Super Admins, Agency Admins, Agency Users and Account Admins (never

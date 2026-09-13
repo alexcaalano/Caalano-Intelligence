@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.581.0 - 2026-09-13 · `PENDING`
+## v3.581.0 - 2026-09-13 · `42a0b57`
 
 **Sales by close date** - the Sales Hub now counts won deals, revenue and
 cash in the period the deal was closed, whatever month the lead came in,

@@ -18,6 +18,20 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.578.0 - 2026-09-13 · `PENDING`
+
+**A sharper gong** - the win sound is now a bright metallic strike that
+resolves in under a second into a short rising chime: a clean micro-reward
+rather than a temple gong. The strike is the loudest moment; the chime
+lands under it.
+
+**A smash, not a tap** - the mallet now comes in from off-screen, fast and
+heavy; the gong flashes and recoils hard, the whole stage shakes, and four
+shock rings ripple out. The sound, confetti and flash all fire on the
+same frame as the impact, and the name and value land right after.
+
+---
+
 ## v3.577.0 - 2026-09-13 · `eed768b`
 
 **Rep KPIs lists only reps** - the targets editor under Settings -> Rep

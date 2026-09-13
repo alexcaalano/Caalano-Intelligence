@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.577.0'
+const APP_VERSION = '3.578.0'
 // The business clock. Every server window is cut on the client's local day
 // (Caalano Systems location timezone), so any day the app derives on its own -
 // preset ranges, "today", CSV dates - must use the same clock rather than the
@@ -16006,46 +16006,41 @@ const HUB_PREFS_KEY = 'caalano_hub_prefs'
 function hubPrefs() { try { return { confetti: true, sound: true, ...(JSON.parse(localStorage.getItem(HUB_PREFS_KEY) || '{}')) } } catch { return { confetti: true, sound: true } } }
 function saveHubPrefs(p) { try { localStorage.setItem(HUB_PREFS_KEY, JSON.stringify(p)) } catch { /* private mode */ } }
 // A short rising chime from the browser's own synth: no file, no download.
-// The sales gong: a bright brass strike (the small gong on a sales floor,
-// not a temple gong) built from inharmonic partials with a long decay, a
-// crash of high noise on impact, a bloom on the upper partials just after the
-// hit and a slow shimmer while it rings.
+// The sales gong as a micro-reward: a sharp, bright metallic strike that
+// resolves within a second into a short rising major chime. Clean and
+// synthesised, so no file to load and nothing behind it. Under two seconds.
 function hubChime() {
   try {
     const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return
     const ac = new AC(); const t0 = ac.currentTime
-    const master = ac.createGain(); master.gain.value = 0.85
-    const comp = ac.createDynamicsCompressor(); comp.threshold.value = -16; comp.ratio.value = 5
+    const master = ac.createGain(); master.gain.value = 1
+    const comp = ac.createDynamicsCompressor(); comp.threshold.value = -8; comp.ratio.value = 2.5; comp.attack.value = 0.02
     master.connect(comp); comp.connect(ac.destination)
-    // [ratio to the fundamental, level, decay seconds, bloom]. Ratios are not
-    // whole numbers, which is what makes it ring like metal rather than a bell;
-    // "bloom" partials swell in just after the strike, the gong's "waaah".
-    const base = 330
-    const partials = [[1, 0.6, 5.5, 0], [1.42, 0.42, 5, 0], [1.87, 0.34, 4.4, 0.25], [2.31, 0.3, 4, 0.3], [2.76, 0.24, 3.4, 0.35], [3.39, 0.18, 2.8, 0.3], [4.07, 0.13, 2.2, 0.2], [4.9, 0.09, 1.7, 0], [6.13, 0.06, 1.3, 0]]
-    const lfo = ac.createOscillator(); lfo.type = 'sine'; lfo.frequency.value = 4.5
-    const lfoG = ac.createGain(); lfoG.gain.value = 0.15; lfo.connect(lfoG); lfo.start(t0); lfo.stop(t0 + 7)
-    partials.forEach(([r, lvl, dec, bloom], i) => {
-      const o = ac.createOscillator(); o.type = 'sine'
-      o.frequency.setValueAtTime(base * r * 1.012, t0); o.frequency.exponentialRampToValueAtTime(base * r, t0 + 0.5)
-      const g = ac.createGain(); const peak = lvl * 0.42
-      g.gain.setValueAtTime(0.0001, t0); g.gain.exponentialRampToValueAtTime(peak, t0 + 0.01 + i * 0.003)
-      if (bloom) { g.gain.exponentialRampToValueAtTime(peak * 0.6, t0 + 0.12); g.gain.exponentialRampToValueAtTime(peak * (1 + bloom), t0 + 0.45) }
-      g.gain.exponentialRampToValueAtTime(0.0001, t0 + dec)
-      if (i >= 2) { const sh = ac.createGain(); sh.gain.value = 1; lfoG.connect(sh.gain); o.connect(sh); sh.connect(g) } else o.connect(g)
-      g.connect(master); o.start(t0); o.stop(t0 + dec + 0.1)
-    })
-    // The strike: a bright crash of band-passed noise, gone in a quarter second.
-    const n = ac.createBufferSource(); const buf = ac.createBuffer(1, Math.floor(ac.sampleRate * 0.25), ac.sampleRate); const d = buf.getChannelData(0)
-    for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / d.length, 2)
-    n.buffer = buf; const bp = ac.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 3200; bp.Q.value = 0.7
-    const ng = ac.createGain(); ng.gain.setValueAtTime(0.5, t0); ng.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.25)
-    n.connect(bp); bp.connect(ng); ng.connect(master); n.start(t0)
-    setTimeout(() => { try { ac.close() } catch { /* ignore */ } }, 6500)
+    const tone = (freq, at, peak, dec, type = 'sine', detune = 0) => {
+      const o = ac.createOscillator(); o.type = type; o.frequency.value = freq; o.detune.value = detune
+      const g = ac.createGain(); g.gain.setValueAtTime(0.0001, at); g.gain.exponentialRampToValueAtTime(peak, at + 0.008); g.gain.exponentialRampToValueAtTime(0.0001, at + dec)
+      o.connect(g); g.connect(master); o.start(at); o.stop(at + dec + 0.05)
+    }
+    // 1. The strike: a crisp burst of high noise plus two inharmonic metallic
+    //    partials that die in a quarter second - the "clang" of the mallet.
+    const n = ac.createBufferSource(); const buf = ac.createBuffer(1, Math.floor(ac.sampleRate * 0.07), ac.sampleRate); const d = buf.getChannelData(0)
+    for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / d.length, 1.5)
+    n.buffer = buf; const hp = ac.createBiquadFilter(); hp.type = 'bandpass'; hp.frequency.value = 5200; hp.Q.value = 0.9
+    const ng = ac.createGain(); ng.gain.setValueAtTime(1.3, t0); ng.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.07)
+    n.connect(hp); hp.connect(ng); ng.connect(master); n.start(t0)
+    tone(2637, t0, 0.42, 0.28); tone(2637 * 1.43, t0, 0.28, 0.2); tone(1319, t0, 0.38, 0.45); tone(3951, t0, 0.2, 0.12)
+    // 2. The resolve: three quick rising notes of a major chord (G5 B5 D6),
+    //    each a sine with a touch of octave for sparkle, the last one held.
+    const notes = [[784, 0.06, 0.18, 0.7], [988, 0.17, 0.18, 0.8], [1175, 0.28, 0.24, 1.4]]
+    for (const [f, dt, pk, dec] of notes) { tone(f, t0 + dt, pk, dec); tone(f * 2, t0 + dt, pk * 0.25, dec * 0.6); tone(f, t0 + dt, pk * 0.35, dec, 'sine', 6) }
+    // 3. A soft octave bloom under the final note so it lands as a chord.
+    tone(1568, t0 + 0.3, 0.1, 1.2); tone(2349, t0 + 0.32, 0.06, 1)
+    setTimeout(() => { try { ac.close() } catch { /* ignore */ } }, 2500)
   } catch { /* no audio */ }
 }
 // The gong strike on screen: mallet swings in, the gong shudders and rings
 // out in shock waves, then the rep's name and the deal value land.
-const HUB_GONG_HIT_MS = 520
+const HUB_GONG_HIT_MS = 450
 function HubGong({ win, currency, onDone }) {
   if (!win) return null
   return (
@@ -16055,9 +16050,11 @@ function HubGong({ win, currency, onDone }) {
           <defs>
             <radialGradient id="hubGongFace" cx="42%" cy="38%" r="65%"><stop offset="0" stopColor="#ffe9a3" /><stop offset="0.35" stopColor="#e6b84a" /><stop offset="0.75" stopColor="#a8741c" /><stop offset="1" stopColor="#6b4610" /></radialGradient>
             <radialGradient id="hubGongBoss" cx="40%" cy="35%" r="70%"><stop offset="0" stopColor="#fff4c8" /><stop offset="0.6" stopColor="#d9a63a" /><stop offset="1" stopColor="#8a5d16" /></radialGradient>
+            <radialGradient id="hubGongGlow" cx="50%" cy="50%" r="50%"><stop offset="0" stopColor="#fff8dc" stopOpacity="1" /><stop offset="0.45" stopColor="#ffe08a" stopOpacity="0.55" /><stop offset="1" stopColor="#ffd166" stopOpacity="0" /></radialGradient>
           </defs>
           <g className="hub-gong-frame"><rect x="40" y="22" width="320" height="10" rx="5" fill="#3a2a12" /><rect x="52" y="22" width="10" height="360" rx="5" fill="#3a2a12" /><rect x="338" y="22" width="10" height="360" rx="5" fill="#3a2a12" /><line x1="150" y1="32" x2="165" y2="78" stroke="#8b6a2c" strokeWidth="3" /><line x1="250" y1="32" x2="235" y2="78" stroke="#8b6a2c" strokeWidth="3" /></g>
-          <g className="hub-gong-rings"><circle className="hub-gong-ring" cx="200" cy="215" r="130" /><circle className="hub-gong-ring r2" cx="200" cy="215" r="130" /><circle className="hub-gong-ring r3" cx="200" cy="215" r="130" /></g>
+          <g className="hub-gong-rings"><circle className="hub-gong-ring" cx="200" cy="215" r="130" /><circle className="hub-gong-ring r2" cx="200" cy="215" r="130" /><circle className="hub-gong-ring r3" cx="200" cy="215" r="130" /><circle className="hub-gong-ring r4" cx="200" cy="215" r="130" /></g>
+          <circle className="hub-gong-flash" cx="200" cy="215" r="170" fill="url(#hubGongGlow)" />
           <g className="hub-gong-disc">
             <circle cx="200" cy="215" r="132" fill="url(#hubGongFace)" stroke="#5a3b0c" strokeWidth="4" />
             <circle cx="200" cy="215" r="112" fill="none" stroke="#7d5717" strokeWidth="2" opacity="0.6" />

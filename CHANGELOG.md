@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.596.0 - 2026-09-13 · `PENDING`
+## v3.596.0 - 2026-09-13 · `b3a60df`
 
 **Month by month loads on real accounts** - the board now reads one
 period per request, so each call is a single read that fits the server's

@@ -18,6 +18,17 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.601.0 - 2026-09-13 · `PENDING`
+
+**A switch for each sound** - Gong sound, Lead sound and Booking sound
+are now separate toggles on the hub and in TV mode, so a floor that does
+not want a ding for every lead can turn just that one off. The gong
+animation on a won deal always plays whatever the sound switches say.
+Anyone who had switched the old Activity toggle off keeps both the lead
+and booking sounds off.
+
+---
+
 ## v3.600.0 - 2026-09-13 · `9a5b51d`
 
 **The TV hears the floor** - in TV mode, a new lead plays a short

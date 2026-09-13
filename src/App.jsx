@@ -14,7 +14,7 @@ import { GOAL_METRICS, goalMetric, SPLITS, normGoals, newGoalId, goalShares, val
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.600.0'
+const APP_VERSION = '3.601.0'
 // The business clock. Every server window is cut on the client's local day
 // (Caalano Systems location timezone), so any day the app derives on its own -
 // preset ranges, "today", CSV dates - must use the same clock rather than the
@@ -16006,7 +16006,13 @@ function OptimisationLog({ clientId, sheet, embedded = false }) {
 // built from the same code as Users, Timing, Appointments and Call Reporting.
 const HUB_PERIODS = [['this_month', 'This month'], ['last_month', 'Last month'], ['last_7d', 'Last 7 days'], ['last_30d', 'Last 30 days'], ['last_90d', 'Last 90 days']]
 const HUB_PREFS_KEY = 'caalano_hub_prefs'
-function hubPrefs() { try { return { confetti: true, sound: true, activity: true, ...(JSON.parse(localStorage.getItem(HUB_PREFS_KEY) || '{}')) } } catch { return { confetti: true, sound: true, activity: true } } }
+// Sounds each have their own switch (gong on a win, lead, booking); the win
+// animation itself always plays. An older single 'activity' switch carries
+// over to both the lead and booking sounds.
+const HUB_PREFS_DEFAULT = { confetti: true, sound: true, leadSound: true, bookSound: true }
+function hubPrefs() {
+  try { const v = JSON.parse(localStorage.getItem(HUB_PREFS_KEY) || '{}'); const p = { ...HUB_PREFS_DEFAULT, ...v }; if (v.activity === false) { if (v.leadSound == null) p.leadSound = false; if (v.bookSound == null) p.bookSound = false } delete p.activity; return p } catch { return { ...HUB_PREFS_DEFAULT } }
+}
 function saveHubPrefs(p) { try { localStorage.setItem(HUB_PREFS_KEY, JSON.stringify(p)) } catch { /* private mode */ } }
 // A short rising chime from the browser's own synth: no file, no download.
 // The gong. A real recording wins if the site ships one at /gong.mp3 (drop
@@ -16491,10 +16497,11 @@ function SalesHubView({ clientId, authUser, currency, nonce, pipe: pipeProp, onP
     // tab stays quiet), only for events from the last ten minutes, and one
     // cue per kind per poll so a bulk import is not thirty dings.
     const hubActivity = (fresh, nowMs) => {
-      if (dead || !tvRef.current || !prefsRef.current.activity) return
+      if (dead || !tvRef.current) return
       const recent = fresh.filter((e) => (e.kind === 'lead' || e.kind === 'booked') && nowMs - (e.at || 0) < 10 * 60000)
       if (!recent.length) return
-      const kinds = [...new Set(recent.map((e) => e.kind))]
+      const pf = prefsRef.current
+      const kinds = [...new Set(recent.map((e) => e.kind))].filter((k) => (k === 'lead' ? pf.leadSound : pf.bookSound))
       kinds.forEach((k, i) => setTimeout(() => { if (!dead) hubPing(k) }, i * 650))
       const dd = dRef.current || {}
       const who = (e) => (dd.users || {})[e.userId] || ((dd.reps || []).find((r) => r.id === e.userId) || {}).name || null
@@ -16530,8 +16537,9 @@ function SalesHubView({ clientId, authUser, currency, nonce, pipe: pipeProp, onP
       </div>
       <div className="hub-tools">
         <label className="alloc-check"><input type="checkbox" checked={prefs.confetti} onChange={(e) => { const p = { ...prefs, confetti: e.target.checked }; setPrefs(p); saveHubPrefs(p) }} /> Confetti</label>
-        <label className="alloc-check"><input type="checkbox" checked={prefs.sound} onChange={(e) => { const p = { ...prefs, sound: e.target.checked }; setPrefs(p); saveHubPrefs(p) }} /> Gong</label>
-        <label className="alloc-check" title="On the TV only: a sound and a corner note for each new lead and booked appointment"><input type="checkbox" checked={prefs.activity} onChange={(e) => { const p = { ...prefs, activity: e.target.checked }; setPrefs(p); saveHubPrefs(p) }} /> TV activity sounds</label>
+        <label className="alloc-check" title="The gong on a won deal; the animation always plays"><input type="checkbox" checked={prefs.sound} onChange={(e) => { const p = { ...prefs, sound: e.target.checked }; setPrefs(p); saveHubPrefs(p) }} /> Gong sound</label>
+        <label className="alloc-check" title="On the TV only: a short ding for each new lead"><input type="checkbox" checked={prefs.leadSound} onChange={(e) => { const p = { ...prefs, leadSound: e.target.checked }; setPrefs(p); saveHubPrefs(p) }} /> Lead sound</label>
+        <label className="alloc-check" title="On the TV only: a short chime for each booked appointment"><input type="checkbox" checked={prefs.bookSound} onChange={(e) => { const p = { ...prefs, bookSound: e.target.checked }; setPrefs(p); saveHubPrefs(p) }} /> Booking sound</label>
         {authUser && authUser.role === 'superadmin' ? <><button type="button" className="btn-ghost sm" onClick={() => hubStrike({ id: 'test', user: authUser.name || 'Test rep', name: 'Sample deal', value: 12500 })}>Test the gong</button><button type="button" className="btn-ghost sm" onClick={() => hubTestActivity('lead')}>Test lead sound</button><button type="button" className="btn-ghost sm" onClick={() => hubTestActivity('booked')}>Test booking sound</button></> : null}
         <span className={`hub-livechip ${live.latest ? 'on' : ''}`} title="Live events arrive from the CRM webhook the moment a deal changes; the numbers refresh from the five-minute snapshot">{live.latest ? `● Live · last event ${actHrs(Math.round((Date.now() - live.latest) / 3600000))}` : live.ok === false ? '○ Live unavailable' : '○ Live · no events yet'}</span>
         {authUser && authUser.role === 'superadmin' ? <button type="button" className="btn-ghost sm" onClick={() => { if (setup) return setSetup(null); setSetup({ loading: true }); fetch(`/.netlify/functions/windsor?scope=webhookurl&client=${encodeURIComponent(clientId)}`, { credentials: 'same-origin' }).then((r) => r.json().catch(() => ({}))).then((j) => setSetup(j || {})).catch(() => setSetup({ error: 'Could not load.' })) }}>Live setup</button> : null}
@@ -16642,8 +16650,9 @@ function SalesHubView({ clientId, authUser, currency, nonce, pipe: pipeProp, onP
         <div className="hub-tv-head"><div><b>{new Date().toLocaleString('en-AU', { month: 'long', year: 'numeric' })}</b> <span>Sales Hub · month to date{focus ? ` · ${focus.name}` : ''} · day {day} of {dim}</span></div>
           <div className="hub-tv-ctl">
             <label className="alloc-check"><input type="checkbox" checked={prefs.confetti} onChange={(e) => { const p = { ...prefs, confetti: e.target.checked }; setPrefs(p); saveHubPrefs(p) }} /> Confetti</label>
-            <label className="alloc-check"><input type="checkbox" checked={prefs.sound} onChange={(e) => { const p = { ...prefs, sound: e.target.checked }; setPrefs(p); saveHubPrefs(p) }} /> Gong</label>
-            <label className="alloc-check"><input type="checkbox" checked={prefs.activity} onChange={(e) => { const p = { ...prefs, activity: e.target.checked }; setPrefs(p); saveHubPrefs(p) }} /> Activity</label>
+            <label className="alloc-check" title="The gong on a won deal; the animation always plays"><input type="checkbox" checked={prefs.sound} onChange={(e) => { const p = { ...prefs, sound: e.target.checked }; setPrefs(p); saveHubPrefs(p) }} /> Gong</label>
+            <label className="alloc-check"><input type="checkbox" checked={prefs.leadSound} onChange={(e) => { const p = { ...prefs, leadSound: e.target.checked }; setPrefs(p); saveHubPrefs(p) }} /> Lead</label>
+            <label className="alloc-check"><input type="checkbox" checked={prefs.bookSound} onChange={(e) => { const p = { ...prefs, bookSound: e.target.checked }; setPrefs(p); saveHubPrefs(p) }} /> Booking</label>
             {authUser && authUser.role === 'superadmin' ? <><button type="button" className="btn-ghost sm" onClick={() => hubStrike({ id: 'test', user: authUser.name || 'Test rep', name: 'Sample deal', value: 12500 })}>Test gong</button><button type="button" className="btn-ghost sm" onClick={() => hubTestActivity('lead')}>Test lead</button><button type="button" className="btn-ghost sm" onClick={() => hubTestActivity('booked')}>Test booking</button></> : null}
             <button type="button" className="btn-ghost sm" onClick={() => { try { if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen() } catch { /* not allowed */ } }}>Full screen</button>
             <button type="button" className="btn-ghost sm" onClick={() => setTv(false)}>Exit (Esc)</button>

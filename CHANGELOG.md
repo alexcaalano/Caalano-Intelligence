@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.607.0 - 2026-09-13 · `PENDING`
+## v3.607.0 - 2026-09-13 · `8ce17da`
 
 **Settings gets a CRM connection section** - beside Clients, for admins:
 whether Caalano Systems is connected and at what level (agency, or a

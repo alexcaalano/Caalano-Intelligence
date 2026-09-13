@@ -18,6 +18,16 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.609.0 - 2026-09-13 · `PENDING`
+
+**No more "Failed to fetch dynamically imported module"** - a page opened
+before a deploy could ask for a screen by its old file name and hit that
+error when a new deploy had replaced it. The app now reloads itself once
+to pick up the new bundle, and only shows the error if the reload did not
+help.
+
+---
+
 ## v3.608.0 - 2026-09-13 · `73a88ab`
 
 **Conversations read like the CRM's** - a thread now opens at its newest

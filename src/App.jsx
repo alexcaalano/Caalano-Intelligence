@@ -11,8 +11,19 @@ import {
 import { GOAL_METRICS, goalMetric, SPLITS, normGoals, newGoalId, goalShares, validateGoal, goalLevel, repValue, goalActual, repTargetsFromGoals, migrateRepKpis, goalWindow, goalTargetFor, monthKeysFrom, quarterKeysFrom, RATE_METRICS } from './lib/goals.js'
 // Views carved out of this file load on first open (React.lazy), so the first
 // paint carries the shell and the tabs people land on, not every screen.
+// A chunk can vanish between a deploy and the next click: a page opened
+// before the deploy asks for the old file name, which the new deploy does not
+// have ("Failed to fetch dynamically imported module"). One reload picks up
+// the new bundle; a second failure in the same session is shown instead of
+// looping.
+const lazyLoad = (load, name) => load().then((m) => { try { sessionStorage.removeItem('c360_chunk_reload') } catch { /* ignore */ } return { default: m[name] } }).catch((e) => {
+  let again = false
+  try { again = sessionStorage.getItem('c360_chunk_reload') === '1'; if (!again) sessionStorage.setItem('c360_chunk_reload', '1') } catch { /* private mode: just throw */ }
+  if (!again && typeof location !== 'undefined') { location.reload(); return new Promise(() => {}) }
+  throw e
+})
 const lazyView = (load, name) => {
-  const Inner = React.lazy(() => load().then((m) => ({ default: m[name] })))
+  const Inner = React.lazy(() => lazyLoad(load, name))
   const View = (props) => <React.Suspense fallback={<div className="view-loading cap">Loading…</div>}><Inner {...props} /></React.Suspense>
   View.displayName = name
   return View
@@ -22,7 +33,7 @@ const lazyView = (load, name) => {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-export const APP_VERSION = '3.608.0'
+export const APP_VERSION = '3.609.0'
 // The business clock. Every server window is cut on the client's local day
 // (Caalano Systems location timezone), so any day the app derives on its own -
 // preset ranges, "today", CSV dates - must use the same clock rather than the

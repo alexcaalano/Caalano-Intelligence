@@ -32,9 +32,11 @@ export async function applyMigrations(db, { log = () => {} } = {}) {
   }
   return applied
 }
+// Read-only, so an ordinary role (no CREATE on the schema) can ask: a missing
+// bookkeeping table simply means nothing has been applied yet.
 export async function migrationStatus(db) {
-  await (db.exec ? db.exec('create table if not exists schema_migrations (name text primary key, applied_at timestamptz not null default now())') : db.query('create table if not exists schema_migrations (name text primary key, applied_at timestamptz not null default now())'))
-  const done = new Set(((await db.query('select name from schema_migrations')).rows || []).map((r) => r.name))
+  const exists = ((await db.query("select to_regclass('public.schema_migrations') as t")).rows || [])[0]?.t
+  const done = new Set(exists ? ((await db.query('select name from schema_migrations')).rows || []).map((r) => r.name) : [])
   return migrationFiles().map((f) => ({ name: f, applied: done.has(f) }))
 }
 

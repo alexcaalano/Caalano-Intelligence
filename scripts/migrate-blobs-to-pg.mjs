@@ -363,8 +363,14 @@ async function main() {
     done = () => client.end()
     const r = await client.query('select rolsuper or rolbypassrls as bypass from pg_roles where rolname = current_user')
     if (r.rows[0] && r.rows[0].bypass) { console.error('DATABASE_URL connects as a role that bypasses row level security; use the caalano_app role'); await done(); process.exit(2) }
+    // Readiness, in the order the failures would otherwise surface: the schema
+    // must be reachable, the migrations applied, and the tables writable.
+    const schema = await client.query("select has_schema_privilege('public', 'usage') as ok")
+    if (!schema.rows[0].ok) { console.error('this role cannot use the public schema: run the grant block (step 4) in the Neon SQL Editor, then try again'); await done(); process.exit(2) }
     const pending = (await (await import('../db/migrate.mjs')).migrationStatus(client)).filter((m) => !m.applied)
     if (pending.length) { console.error(`migrations pending: ${pending.map((m) => m.name).join(', ')} - run npm run db:migrate first`); await done(); process.exit(2) }
+    const priv = await client.query("select has_table_privilege('organisations', 'insert') as ins, has_table_privilege('organisations', 'select') as sel, has_sequence_privilege('audit_log_id_seq', 'usage') as seq")
+    if (!priv.rows[0].ins || !priv.rows[0].sel || !priv.rows[0].seq) { console.error('this role cannot write the tables: run the grant block (step 4) in the Neon SQL Editor, then try again'); await done(); process.exit(2) }
     if (!dry && !flags.has('--yes')) {
       const rl = readline.createInterface({ input: process.stdin, output: process.stdout })
       const ans = await new Promise((res) => rl.question('Write Caalano Digital into this database? Type yes: ', res)); rl.close()

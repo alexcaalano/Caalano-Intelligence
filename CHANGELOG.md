@@ -18,6 +18,20 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.615.0 - 2026-09-13
+
+**Import readiness checks for an ordinary database role.** (commit PENDING)
+
+- `migrationStatus` no longer tries to create the bookkeeping table, so a
+  role without CREATE on the schema (the app role on Neon) can ask what is
+  applied; a missing table means nothing is.
+- `migrate-blobs-to-pg.mjs` checks, before it starts, that the role can use
+  the schema, that no migrations are pending, and that it can read, insert
+  and use sequences on the tables, each with a message saying which step to
+  repeat.
+
+---
+
 ## v3.614.0 - 2026-09-13
 
 **SaaS phase 0 complete: the Blobs-to-Postgres migration.** (commit 3f500c4)

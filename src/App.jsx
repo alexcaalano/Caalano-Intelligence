@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.574.0'
+const APP_VERSION = '3.575.0'
 // The business clock. Every server window is cut on the client's local day
 // (Caalano Systems location timezone), so any day the app derives on its own -
 // preset ranges, "today", CSV dates - must use the same clock rather than the
@@ -16006,16 +16006,36 @@ const HUB_PREFS_KEY = 'caalano_hub_prefs'
 function hubPrefs() { try { return { confetti: true, sound: true, ...(JSON.parse(localStorage.getItem(HUB_PREFS_KEY) || '{}')) } } catch { return { confetti: true, sound: true } } }
 function saveHubPrefs(p) { try { localStorage.setItem(HUB_PREFS_KEY, JSON.stringify(p)) } catch { /* private mode */ } }
 // A short rising chime from the browser's own synth: no file, no download.
+// The gong: a struck-metal sound built from inharmonic partials with a long
+// decay, a short mallet thump and a slow shimmer on the upper partials.
 function hubChime() {
   try {
     const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return
     const ac = new AC(); const t0 = ac.currentTime
-    ;[[523, 0], [659, 0.12], [784, 0.24], [1047, 0.36]].forEach(([f, dt]) => {
-      const o = ac.createOscillator(), g = ac.createGain(); o.type = 'sine'; o.frequency.value = f
-      g.gain.setValueAtTime(0.0001, t0 + dt); g.gain.exponentialRampToValueAtTime(0.25, t0 + dt + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t0 + dt + 0.5)
-      o.connect(g); g.connect(ac.destination); o.start(t0 + dt); o.stop(t0 + dt + 0.55)
+    const master = ac.createGain(); master.gain.value = 0.9
+    const comp = ac.createDynamicsCompressor(); comp.threshold.value = -18; comp.ratio.value = 6
+    master.connect(comp); comp.connect(ac.destination)
+    // [ratio to the fundamental, level, decay seconds]; ratios are deliberately
+    // not whole numbers, which is what makes it ring like metal, not a bell.
+    const base = 98
+    const partials = [[1, 0.7, 6.5], [1.53, 0.45, 6], [2.13, 0.35, 5.2], [2.92, 0.28, 4.5], [3.71, 0.2, 3.8], [4.42, 0.16, 3.2], [5.36, 0.12, 2.6], [6.79, 0.08, 2], [8.21, 0.05, 1.5]]
+    const lfo = ac.createOscillator(); lfo.type = 'sine'; lfo.frequency.value = 3.2
+    const lfoG = ac.createGain(); lfoG.gain.value = 0.12; lfo.connect(lfoG); lfo.start(t0); lfo.stop(t0 + 7)
+    partials.forEach(([r, lvl, dec], i) => {
+      const o = ac.createOscillator(); o.type = 'sine'; o.frequency.value = base * r
+      o.frequency.setValueAtTime(base * r * 1.01, t0); o.frequency.exponentialRampToValueAtTime(base * r, t0 + 0.4)
+      const g = ac.createGain(); const peak = lvl * 0.5
+      g.gain.setValueAtTime(0.0001, t0); g.gain.exponentialRampToValueAtTime(peak, t0 + 0.012 + i * 0.004); g.gain.exponentialRampToValueAtTime(0.0001, t0 + dec)
+      if (i >= 3) { const sh = ac.createGain(); sh.gain.value = 1; lfoG.connect(sh.gain); o.connect(sh); sh.connect(g) } else o.connect(g)
+      g.connect(master); o.start(t0); o.stop(t0 + dec + 0.1)
     })
-    setTimeout(() => { try { ac.close() } catch { /* ignore */ } }, 1500)
+    // The mallet: a short burst of low-passed noise.
+    const n = ac.createBufferSource(); const buf = ac.createBuffer(1, Math.floor(ac.sampleRate * 0.08), ac.sampleRate); const d = buf.getChannelData(0)
+    for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / d.length)
+    n.buffer = buf; const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 900
+    const ng = ac.createGain(); ng.gain.setValueAtTime(0.35, t0); ng.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.08)
+    n.connect(lp); lp.connect(ng); ng.connect(master); n.start(t0)
+    setTimeout(() => { try { ac.close() } catch { /* ignore */ } }, 7500)
   } catch { /* no audio */ }
 }
 // Confetti on a canvas over the page, two seconds, then gone.
@@ -16142,7 +16162,7 @@ function SalesHubView({ clientId, authUser, currency, nonce }) {
         <div className="hub-tv-head"><div><b>{(d.period && d.period.from) || ''}</b> <span>Sales Hub · {(HUB_PERIODS.find(([id]) => id === period) || [])[1]}{monthly ? ` · day ${day} of ${dim}` : ''}</span></div>
           <div className="hub-tv-ctl">
             <label className="alloc-check"><input type="checkbox" checked={prefs.confetti} onChange={(e) => { const p = { ...prefs, confetti: e.target.checked }; setPrefs(p); saveHubPrefs(p) }} /> Confetti</label>
-            <label className="alloc-check"><input type="checkbox" checked={prefs.sound} onChange={(e) => { const p = { ...prefs, sound: e.target.checked }; setPrefs(p); saveHubPrefs(p) }} /> Sound</label>
+            <label className="alloc-check"><input type="checkbox" checked={prefs.sound} onChange={(e) => { const p = { ...prefs, sound: e.target.checked }; setPrefs(p); saveHubPrefs(p) }} /> Gong</label>
             <button type="button" className="btn-ghost sm" onClick={() => { if (prefs.confetti) hubConfetti(); if (prefs.sound) hubChime() }}>Test</button>
             <button type="button" className="btn-ghost sm" onClick={() => setTv(false)}>Exit (Esc)</button>
           </div></div>

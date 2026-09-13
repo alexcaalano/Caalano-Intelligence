@@ -18,6 +18,14 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.575.0 - 2026-09-13 · `PENDING`
+
+**Hit the gong** - a new deal on the Sales Hub now strikes a gong instead
+of a chime: a low struck-metal ring with a shimmer that fades over about
+five seconds. The toggle in the hub header is now labelled Gong.
+
+---
+
 ## v3.574.0 - 2026-09-13 · `21d9257`
 
 **Pick the reply channel** - the conversation panel in Deals & Actions

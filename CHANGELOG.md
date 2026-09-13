@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.592.0 - 2026-09-13 · `PENDING`
+## v3.592.0 - 2026-09-13 · `cbb12a8`
 
 **Hub funnels on key events** - the pipeline card and the rep detail
 funnel now chart the client's key-event stages (Settings, Key events),

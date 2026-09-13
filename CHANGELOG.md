@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.599.0 - 2026-09-13 · `PENDING`
+## v3.599.0 - 2026-09-13 · `3130501`
 
 **Average deal value, and a hub that shows it is working** - Average deal
 value (revenue over won deals) is now a Sales Hub tile, a "Biggest

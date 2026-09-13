@@ -18,6 +18,22 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.611.0 - 2026-09-13 · `PENDING`
+
+**Wins on old leads count, cash per pipeline, boards spread evenly** -
+the Sales Hub now reads the won-deals snapshot as well as the general
+one. The general snapshot holds the newest few thousand opportunities,
+so on a busy account a deal won this month on a lead from a year ago
+fell outside it; the won-deals read reaches 430 days back and is
+refreshed every five minutes with everything else, so those wins now
+count for revenue, deals closed, cash and the win rate. The note under
+the tiles says which read covers what. Each pipeline's Focus card shows
+cash collected when the account tracks it. When the mini boards need two
+rows they now take the same number per row across the full width (five
+and five rather than seven and three).
+
+---
+
 ## v3.610.0 - 2026-09-13 · `ced63d5`
 
 **Every mini board shows three places** - a board with only one or two

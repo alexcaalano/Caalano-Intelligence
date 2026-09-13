@@ -486,6 +486,7 @@ export function SalesHubView({ clientId, authUser, currency, nonce, pipe: pipePr
     const rows = reps.filter((r) => r.id !== 'unassigned').map((r) => ({ r, v: get(r) })).filter((x) => x.v != null && (dir === 'asc' || x.v > 0)).sort(dir === 'asc' ? (a, b) => a.v - b.v : (a, b) => b.v - a.v).slice(0, 3)
     return rows.length ? { key, title, rows, fmt, unit } : null
   }).filter(Boolean)
+  const [boardsRef, boardsStyle] = useEvenGrid(boards.length, tv ? 220 : 200)
   // Attainment per rep: revenue target first, then deals, then bookings.
   const attain = (r) => { const t = repTargetsFromGoals(goalsAll, r.id, repIdsAll, today); const key = t.revenue > 0 ? 'revenue' : t.won > 0 ? 'won' : t.booked > 0 ? 'booked' : null; if (!key) return null; const a = key === 'revenue' ? r.revenue : key === 'won' ? r.won : r.booked; return { key, pct: Math.round(((a || 0) / t[key]) * 100), need: monthly ? elapsed * 100 : 100 } }
   const status = (r) => { const a = attain(r); if (!a) return null; return a.pct >= a.need ? ['On pace', 'good'] : a.pct >= a.need * 0.8 ? ['At risk', 'warn'] : ['Behind', 'bad'] }
@@ -678,7 +679,7 @@ export function SalesHubView({ clientId, authUser, currency, nonce, pipe: pipePr
   })()
   const gaugeCard = dialDefs.length ? <div className="card rep-cockpit"><div className="rep-cockpit-head"><h4>Goals</h4><span className="cap">Each goal in its own window · day {day} of {dim} · tap a dial for the split by rep</span></div>{dials}{gaugeDetail}</div>
     : (authUser && isAdminishFE(authUser.role) ? <div className="card rep-cockpit-empty"><b>No goals yet.</b> <span className="cap">Set them in Settings → this client → Goals and the gauges light up here.</span></div> : null)
-  const boardsGrid = boards.length ? <div className="hub-boards">{boards.map((b) => <div className="card hub-board-card" key={b.key}><div className="hub-board-t">{b.title}</div>{b.rows.map((x, i) => <div className="hub-board-row" key={x.r.id}><span>{medal[i]}</span><span className="hub-board-n">{x.r.name}</span><b>{b.fmt(x.v)}{b.unit ? <small> {b.unit}</small> : null}</b></div>)}{b.rows.length < 3 ? medal.slice(b.rows.length, 3).map((m, i) => <div className="hub-board-row empty" key={'empty' + i}><span>{m}</span><span className="hub-board-n">—</span><b>—</b></div>) : null}</div>)}</div> : null
+  const boardsGrid = boards.length ? <div className="hub-boards" ref={boardsRef} style={boardsStyle}>{boards.map((b) => <div className="card hub-board-card" key={b.key}><div className="hub-board-t">{b.title}</div>{b.rows.map((x, i) => <div className="hub-board-row" key={x.r.id}><span>{medal[i]}</span><span className="hub-board-n">{x.r.name}</span><b>{b.fmt(x.v)}{b.unit ? <small> {b.unit}</small> : null}</b></div>)}{b.rows.length < 3 ? medal.slice(b.rows.length, 3).map((m, i) => <div className="hub-board-row empty" key={'empty' + i}><span>{m}</span><span className="hub-board-n">—</span><b>—</b></div>) : null}</div>)}</div> : null
   const sp = boards.length ? boards[spot % boards.length] : null
   const spotlight = sp ? <div className="card hub-spot" key={sp.key}><div className="hub-spot-k">{sp.title}</div><div className="hub-spot-n">{sp.rows[0].r.name}</div><div className="hub-spot-v">{sp.fmt(sp.rows[0].v)}{sp.unit ? <small> {sp.unit}</small> : null}</div>{sp.rows.length > 1 ? <div className="hub-spot-r">{sp.rows.slice(1).map((x, i) => <span key={x.r.id}>{medal[i + 1]} {x.r.name} <b>{sp.fmt(x.v)}</b></span>)}</div> : null}</div> : null
   const facts = (title, rows) => <div className="hub-facts"><b>{title}</b><dl>{rows.filter((r) => r).map(([k, v]) => <React.Fragment key={k}><dt>{k}</dt><dd>{v == null || v === '' ? '-' : v}</dd></React.Fragment>)}</dl></div>
@@ -724,10 +725,10 @@ export function SalesHubView({ clientId, authUser, currency, nonce, pipe: pipePr
       {celebrate ? <HubGong key={celebrate.key} win={celebrate} currency={currency} onDone={() => { clearTimeout(strikeT.current); setCelebrate(null) }} /> : null}
       {primary}
       {secondary}
-      {d.reach && d.reach.truncated && d.reach.since ? <p className="cap hub-reach">Closed deals are counted from leads created since {fmtDMY(d.reach.since)}: the CRM read holds the newest {fmtNumber(d.reach.opps)} opportunities, so a win on a lead older than that is not in these numbers.</p> : null}
+      {d.reach && d.reach.truncated && d.reach.since ? <p className="cap hub-reach">Leads, open deals and lost deals are counted from opportunities created since {fmtDMY(d.reach.since)}: the CRM read holds the newest {fmtNumber(d.reach.opps)}. Won deals are read separately{d.reach.wonSince ? ` and are complete back to ${fmtDMY(d.reach.wonSince)}` : ''}{d.reach.wonTruncated ? ' (that read is at its cap too)' : ''}.</p> : null}
       {multi && !focus && pipesAll.length > 1 ? <div className="hub-pipes">{pipesAll.map((p) => <button type="button" className="hub-pipe" key={p.id} disabled={busy} onClick={() => setPipeSel(p.id)} title="Show this pipeline only">
         <span className="hub-pipe-n">{p.name}</span>
-        <span className="hub-pipe-row"><span><b>{money(p.revenue)}</b> revenue</span><span><b>{fmtNumber(p.won)}</b> won</span><span><b>{p.avgDeal != null ? money(p.avgDeal) : '-'}</b> avg deal</span><span><b>{fmtNumber(p.leads)}</b> leads</span><span><b>{hubPct(p.winRate)}</b> win rate</span><span><b>{fmtNumber(p.open)}</b> open{p.stale ? ` · ${p.stale} stale` : ''}</span></span>
+        <span className="hub-pipe-row"><span><b>{money(p.revenue)}</b> revenue</span><span><b>{fmtNumber(p.won)}</b> won</span>{cashOn ? <span><b>{money(p.cash)}</b> collected</span> : null}<span><b>{p.avgDeal != null ? money(p.avgDeal) : '-'}</b> avg deal</span><span><b>{fmtNumber(p.leads)}</b> leads</span><span><b>{hubPct(p.winRate)}</b> win rate</span><span><b>{fmtNumber(p.open)}</b> open{p.stale ? ` · ${p.stale} stale` : ''}</span></span>
         <span className="hub-pipe-go">{pendingPipe && pipeSel === p.id ? 'Loading…' : 'Focus ›'}</span>
       </button>)}</div> : null}
       {focus ? <div className="hub-focus"><span>Showing <b>{focus.name}</b> only. Leads, deals, speed to lead and stages are within it; appointments and calls are per rep across the account.</span><button type="button" className="btn-ghost sm" disabled={busy} onClick={() => setPipeSel('all')}>All pipelines</button></div> : null}
@@ -807,6 +808,23 @@ export function actWhen(ms, tz) {
 export const actAgo = (d) => (d == null ? '' : d === 0 ? 'today' : d === 1 ? 'yesterday' : `${d} days ago`)
 export const actHrs = (h) => (h == null ? '' : h < 1 ? 'just now' : h < 48 ? `${h} h ago` : `${Math.round(h / 24)} days ago`)
 export const actTier = (r) => (r.idleDays == null ? null : r.idleDays >= 30 ? 't30' : r.idleDays >= 21 ? 't21' : r.idleDays >= 14 ? 't14' : r.idleDays >= 7 ? 't7' : null)
+// The mini boards fill the width evenly: work out how many fit on a row,
+// then use the column count that spreads the boards over the fewest rows
+// with the same number on each (ten boards on a seven-wide screen become
+// five and five, not seven and three).
+export function useEvenGrid(n, minW, gap = 10) {
+  const ref = useRef(null)
+  const [cols, setCols] = useState(0)
+  useEffect(() => {
+    const el = ref.current; if (!el || !n) { setCols(0); return }
+    const calc = () => { const w = el.clientWidth || 0; const fit = Math.max(1, Math.floor((w + gap) / (minW + gap))); const rows = Math.ceil(n / fit); setCols(Math.min(fit, Math.ceil(n / rows))) }
+    calc()
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(calc) : null
+    if (ro) ro.observe(el); else window.addEventListener('resize', calc)
+    return () => { if (ro) ro.disconnect(); else window.removeEventListener('resize', calc) }
+  }, [n, minW, gap])
+  return [ref, cols ? { gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` } : undefined]
+}
 export function ActOpen({ href, label = 'Open in CRM' }) { return href ? <a className="act-open" href={href} target="_blank" rel="noreferrer">{label} ↗</a> : null }
 export function ActTierBadge({ r }) { const t = actTier(r); return t ? <span className={`act-tier ${t}`}>{r.idleDays}d idle</span> : null }
 export const ActWaiting = ({ r }) => (r && r.unreplied ? <span className="act-wait" title="The contact wrote last and nobody has replied">✉ Message waiting</span> : null)

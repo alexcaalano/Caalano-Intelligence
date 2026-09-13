@@ -683,8 +683,17 @@ the sequences. Added in v3.614.0: `scripts/migrate-blobs-to-pg.mjs`
 (`npm run db:import`) with `--rehearse` (in-process Postgres, no database
 needed) and `--dry` (real database, rolled back), `db/migrations/0003_terms.sql`
 for the terms documents and acceptances, and `tests/migrate_test.mjs`.
-Phase 0 is complete; phase 1 starts with a backup, then the Neon
-migrations and grants, then the import.
+Phase 0 is complete.
+
+**Phase 1 status (2026-09-13, v3.616.0).** Migrations 0001-0003 applied on
+Neon, the `caalano_app` role granted, and Caalano Digital imported (25
+workspaces, 72 connections, 6 users, 163 workspace and 5 organisation settings
+rows, 25 monthly reports, 10 terms acceptances; the CRM token sealed under
+`KEK_V1`). `netlify/lib/mirror.mjs` dual-writes settings, users, terms,
+monthly reports and the CRM token (Blobs still the truth; `PG_MIRROR=0`
+turns it off; `settings?mirror=1` shows status). Next: read settings and
+users from Postgres behind a switch, then stop writing Blobs; snapshots,
+live events and logs move with the read switch.
 
 **Phase 1 - Move Caalano Digital in.**
 A one-off `scripts/migrate-blobs-to-pg.mjs`: creates organisation

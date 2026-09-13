@@ -18,6 +18,26 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.616.0 - 2026-09-13
+
+**SaaS phase 1: dual-write to Postgres.** (commit PENDING)
+
+- `netlify/lib/mirror.mjs` holds the one mapping from today's records to the
+  SaaS schema, shared by the import script and the running app. Every save of
+  settings, users (invite, accept, update, remove), terms acceptances, monthly
+  reports (save, publish, unpublish) and the CRM token now also lands in
+  Postgres. Blobs stays the source of truth: a mirror write never throws, is
+  capped at five seconds, and only logs when it fails. `PG_MIRROR=0` switches
+  it off without a deploy.
+- A settings save writes only the sections and clients in the request, and a
+  new client in Settings -> Clients becomes a workspace with its connections.
+- `settings?mirror=1` (Super Admin) reports whether the mirror is on, its
+  last write and last error, and the row counts in the database.
+- Test: `tests/mirror_test.mjs` runs every entry point on an in-process
+  Postgres after the import, including the off switch and failure paths.
+
+---
+
 ## v3.615.0 - 2026-09-13
 
 **Import readiness checks for an ordinary database role.** (commit aac68d6)

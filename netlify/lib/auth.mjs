@@ -11,6 +11,7 @@
 // it can be shipped dark and enabled deliberately (and disabled instantly by
 // unsetting the var, which falls the site back to the legacy shared password).
 import { getStore } from '@netlify/blobs'
+import { mirror } from './mirror.mjs'
 
 export const COOKIE = 'c360_session'
 const SESSION_DAYS = 14
@@ -180,7 +181,8 @@ export async function countUsers() {
   const { blobs } = await store().list({ prefix: 'user:' }).catch(() => ({ blobs: [] }))
   return (blobs || []).length
 }
-async function saveUser(u) { await store().setJSON(uKey(u.email), u); return u }
+// Every user write also lands in Postgres (phase 1 dual-write; Blobs stays the truth).
+async function saveUser(u) { await store().setJSON(uKey(u.email), u); await mirror.user(u); return u }
 // How many ACTIVE users hold a given role (for the last-superadmin guard).
 async function countActiveRole(role) { return (await listUsers()).filter((u) => u.role === role && u.status === 'active').length }
 // One-time migration: if no superadmin exists yet, promote the earliest-created
@@ -365,6 +367,7 @@ export async function deleteUser(email, actor) {
   if (u && u.role === 'superadmin' && (await countActiveRole('superadmin')) <= 1) return { error: 'You can’t remove the last Super Admin.' }
   if (u && u.inviteToken) await store().delete(iKey(u.inviteToken)).catch(() => {})
   await store().delete(uKey(em)).catch(() => {})
+  await mirror.userDeleted(em)
   return { ok: true }
 }
 
@@ -562,6 +565,7 @@ export async function recordTermsAcceptance(email, { version, hash, signature, t
     await st.setJSON(tKey(u.email), prior)
   } catch { return { error: 'Couldn\u2019t record your acceptance - please try again.' } }
   if (doc) await archiveTermsDoc(version, hash, doc)
+  await mirror.terms(rec, doc ? { version, hash, archivedAt: at, doc } : null)
   u.termsVersion = version
   u.termsAcceptedAt = at
   if (first) u.firstName = first

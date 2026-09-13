@@ -4,6 +4,7 @@
 // each client's contacts (attributionSource = first-touch UTMs) + opportunities.
 import { getStore } from '@netlify/blobs'
 import { DEMO_TOKEN, isDemoLocation, isDemoToken, demoGhl } from './demo.mjs'
+import { mirror } from './mirror.mjs'
 
 const API = 'https://services.leadconnectorhq.com'
 const VER = '2021-07-28'
@@ -176,7 +177,7 @@ async function ghlFetch(url, opts, { label = 'ghl', timeoutMs = 9000, maxTries =
 }
 
 export async function loadTokens() { try { return await store().get('agency', { type: 'json' }) } catch { return null } }
-export async function saveTokens(t) { await store().setJSON('agency', t) }
+export async function saveTokens(t) { await store().setJSON('agency', t); await mirror.ghlToken(t) }
 export async function isConnected() { return !!(await loadTokens()) }
 
 async function tokenRequest(params) {

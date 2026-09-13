@@ -28,23 +28,11 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import readline from 'node:readline'
-import { createHash } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
-import { membershipFromLegacy } from '../netlify/lib/entitle.mjs'
 import { asPlatform } from '../netlify/lib/db.mjs'
 import { BUILTIN_CLIENTS } from '../netlify/lib/clients.mjs'
-
-export const ORG = { slug: 'caalano', name: 'Caalano Digital', kind: 'agency', plan: 'caalano' }
-const ORG_ROLES = new Set(['superadmin', 'admin', 'user', 'viewer', 'account_admin', 'account_user'])
-const PBKDF2_ITER = 150000
-// Windsor connector per ad-account field on a client record.
-const AD_CONNECTORS = { meta: 'facebook', google: 'google_ads', ga4: 'google_analytics_4' }
-const CHUNK = 400
-
-const sha256 = (s) => createHash('sha256').update(String(s)).digest('hex')
-const iso = (v) => { if (v == null || v === '') return null; const d = new Date(v); return Number.isNaN(d.getTime()) ? null : d.toISOString() }
-const isObj = (v) => v && typeof v === 'object' && !Array.isArray(v)
-const emailOf = (s) => String(s || '').trim().toLowerCase()
+import { ORG, syncOrg, workspaceSlugs, syncWorkspaces, syncConnections, syncSettings, syncUser, syncTermsDoc, syncTermsAcceptance, syncMonthly, insertMany, iso, isObj, emailOf } from '../netlify/lib/mirror.mjs'
+export { ORG }
 
 class DryRun extends Error {}
 
@@ -107,132 +95,47 @@ export async function migrateBlobs(db, stores, opts = {}) {
   const q = async (tx, sql, params) => (await tx.query(sql, params)).rows || []
 
   const run = async (tx) => {
-    // organisation --------------------------------------------------------
-    const [org] = await q(tx, `insert into organisations (slug, name, kind, plan_id, subscription_status)
-      values ($1, $2, $3, $4, 'active') on conflict (slug) do update set name = excluded.name returning id`, [ORG.slug, ORG.name, ORG.kind, ORG.plan])
-    const orgId = org.id
+    // organisation, workspaces, connections ---------------------------------
+    const orgId = await syncOrg(tx)
     bump('organisations')
-
-    // workspaces: built-in registry plus Settings -> Clients (custom and deleted)
-    const clientRecs = isObj(settings.clients) ? settings.clients : {}
-    const slugs = new Map() // slug -> { rec, deleted }
-    for (const [id, v] of Object.entries(builtin || {})) slugs.set(id, { rec: { ...v }, deleted: false })
-    for (const [id, v] of Object.entries(clientRecs)) {
-      if (!id || !isObj(v)) continue
-      const cur = slugs.get(id) || { rec: {}, deleted: false }
-      slugs.set(id, { rec: { ...cur.rec, ...v }, deleted: !!v._deleted })
-    }
-    const wsId = new Map()
-    for (const [slug, { rec, deleted }] of slugs) {
-      const [w] = await q(tx, `insert into workspaces (org_id, slug, name, timezone, currency, demo, deleted_at)
-        values ($1, $2, $3, $4, $5, $6, $7)
-        on conflict (org_id, slug) do update set name = excluded.name, timezone = excluded.timezone, currency = excluded.currency, demo = excluded.demo, deleted_at = excluded.deleted_at
-        returning id`, [orgId, slug, String(rec.name || slug), rec.tz || rec.timezone || null, rec.currency || null, !!rec.demo, deleted ? now.toISOString() : null])
-      wsId.set(slug, w.id)
-      bump(deleted ? 'workspaces_deleted' : 'workspaces')
-    }
-
-    // connections: a windsor connection per ad account, a ghl one per CRM location
+    const slugs = workspaceSlugs(settings, builtin)
+    const wsId = await syncWorkspaces(tx, orgId, slugs, { now, counts })
     let sealed = null
     const ghlTok = get('ghl-auth').agency
     if (ghlTok && process.env.KEK_V1) { const { sealCredential } = await import('../netlify/lib/cred.mjs'); sealed = sealCredential(ghlTok) }
     else if (ghlTok) warn('ghl-auth token present but KEK_V1 is not set: ghl connections created without a credential')
-    for (const [slug, { rec, deleted }] of slugs) {
-      if (deleted) continue
-      const rows = []
-      for (const [field, connector] of Object.entries(AD_CONNECTORS)) if (rec[field]) rows.push(['windsor', 'agency', `${connector}:${rec[field]}`, rec[`${field}Name`] || null, null])
-      if (rec.ghl) rows.push(['ghl', 'agency', String(rec.ghl), rec.ghlName || null, sealed])
-      for (const [provider, kind, ext, name, cred] of rows) {
-        await q(tx, `insert into connections (org_id, workspace_id, provider, kind, external_id, external_name, cred_ciphertext, cred_iv, cred_tag, cred_wrapped_key, cred_kek_id)
-          values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-          on conflict (workspace_id, provider, external_id) do update set external_name = coalesce(excluded.external_name, connections.external_name), deleted_at = null,
-            cred_ciphertext = coalesce(excluded.cred_ciphertext, connections.cred_ciphertext), cred_iv = coalesce(excluded.cred_iv, connections.cred_iv), cred_tag = coalesce(excluded.cred_tag, connections.cred_tag),
-            cred_wrapped_key = coalesce(excluded.cred_wrapped_key, connections.cred_wrapped_key), cred_kek_id = coalesce(excluded.cred_kek_id, connections.cred_kek_id)`,
-          [orgId, wsId.get(slug), provider, kind, ext, name, cred ? cred.cred_ciphertext : null, cred ? cred.cred_iv : null, cred ? cred.cred_tag : null, cred ? cred.cred_wrapped_key : null, cred ? cred.cred_kek_id : null])
-        bump(`connections_${provider}`)
-      }
-    }
+    await syncConnections(tx, orgId, slugs, wsId, { sealed, counts })
 
     // users, platform owner, memberships, invitations -------------------------
     const auth = get('caalano-auth')
     const users = Object.entries(auth).filter(([k, v]) => k.startsWith('user:') && isObj(v) && v.email).map(([, v]) => v)
     const userId = new Map()
-    for (const u of users) {
-      const em = emailOf(u.email)
-      const hash = u.passwordHash && u.passwordSalt ? `pbkdf2-sha256$${PBKDF2_ITER}$${u.passwordSalt}$${u.passwordHash}` : null
-      const [r] = await q(tx, `insert into users (email, name, password_hash, terms_version, terms_accepted_at, created_at, last_seen_at)
-        values ($1, $2, $3, $4, $5, coalesce($6::timestamptz, now()), $7)
-        on conflict (email) do update set name = excluded.name, password_hash = coalesce(excluded.password_hash, users.password_hash),
-          terms_version = coalesce(excluded.terms_version, users.terms_version), terms_accepted_at = coalesce(excluded.terms_accepted_at, users.terms_accepted_at),
-          last_seen_at = greatest(excluded.last_seen_at, users.last_seen_at)
-        returning id`, [em, String(u.name || ''), hash, u.termsVersion || null, iso(u.termsAcceptedAt), iso(u.createdAt), iso(u.lastSeen || u.lastLogin)])
-      userId.set(em, r.id)
-      bump('users')
-    }
+    for (const u of users) await syncUser(tx, orgId, u, wsId, { userId, warn, counts })
     const supers = users.filter((u) => u.role === 'superadmin' && (u.status || 'active') === 'active').sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')))
     const ownerEmail = emailOf(owner) || (supers[0] ? emailOf(supers[0].email) : null)
     if (ownerEmail && userId.has(ownerEmail)) {
       await q(tx, `insert into platform_roles (user_id, role) values ($1, 'saas_owner') on conflict (user_id) do update set role = 'saas_owner'`, [userId.get(ownerEmail)])
       bump('platform_owner')
     } else warn(owner ? `owner ${owner} is not a user in caalano-auth: no saas_owner granted` : 'no active superadmin found: no saas_owner granted')
-
-    for (const u of users) {
-      const em = emailOf(u.email)
-      const m = membershipFromLegacy(u, (slug) => { if (!wsId.has(slug)) { warn(`user ${em}: unknown client ${slug} dropped`); return null } return wsId.get(slug) })
-      if (!ORG_ROLES.has(m.role)) { warn(`user ${em}: role ${u.role} is not an organisation role, skipped`); continue }
-      const status = u.status && u.status !== 'active' ? u.status : m.status
-      const wsIds = m.workspace_ids ? m.workspace_ids.filter(Boolean) : null
-      await q(tx, `insert into memberships (org_id, user_id, role, status, workspace_ids, tabs, reports, crm_user_id, invited_by, created_at)
-        values ($1, $2, $3, $4, $5, $6, $7, $8, $9, coalesce($10::timestamptz, now()))
-        on conflict (org_id, user_id) do update set role = excluded.role, status = excluded.status, workspace_ids = excluded.workspace_ids, tabs = excluded.tabs, reports = excluded.reports, crm_user_id = excluded.crm_user_id`,
-        [orgId, userId.get(em), m.role, status, wsIds, m.tabs, m.reports, m.crm_user_id, userId.get(emailOf(u.invitedBy)) || null, iso(u.createdAt)])
-      bump('memberships')
-    }
-    const byEmail = new Map(users.map((u) => [emailOf(u.email), u]))
+    // Invite keys whose user record is gone are orphans; the live ones travel on the user.
     for (const [k, v] of Object.entries(auth)) {
       if (!k.startsWith('invite:') || !isObj(v) || !v.email) continue
-      const u = byEmail.get(emailOf(v.email))
-      if (!u) { warn(`invite for ${v.email} has no user record, skipped`); continue }
-      const role = membershipFromLegacy(u).role
-      if (!ORG_ROLES.has(role)) continue
-      const th = sha256(k.slice('invite:'.length))
-      const dup = await q(tx, 'select 1 from invitations where org_id = $1 and token_hash = $2', [orgId, th])
-      if (dup.length) continue
-      await q(tx, `insert into invitations (org_id, email, role, workspace_ids, tabs, token_hash, expires_at, created_by)
-        values ($1, $2, $3, $4, $5, $6, $7, $8)`,
-        [orgId, emailOf(v.email), role, (u.clients || []).map((s) => wsId.get(s)).filter(Boolean), Array.isArray(u.tabs) ? u.tabs : null, th, iso(v.expires) || now.toISOString(), userId.get(emailOf(u.invitedBy)) || null])
-      bump('invitations')
+      if (!userId.has(emailOf(v.email))) warn(`invite for ${v.email} has no user record, skipped`)
     }
 
     // settings: client-keyed sections split per workspace, the rest on the organisation
-    for (const [section, value] of Object.entries(settings)) {
-      if (section === 'clients') {
-        for (const [slug, rec] of Object.entries(clientRecs)) if (wsId.has(slug) && isObj(rec)) { await upsertWs(tx, orgId, wsId.get(slug), 'client', rec); bump('workspace_settings') }
-        continue
-      }
-      if (isObj(value) && Object.keys(value).length && Object.keys(value).every((k) => wsId.has(k))) {
-        for (const [slug, v] of Object.entries(value)) { await upsertWs(tx, orgId, wsId.get(slug), section, v); bump('workspace_settings') }
-        continue
-      }
-      if (isObj(value) && Object.keys(value).some((k) => wsId.has(k))) warn(`section ${section} mixes client keys with others: stored whole on the organisation`)
-      if (value == null || (isObj(value) && !Object.keys(value).length)) continue
-      await upsertOrg(tx, orgId, section, value); bump('org_settings')
-    }
+    await syncSettings(tx, orgId, settings, wsId, { counts, warn })
 
     // terms: live wording override, archived documents, acceptances ---------
     const terms = get('caalano-terms')
-    if (isObj(terms.live)) { await upsertOrg(tx, orgId, 'terms', terms.live); bump('org_settings') }
+    if (isObj(terms.live)) { await q(tx, `insert into org_settings (org_id, section, value) values ($1, 'terms', $2) on conflict (org_id, section) do update set value = excluded.value, version = org_settings.version + 1, updated_at = now()`, [orgId, JSON.stringify(terms.live)]); bump('org_settings') }
     for (const [k, v] of Object.entries(terms)) {
-      if (k.startsWith('doc_') && isObj(v) && v.version) {
-        await q(tx, `insert into terms_docs (version, hash, archived_at, doc) values ($1, $2, coalesce($3::timestamptz, now()), $4) on conflict (version, hash) do nothing`, [String(v.version), String(v.hash || ''), iso(v.archivedAt), JSON.stringify(v.doc ?? null)])
-        bump('terms_docs')
-      } else if (k.startsWith('t_') && isObj(v) && Array.isArray(v.acceptances)) {
+      if (k.startsWith('doc_') && isObj(v) && v.version) { await syncTermsDoc(tx, v); bump('terms_docs') }
+      else if (k.startsWith('t_') && isObj(v) && Array.isArray(v.acceptances)) {
         for (const a of v.acceptances) {
           if (!a || !a.acceptedAt) continue
           const em = emailOf(a.email || k.slice(2))
-          await q(tx, `insert into terms_acceptances (org_id, user_id, email, name, role, first_name, last_name, phone, version, hash, accepted_at, signature, typed_name, ip, user_agent)
-            values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) on conflict (org_id, email, version, accepted_at) do nothing`,
-            [orgId, userId.get(em) || null, em, String(a.name || ''), a.role || null, a.firstName || null, a.lastName || null, a.phone || null, String(a.version || ''), a.hash || null, iso(a.acceptedAt), a.signature || null, a.typedName || null, a.ip || null, a.userAgent || null])
+          await syncTermsAcceptance(tx, orgId, { ...a, email: em }, userId.get(em) || null)
           bump('terms_acceptances')
         }
       }
@@ -262,10 +165,7 @@ export async function migrateBlobs(db, stores, opts = {}) {
       const [, slug, month] = m
       if (!wsId.has(slug)) { bump('monthly_skipped'); continue }
       const pub = isObj(monthly[`pub:${slug}:${month}`]) ? monthly[`pub:${slug}:${month}`] : null
-      const value = { ...rec, published: pub ? { report: pub.report ?? null, publishedAt: pub.publishedAt || null, publishedBy: pub.publishedBy || null } : null }
-      await q(tx, `insert into monthly_reports (org_id, workspace_id, month, value, published_at, saved_at) values ($1, $2, $3, $4, $5, coalesce($6::timestamptz, now()))
-        on conflict (workspace_id, month) do update set value = excluded.value, published_at = excluded.published_at, saved_at = excluded.saved_at`,
-        [orgId, wsId.get(slug), month, JSON.stringify(value), pub ? iso(pub.publishedAt) : null, iso(rec.savedAt)])
+      await syncMonthly(tx, orgId, wsId.get(slug), month, rec, pub)
       bump('monthly_reports')
     }
 
@@ -307,23 +207,6 @@ export async function migrateBlobs(db, stores, opts = {}) {
 
   try { return await asPlatform(run, { client: db }) }
   catch (e) { if (e instanceof DryRun) return { ...last, orgId: null, dry: true }; throw e }
-}
-
-async function upsertWs(tx, orgId, wsId, section, value) {
-  await tx.query(`insert into workspace_settings (org_id, workspace_id, section, value) values ($1, $2, $3, $4)
-    on conflict (workspace_id, section) do update set value = excluded.value, version = workspace_settings.version + 1, updated_at = now()`, [orgId, wsId, section, JSON.stringify(value)])
-}
-async function upsertOrg(tx, orgId, section, value) {
-  await tx.query(`insert into org_settings (org_id, section, value) values ($1, $2, $3)
-    on conflict (org_id, section) do update set value = excluded.value, version = org_settings.version + 1, updated_at = now()`, [orgId, section, JSON.stringify(value)])
-}
-async function insertMany(tx, table, cols, rows, tail = '') {
-  for (let i = 0; i < rows.length; i += CHUNK) {
-    const chunk = rows.slice(i, i + CHUNK)
-    const params = [], tuples = []
-    for (const r of chunk) tuples.push('(' + r.map((v) => { params.push(v); return `$${params.length}` }).join(', ') + ')')
-    await tx.query(`insert into ${table} (${cols.join(', ')}) values ${tuples.join(', ')} ${tail}`, params)
-  }
 }
 
 export function formatReport(r) {

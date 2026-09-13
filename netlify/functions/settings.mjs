@@ -6,6 +6,7 @@
 import { getStore } from '@netlify/blobs'
 import { currentUser , isClientRole } from '../lib/auth.mjs'
 import { CLIENT_PROFILE_SEEDS } from '../lib/profiles.mjs'
+import { mirror, mirrorStatus } from '../lib/mirror.mjs'
 
 const store = () => getStore({ name: 'caalano-settings', consistency: 'strong' })
 const KEY = 'all'
@@ -16,6 +17,13 @@ const json = (obj, status = 200) => new Response(JSON.stringify(obj), {
 
 export default async (req) => {
   try {
+    if (req.method === 'GET' && new URL(req.url).searchParams.get('mirror') === '1') {
+      // Superadmin only: is the Postgres mirror on, what has it written, what is there.
+      const secret = process.env.AUTH_SECRET
+      const me = secret ? await currentUser(req, secret).catch(() => null) : null
+      if (secret && (!me || me.role !== 'superadmin')) return json({ ok: false, error: 'Super Admins only.' }, 403)
+      return json({ ok: true, mirror: await mirrorStatus() })
+    }
     if (req.method === 'GET') {
       const data = (await store().get(KEY, { type: 'json' }).catch(() => null)) || {}
       // A viewer (client) only gets the settings for their OWN allocated clients,
@@ -78,6 +86,8 @@ export default async (req) => {
       }
       next.updatedAt = new Date().toISOString()
       await store().setJSON(KEY, next)
+      // Phase 1 dual-write: the same save lands in Postgres; Blobs stays the truth.
+      await mirror.settings(next, body)
       return json({ ok: true, data: next })
     }
     return json({ ok: false, error: 'method not allowed' }, 405)

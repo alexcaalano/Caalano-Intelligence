@@ -13,6 +13,7 @@ import { createHash } from 'node:crypto'
 import { buildAttribution, sampleAttribution, sampleChannels, buildCrm, auditLocation, isConnected, bookedTrends, crmTrends, attributionCoverage, wonInPeriod, monthlyDeals, oppTimestampFields, socialDMs, tagAudit, locationTimezone, locationProfile, periodBounds, listCalendars, listPipelines, ghlOpportunityRows, ghlPipelineRows, ghlUserRows, listLocations, checkLocationAccess, ghlRepRows, customClients, deletedClients, sampleForms, buildForms, buildSpeedToLead, speedLeadList, speedScanChunk, finalizeSpeed, buildAppointmentInsights, buildUserPerformance, buildUserPerformanceCombos, buildCreativePerf, buildUpdateExtra, fetchOppNotes, deriveBusinessHours, isQualified, buildCohorts as ghlCohorts, buildCcDrill, buildKeyPeople, buildStageTiming, buildEnquiryTimes, buildUserCalls, buildCallCohort, buildClinic, warmOppSnapshot, resilientFetch, startRequestBudget, buildCalPerf, clinicConfig, dayListBetween, buildActions, applyAction, ghlUserIdForEmail, buildRepCard, contactNotes, contactConversation, buildSalesHub } from '../lib/ghl.mjs'
 import { DEMO_CLIENT_ID, demoWindsor } from '../lib/demo.mjs'
 import { BUILTIN_CLIENTS } from '../lib/clients.mjs'
+import { mirror } from '../lib/mirror.mjs'
 // Stand-in for the Windsor API key, used only when the request is for the demo
 // client. windsorFetch reads it as "generate, don't fetch".
 const DEMO_KEY = 'demo::windsor'
@@ -3634,11 +3635,13 @@ export default async (req) => {
           meta[m] = { ...(meta[m] || {}), savedAt: rec.savedAt || (meta[m] && meta[m].savedAt) || null, publishedAt: at, publishedBy: by }
           await store.setJSON(metaKey, meta)
           if (!pubIdx.includes(m)) { pubIdx.push(m); pubIdx.sort().reverse(); await store.setJSON(pubIdxKey, pubIdx) }
+          await mirror.monthly(client, m, rec, { report: rec.report, publishedAt: at, publishedBy: by })
           return json({ ok: true, month: m, published: true, publishedAt: at, publishedBy: by })
         }
         await store.delete(pubKey(m)).catch(() => {})
         pubIdx = pubIdx.filter((x) => x !== m); await store.setJSON(pubIdxKey, pubIdx)
         meta[m] = { ...(meta[m] || {}), publishedAt: null, publishedBy: null }; await store.setJSON(metaKey, meta)
+        if (rec) await mirror.monthly(client, m, rec, null)
         return json({ ok: true, month: m, published: false })
       }
       // Default POST = generate/freeze a month (does NOT touch the published copy -
@@ -3653,6 +3656,9 @@ export default async (req) => {
       await store.setJSON(metaKey, meta)
       let idx = await store.get(idxKey, { type: 'json' }).catch(() => null); if (!Array.isArray(idx)) idx = []
       if (!idx.includes(body.month)) { idx.push(body.month); idx.sort().reverse(); await store.setJSON(idxKey, idx) }
+      // The published copy, if any, stays as it was; the mirror row carries both.
+      const pubNow = (meta[body.month] && meta[body.month].publishedAt) ? await store.get(pubKey(body.month), { type: 'json' }).catch(() => null) : null
+      await mirror.monthly(client, body.month, rec, pubNow)
       return json({ ok: true, savedAt: at, savedBy: by, publishedAt: (meta[body.month] && meta[body.month].publishedAt) || null })
     }
     // Staff list: every generated month with its saved + published status (from the

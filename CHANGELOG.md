@@ -18,6 +18,24 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.576.0 - 2026-09-13 · `PENDING`
+
+**The gong strike on screen** - a new deal on the Sales Hub now takes over
+the screen: a mallet swings in and hits a brass gong, shock rings ripple
+out, then the rep's name lands in big type with the deal value in gold and
+the deal name under it. Confetti and the gong sound fire at the moment of
+impact. It clears itself after ten seconds or on a click. Works in TV mode
+and on the normal tab, on phones too.
+
+**A brighter gong** - the sound is now the small brass sales-floor gong:
+higher pitched with a bright crash on impact and a swell just after the
+hit, ringing out over about four seconds.
+
+**Toggles on the tab** - Confetti, Gong and a "Test the gong" button now
+sit in the Sales Hub header as well as in TV mode.
+
+---
+
 ## v3.575.0 - 2026-09-13 · `8003dba`
 
 **Hit the gong** - a new deal on the Sales Hub now strikes a gong instead

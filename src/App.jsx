@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.575.0'
+const APP_VERSION = '3.576.0'
 // The business clock. Every server window is cut on the client's local day
 // (Caalano Systems location timezone), so any day the app derives on its own -
 // preset ranges, "today", CSV dates - must use the same clock rather than the
@@ -16006,37 +16006,76 @@ const HUB_PREFS_KEY = 'caalano_hub_prefs'
 function hubPrefs() { try { return { confetti: true, sound: true, ...(JSON.parse(localStorage.getItem(HUB_PREFS_KEY) || '{}')) } } catch { return { confetti: true, sound: true } } }
 function saveHubPrefs(p) { try { localStorage.setItem(HUB_PREFS_KEY, JSON.stringify(p)) } catch { /* private mode */ } }
 // A short rising chime from the browser's own synth: no file, no download.
-// The gong: a struck-metal sound built from inharmonic partials with a long
-// decay, a short mallet thump and a slow shimmer on the upper partials.
+// The sales gong: a bright brass strike (the small gong on a sales floor,
+// not a temple gong) built from inharmonic partials with a long decay, a
+// crash of high noise on impact, a bloom on the upper partials just after the
+// hit and a slow shimmer while it rings.
 function hubChime() {
   try {
     const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return
     const ac = new AC(); const t0 = ac.currentTime
-    const master = ac.createGain(); master.gain.value = 0.9
-    const comp = ac.createDynamicsCompressor(); comp.threshold.value = -18; comp.ratio.value = 6
+    const master = ac.createGain(); master.gain.value = 0.85
+    const comp = ac.createDynamicsCompressor(); comp.threshold.value = -16; comp.ratio.value = 5
     master.connect(comp); comp.connect(ac.destination)
-    // [ratio to the fundamental, level, decay seconds]; ratios are deliberately
-    // not whole numbers, which is what makes it ring like metal, not a bell.
-    const base = 98
-    const partials = [[1, 0.7, 6.5], [1.53, 0.45, 6], [2.13, 0.35, 5.2], [2.92, 0.28, 4.5], [3.71, 0.2, 3.8], [4.42, 0.16, 3.2], [5.36, 0.12, 2.6], [6.79, 0.08, 2], [8.21, 0.05, 1.5]]
-    const lfo = ac.createOscillator(); lfo.type = 'sine'; lfo.frequency.value = 3.2
-    const lfoG = ac.createGain(); lfoG.gain.value = 0.12; lfo.connect(lfoG); lfo.start(t0); lfo.stop(t0 + 7)
-    partials.forEach(([r, lvl, dec], i) => {
-      const o = ac.createOscillator(); o.type = 'sine'; o.frequency.value = base * r
-      o.frequency.setValueAtTime(base * r * 1.01, t0); o.frequency.exponentialRampToValueAtTime(base * r, t0 + 0.4)
-      const g = ac.createGain(); const peak = lvl * 0.5
-      g.gain.setValueAtTime(0.0001, t0); g.gain.exponentialRampToValueAtTime(peak, t0 + 0.012 + i * 0.004); g.gain.exponentialRampToValueAtTime(0.0001, t0 + dec)
-      if (i >= 3) { const sh = ac.createGain(); sh.gain.value = 1; lfoG.connect(sh.gain); o.connect(sh); sh.connect(g) } else o.connect(g)
+    // [ratio to the fundamental, level, decay seconds, bloom]. Ratios are not
+    // whole numbers, which is what makes it ring like metal rather than a bell;
+    // "bloom" partials swell in just after the strike, the gong's "waaah".
+    const base = 330
+    const partials = [[1, 0.6, 5.5, 0], [1.42, 0.42, 5, 0], [1.87, 0.34, 4.4, 0.25], [2.31, 0.3, 4, 0.3], [2.76, 0.24, 3.4, 0.35], [3.39, 0.18, 2.8, 0.3], [4.07, 0.13, 2.2, 0.2], [4.9, 0.09, 1.7, 0], [6.13, 0.06, 1.3, 0]]
+    const lfo = ac.createOscillator(); lfo.type = 'sine'; lfo.frequency.value = 4.5
+    const lfoG = ac.createGain(); lfoG.gain.value = 0.15; lfo.connect(lfoG); lfo.start(t0); lfo.stop(t0 + 7)
+    partials.forEach(([r, lvl, dec, bloom], i) => {
+      const o = ac.createOscillator(); o.type = 'sine'
+      o.frequency.setValueAtTime(base * r * 1.012, t0); o.frequency.exponentialRampToValueAtTime(base * r, t0 + 0.5)
+      const g = ac.createGain(); const peak = lvl * 0.42
+      g.gain.setValueAtTime(0.0001, t0); g.gain.exponentialRampToValueAtTime(peak, t0 + 0.01 + i * 0.003)
+      if (bloom) { g.gain.exponentialRampToValueAtTime(peak * 0.6, t0 + 0.12); g.gain.exponentialRampToValueAtTime(peak * (1 + bloom), t0 + 0.45) }
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + dec)
+      if (i >= 2) { const sh = ac.createGain(); sh.gain.value = 1; lfoG.connect(sh.gain); o.connect(sh); sh.connect(g) } else o.connect(g)
       g.connect(master); o.start(t0); o.stop(t0 + dec + 0.1)
     })
-    // The mallet: a short burst of low-passed noise.
-    const n = ac.createBufferSource(); const buf = ac.createBuffer(1, Math.floor(ac.sampleRate * 0.08), ac.sampleRate); const d = buf.getChannelData(0)
-    for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / d.length)
-    n.buffer = buf; const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 900
-    const ng = ac.createGain(); ng.gain.setValueAtTime(0.35, t0); ng.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.08)
-    n.connect(lp); lp.connect(ng); ng.connect(master); n.start(t0)
-    setTimeout(() => { try { ac.close() } catch { /* ignore */ } }, 7500)
+    // The strike: a bright crash of band-passed noise, gone in a quarter second.
+    const n = ac.createBufferSource(); const buf = ac.createBuffer(1, Math.floor(ac.sampleRate * 0.25), ac.sampleRate); const d = buf.getChannelData(0)
+    for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / d.length, 2)
+    n.buffer = buf; const bp = ac.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 3200; bp.Q.value = 0.7
+    const ng = ac.createGain(); ng.gain.setValueAtTime(0.5, t0); ng.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.25)
+    n.connect(bp); bp.connect(ng); ng.connect(master); n.start(t0)
+    setTimeout(() => { try { ac.close() } catch { /* ignore */ } }, 6500)
   } catch { /* no audio */ }
+}
+// The gong strike on screen: mallet swings in, the gong shudders and rings
+// out in shock waves, then the rep's name and the deal value land.
+const HUB_GONG_HIT_MS = 520
+function HubGong({ win, currency, onDone }) {
+  if (!win) return null
+  return (
+    <div className="hub-gong" role="status" onClick={onDone}>
+      <div className="hub-gong-stage">
+        <svg className="hub-gong-svg" viewBox="0 0 400 400" aria-hidden="true">
+          <defs>
+            <radialGradient id="hubGongFace" cx="42%" cy="38%" r="65%"><stop offset="0" stopColor="#ffe9a3" /><stop offset="0.35" stopColor="#e6b84a" /><stop offset="0.75" stopColor="#a8741c" /><stop offset="1" stopColor="#6b4610" /></radialGradient>
+            <radialGradient id="hubGongBoss" cx="40%" cy="35%" r="70%"><stop offset="0" stopColor="#fff4c8" /><stop offset="0.6" stopColor="#d9a63a" /><stop offset="1" stopColor="#8a5d16" /></radialGradient>
+          </defs>
+          <g className="hub-gong-frame"><rect x="40" y="22" width="320" height="10" rx="5" fill="#3a2a12" /><rect x="52" y="22" width="10" height="360" rx="5" fill="#3a2a12" /><rect x="338" y="22" width="10" height="360" rx="5" fill="#3a2a12" /><line x1="150" y1="32" x2="165" y2="78" stroke="#8b6a2c" strokeWidth="3" /><line x1="250" y1="32" x2="235" y2="78" stroke="#8b6a2c" strokeWidth="3" /></g>
+          <g className="hub-gong-rings"><circle className="hub-gong-ring" cx="200" cy="215" r="130" /><circle className="hub-gong-ring r2" cx="200" cy="215" r="130" /><circle className="hub-gong-ring r3" cx="200" cy="215" r="130" /></g>
+          <g className="hub-gong-disc">
+            <circle cx="200" cy="215" r="132" fill="url(#hubGongFace)" stroke="#5a3b0c" strokeWidth="4" />
+            <circle cx="200" cy="215" r="112" fill="none" stroke="#7d5717" strokeWidth="2" opacity="0.6" />
+            <circle cx="200" cy="215" r="86" fill="none" stroke="#7d5717" strokeWidth="2" opacity="0.5" />
+            <circle cx="200" cy="215" r="60" fill="none" stroke="#7d5717" strokeWidth="2" opacity="0.4" />
+            <circle cx="200" cy="215" r="30" fill="url(#hubGongBoss)" stroke="#6b4610" strokeWidth="3" />
+          </g>
+          <g className="hub-gong-mallet"><line x1="330" y1="330" x2="205" y2="222" stroke="#5a3b0c" strokeWidth="9" strokeLinecap="round" /><circle cx="205" cy="222" r="22" fill="#2b1d0b" stroke="#141414" strokeWidth="3" /></g>
+        </svg>
+        <div className="hub-gong-text">
+          <div className="hub-gong-kicker">Deal closed</div>
+          <div className="hub-gong-rep">{win.user || 'Someone'}</div>
+          {win.value ? <div className="hub-gong-value">{fmtCurrency(win.value, currency)}</div> : null}
+          <div className="hub-gong-deal">{win.name}</div>
+        </div>
+      </div>
+    </div>
+  )
 }
 // Confetti on a canvas over the page, two seconds, then gone.
 function hubConfetti() {
@@ -16075,6 +16114,14 @@ function SalesHubView({ clientId, authUser, currency, nonce }) {
   const [openRep, setOpenRep] = useState(null)
   const seenWins = useRef(null)
   const [celebrate, setCelebrate] = useState(null)
+  const strikeT = useRef(null)
+  // One win at a time: the gong overlay, then confetti and the sound timed to
+  // the mallet hitting, then everything clears after ten seconds.
+  const hubStrike = (win) => {
+    clearTimeout(strikeT.current); setCelebrate({ ...win, key: Date.now() })
+    setTimeout(() => { if (prefs.confetti) hubConfetti(); if (prefs.sound) hubChime() }, HUB_GONG_HIT_MS)
+    strikeT.current = setTimeout(() => setCelebrate(null), 10000)
+  }
   useSettingsSync()
   useEffect(() => {
     let dead = false
@@ -16087,7 +16134,7 @@ function SalesHubView({ clientId, authUser, currency, nonce }) {
         setSt({ status: j && j.error && !j.team ? 'err' : 'ok', data: j })
         // A win that was not on the last read is worth a party.
         const ids = new Set(((j && j.wins) || []).map((w) => w.id))
-        if (seenWins.current) { const fresh = ((j && j.wins) || []).filter((w) => !seenWins.current.has(w.id)); if (fresh.length) { setCelebrate(fresh[0]); if (prefs.confetti) hubConfetti(); if (prefs.sound) hubChime(); setTimeout(() => setCelebrate(null), 9000) } }
+        if (seenWins.current) { const fresh = ((j && j.wins) || []).filter((w) => !seenWins.current.has(w.id)); if (fresh.length) hubStrike(fresh[0]) }
         seenWins.current = ids
       })
       .catch((e) => { if (!dead) setSt({ status: 'err', data: { error: String((e && e.message) || e) } }) })
@@ -16140,6 +16187,9 @@ function SalesHubView({ clientId, authUser, currency, nonce }) {
         <label className="act-sel"><select value={stale} onChange={(e) => setStale(Number(e.target.value))}><option value={7}>Stale after 7 days</option><option value={14}>Stale after 14 days</option><option value={30}>Stale after 30 days</option></select></label>
         <button type="button" className="btn-ghost sm" disabled={st.status === 'refreshing'} onClick={() => setTick((t) => t + 1)}>{st.status === 'refreshing' ? 'Refreshing…' : 'Refresh'}</button>
         <button type="button" className="btn-primary act-btn" onClick={() => setTv(true)}>📺 TV mode</button>
+        <label className="alloc-check"><input type="checkbox" checked={prefs.confetti} onChange={(e) => { const p = { ...prefs, confetti: e.target.checked }; setPrefs(p); saveHubPrefs(p) }} /> Confetti</label>
+        <label className="alloc-check"><input type="checkbox" checked={prefs.sound} onChange={(e) => { const p = { ...prefs, sound: e.target.checked }; setPrefs(p); saveHubPrefs(p) }} /> Gong</label>
+        <button type="button" className="btn-ghost sm" onClick={() => hubStrike({ id: 'test', user: (authUser && authUser.name) || 'Test rep', name: 'Sample deal', value: 12500 })}>Test the gong</button>
       </div>
     </div>
   )
@@ -16163,10 +16213,10 @@ function SalesHubView({ clientId, authUser, currency, nonce }) {
           <div className="hub-tv-ctl">
             <label className="alloc-check"><input type="checkbox" checked={prefs.confetti} onChange={(e) => { const p = { ...prefs, confetti: e.target.checked }; setPrefs(p); saveHubPrefs(p) }} /> Confetti</label>
             <label className="alloc-check"><input type="checkbox" checked={prefs.sound} onChange={(e) => { const p = { ...prefs, sound: e.target.checked }; setPrefs(p); saveHubPrefs(p) }} /> Gong</label>
-            <button type="button" className="btn-ghost sm" onClick={() => { if (prefs.confetti) hubConfetti(); if (prefs.sound) hubChime() }}>Test</button>
+            <button type="button" className="btn-ghost sm" onClick={() => hubStrike({ id: 'test', user: (authUser && authUser.name) || 'Test rep', name: 'Sample deal', value: 12500 })}>Test</button>
             <button type="button" className="btn-ghost sm" onClick={() => setTv(false)}>Exit (Esc)</button>
           </div></div>
-        {celebrate ? <div className="hub-celebrate">🎉 <b>{celebrate.user || 'Someone'}</b> just closed <b>{celebrate.name}</b>{celebrate.value ? ` for ${money(celebrate.value)}` : ''}!</div> : null}
+        {celebrate ? <HubGong key={celebrate.key} win={celebrate} currency={currency} onDone={() => { clearTimeout(strikeT.current); setCelebrate(null) }} /> : null}
         <div className="hub-tv-grid">
           <div className="hub-tv-col">
             <div className="hub-stats">
@@ -16186,7 +16236,7 @@ function SalesHubView({ clientId, authUser, currency, nonce }) {
   return (
     <div className="act-wrap hub-wrap">
       {head}
-      {celebrate ? <div className="hub-celebrate">🎉 <b>{celebrate.user || 'Someone'}</b> just closed <b>{celebrate.name}</b>{celebrate.value ? ` for ${money(celebrate.value)}` : ''}!</div> : null}
+      {celebrate ? <HubGong key={celebrate.key} win={celebrate} currency={currency} onDone={() => { clearTimeout(strikeT.current); setCelebrate(null) }} /> : null}
       <div className="hub-stats">
         <HubStat label="Revenue" value={money(team.revenue)} sub={targets.revenue ? `of ${money(targets.revenue)} team target` : `${fmtNumber(team.won || 0)} deals`} tone={targets.revenue ? ((team.revenue || 0) >= targets.revenue * (monthly ? elapsed : 1) ? 'good' : 'warn') : ''} big />
         {cashOn ? <HubStat label="Cash collected" value={money(team.cash)} sub={team.revenue ? `${Math.round(((team.cash || 0) / team.revenue) * 100)}% of won value` : null} /> : null}

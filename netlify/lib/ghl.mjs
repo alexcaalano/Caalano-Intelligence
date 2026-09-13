@@ -6340,7 +6340,7 @@ export async function buildSalesHub(locationId, { from, to, hours = null, staleD
   const lostByReason = {}
   for (const r of reps) for (const lr of (r.lostReasons || [])) lostByReason[lr.reason] = (lostByReason[lr.reason] || 0) + lr.count
   return {
-    connected: true, tz, period: { from, to }, cashField: cashField || null, staleDays, pipelineId: pipeline || null, wonBasis: 'closed', basis: 'event',
+    connected: true, tz, period: { from, to }, cashField: cashField || null, staleDays, pipelineId: pipeline || null, wonBasis: 'closed', basis: 'event', users: userName,
     team, reps, wins: wins.slice(0, 40),
     pipelines, stageOpen: [...stageOpen.values()].map((x) => ({ ...x, value: Math.round(x.value) })).sort((a, b) => b.open - a.open),
     calendars: [...calendars.values()], lostByReason: Object.entries(lostByReason).map(([reason, count]) => ({ reason, count })).sort((a, b) => b.count - a.count),

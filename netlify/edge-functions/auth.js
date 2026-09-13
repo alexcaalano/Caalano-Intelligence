@@ -438,5 +438,6 @@ export const config = {
   excludedPath: [
     '/.netlify/functions/auth', '/.netlify/functions/caalano-connect', '/.netlify/functions/meta-webhook',
     '/.netlify/functions/warm-background', '/.netlify/functions/settings-backup-background',
+    '/.netlify/functions/ghl-webhook',
   ],
 }

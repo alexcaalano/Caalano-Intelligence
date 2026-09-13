@@ -18,6 +18,7 @@ const DEMO_KEY = 'demo::windsor'
 import { getStore } from '@netlify/blobs'
 import { currentUser, canSeeClient, isAdminish, canSeeReports , isClientRole } from '../lib/auth.mjs'
 import { isWarmRequest, triggerWarm, claimRevalidate } from '../lib/warm.mjs'
+import { readLiveEvents, liveToken } from '../lib/live.mjs'
 import { upstream } from '../lib/ghl.mjs'
 // Parse working-hours query params (bhDays / bhStart / bhEnd) into an hours object.
 function parseHours(url) {
@@ -2632,7 +2633,7 @@ const VIEWER_REQ_TABS = {
   // given exactly this and nothing else.
   'scope:actions': ['actions'],
   'scope:repcard': ['actions'],
-  'scope:saleshub': ['saleshub'],
+  'scope:saleshub': ['saleshub'], 'scope:hublive': ['saleshub'],
   'scope:speedscan': ['timing'],
   // The other two sections on the Timing tab. Both were added after this map and
   // never registered in it, and the map denies by default - so a viewer granted
@@ -3408,6 +3409,23 @@ export default async (req) => {
     } catch (e) { return json({ scope: 'saleshub', client, ghl: true, error: String((e && e.message) || e).slice(0, 240) }) }
   }
 
+  // Live CRM events for the Sales Hub's gong and wins feed: the last day of
+  // webhook events for this client's location. Cheap (one small Blobs read),
+  // never cached, polled every 15 s by a TV. Staff and Account Admins only.
+  if (scope === 'hublive') {
+    const cc = clientCfg(client)
+    if (!cc || !cc.ghl) return json({ scope: 'hublive', client, events: [] })
+    if (isAccountUser(me)) return json({ error: 'Managers only.' }, 403)
+    const since = Math.max(0, Number(url.searchParams.get('since')) || 0) || (Date.now() - 24 * 3600000)
+    const events = await readLiveEvents(cc.ghl, { sinceMs: since })
+    return json({ scope: 'hublive', client, now: Date.now(), events: events.slice(-120) })
+  }
+  // The webhook URL to paste into the marketplace app, for a superadmin.
+  if (scope === 'webhookurl') {
+    if (!me || me.role !== 'superadmin') return json({ error: 'Super Admins only.' }, 403)
+    const t = liveToken()
+    return json({ scope: 'webhookurl', url: t ? `${url.origin}/.netlify/functions/ghl-webhook?t=${t}` : null, signed: !!process.env.GHL_WEBHOOK_PUBLIC_KEY, events: ['OpportunityStatusUpdate', 'OpportunityCreate', 'OpportunityStageUpdate', 'AppointmentCreate', 'AppointmentUpdate', 'InboundMessage'] })
+  }
   // One rep's scorecard (Deals & Actions -> My results). A client-side rep
   // always gets their own; staff may name any rep with ?user=. Cached like the
   // Users tab, keyed on the URL, so the rep filter is part of the key.

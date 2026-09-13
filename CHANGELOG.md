@@ -18,6 +18,27 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.585.0 - 2026-09-13 · `PENDING`
+
+**The gong within seconds** - a CRM webhook receiver. The marketplace app
+posts an event the moment a deal is marked won or lost, a lead is
+created, a stage moves, an appointment is booked or resulted, or a
+message comes in. Each event is kept in a short per-account buffer that
+the Sales Hub polls every 15 seconds on a TV (30 on the tab), so a deal
+marked won rings the gong within about 15 to 30 seconds and joins the
+wins feed straight away. The numbers still come from the snapshot, so a
+webhook never double counts. Retries and flip-flops are deduped; a bulk
+update rings at most one gong per poll; events older than ten minutes
+never ring.
+
+**Live setup** - a Super Admin sees a "Live setup" button on the hub that
+shows the webhook URL to paste into the marketplace app and which events
+to tick. The URL carries an unguessable token; set GHL_WEBHOOK_PUBLIC_KEY
+in the site environment to signature-check every delivery as well. A
+"Live" chip on the hub shows when the last event arrived.
+
+---
+
 ## v3.584.0 - 2026-09-13 · `a3d5b6a`
 
 **Full screen on the TV** - TV mode has a Full screen button that takes

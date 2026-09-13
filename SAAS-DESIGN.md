@@ -1155,3 +1155,13 @@ and calls stay per rep across the account because calendars are not tied
 to a pipeline. The celebration is a full-screen gong strike with the rep
 and the deal value; a recording at /gong.mp3 replaces the synthesised
 crash when present.
+
+Update 2026-09-13 (v3.585.0): live CRM events. The marketplace app's
+webhooks (opportunity status, create, stage; appointment create, update;
+inbound message; install, uninstall) land in ghl-webhook.mjs, guarded by a
+URL token derived from the site secret and, when the CRM's public key is
+set, by its RSA signature. Events sit in a 48-hour ring buffer per
+location (Blobs store caalano-live); the hub polls them for the gong and
+the wins feed only, never for a KPI, so nothing double counts. In the
+SaaS build the same receiver writes to Postgres and the poll becomes a
+server push; the webhook contract is the same.

@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.584.0'
+const APP_VERSION = '3.585.0'
 // The business clock. Every server window is cut on the client's local day
 // (Caalano Systems location timezone), so any day the app derives on its own -
 // preset ranges, "today", CSV dates - must use the same clock rather than the
@@ -16170,12 +16170,16 @@ function SalesHubView({ clientId, authUser, currency, nonce, pipe: pipeProp, onP
   const [openRep, setOpenRep] = useState(null)
   const [openGauge, setOpenGauge] = useState(null)
   const [spot, setSpot] = useState(0)
+  const [live, setLive] = useState({ ok: null, latest: 0, wins: [] })
+  const [setup, setSetup] = useState(null)
+  const liveSeen = useRef(null), liveQueue = useRef([]), celebrated = useRef(new Set()), dRef = useRef({})
   const seenWins = useRef(null)
   const [celebrate, setCelebrate] = useState(null)
   const strikeT = useRef(null)
   // One win at a time: the gong overlay, then confetti and the sound timed to
   // the mallet hitting, then everything clears after ten seconds.
   const hubStrike = (win) => {
+    if (win.id && win.id !== 'test') { if (celebrated.current.has(win.id)) return; celebrated.current.add(win.id) }
     clearTimeout(strikeT.current); setCelebrate({ ...win, key: Date.now() })
     setTimeout(() => { if (prefs.confetti) hubConfetti(); if (prefs.sound) hubChime() }, HUB_GONG_HIT_MS)
     strikeT.current = setTimeout(() => setCelebrate(null), 10000)
@@ -16246,6 +16250,39 @@ function SalesHubView({ clientId, authUser, currency, nonce, pipe: pipeProp, onP
     return out.sort((a, b) => (a.tone === 'bad' ? 0 : 1) - (b.tone === 'bad' ? 0 : 1)).slice(0, 12)
   }, [reps, team]) // eslint-disable-line
   useEffect(() => { if (!tv || boards.length < 2) return; const iv = setInterval(() => setSpot((x) => x + 1), 9000); return () => clearInterval(iv) }, [tv, boards.length])
+  // Live events from the CRM webhook: polled every 15 s on a TV, 30 s on the
+  // tab. The first read only marks what is already there; after that a new
+  // win rings the gong (one per poll at most, so a bulk update is not thirty
+  // gongs) and joins the wins feed before the snapshot catches up.
+  useEffect(() => {
+    let dead = false
+    const poll = () => {
+      if (document.visibilityState !== 'visible') return
+      fetch(`/.netlify/functions/windsor?scope=hublive&client=${encodeURIComponent(clientId)}`, { credentials: 'same-origin' })
+        .then((r) => r.json().catch(() => null))
+        .then((j) => {
+          if (dead || !j) return
+          if (j.error) { setLive((l) => ({ ...l, ok: false })); return }
+          const evs = j.events || []; const latest = evs.reduce((m, e) => Math.max(m, e.at || 0), 0)
+          if (!liveSeen.current) { liveSeen.current = new Set(evs.map((e) => e.id)); setLive({ ok: true, latest, wins: evs.filter((e) => e.kind === 'won').slice(-10).reverse() }); return }
+          const fresh = evs.filter((e) => !liveSeen.current.has(e.id)); for (const e of fresh) liveSeen.current.add(e.id)
+          liveQueue.current.push(...fresh.filter((e) => e.kind === 'won' && j.now - (e.at || 0) < 10 * 60000))
+          setLive((l) => ({ ok: true, latest, wins: [...fresh.filter((e) => e.kind === 'won').reverse(), ...l.wins].slice(0, 10) }))
+          strikeNext()
+        })
+        .catch(() => { if (!dead) setLive((l) => ({ ...l, ok: false })) })
+      strikeNext()
+    }
+    // One gong per poll at most: the first new win rings now, the rest queue.
+    const strikeNext = () => {
+      if (dead) return
+      const next = liveQueue.current.shift(); if (!next) return
+      const dd = dRef.current || {}
+      hubStrike({ id: next.oppId, user: (dd.users || {})[next.userId] || ((dd.reps || []).find((r) => r.id === next.userId) || {}).name || null, name: next.name || 'Deal', value: next.value })
+    }
+    poll(); const iv = setInterval(poll, tv ? 15000 : 30000)
+    return () => { dead = true; clearInterval(iv) }
+  }, [clientId, tv]) // eslint-disable-line
   const pipesAll = d.pipelines || []
   const multi = (pipesProp && pipesProp.length > 1) || pipesAll.length > 1
   const focus = d.pipelineId ? (pipesAll.find((p) => p.id === d.pipelineId) || null) : null
@@ -16262,15 +16299,27 @@ function SalesHubView({ clientId, authUser, currency, nonce, pipe: pipeProp, onP
         <label className="alloc-check"><input type="checkbox" checked={prefs.confetti} onChange={(e) => { const p = { ...prefs, confetti: e.target.checked }; setPrefs(p); saveHubPrefs(p) }} /> Confetti</label>
         <label className="alloc-check"><input type="checkbox" checked={prefs.sound} onChange={(e) => { const p = { ...prefs, sound: e.target.checked }; setPrefs(p); saveHubPrefs(p) }} /> Gong</label>
         <button type="button" className="btn-ghost sm" onClick={() => hubStrike({ id: 'test', user: (authUser && authUser.name) || 'Test rep', name: 'Sample deal', value: 12500 })}>Test the gong</button>
+        <span className={`hub-livechip ${live.latest ? 'on' : ''}`} title="Live events arrive from the CRM webhook the moment a deal changes; the numbers refresh from the five-minute snapshot">{live.latest ? `● Live · last event ${actHrs(Math.round((Date.now() - live.latest) / 3600000))}` : live.ok === false ? '○ Live unavailable' : '○ Live · no events yet'}</span>
+        {authUser && authUser.role === 'superadmin' ? <button type="button" className="btn-ghost sm" onClick={() => { if (setup) return setSetup(null); setSetup({ loading: true }); fetch(`/.netlify/functions/windsor?scope=webhookurl&client=${encodeURIComponent(clientId)}`, { credentials: 'same-origin' }).then((r) => r.json().catch(() => ({}))).then((j) => setSetup(j || {})).catch(() => setSetup({ error: 'Could not load.' })) }}>Live setup</button> : null}
       </div>
     </div>
   )
+  const setupPanel = setup ? <div className="card hub-setup">
+    <div className="rep-lb-head"><h4>Live setup: the CRM webhook</h4><button type="button" className="btn-ghost sm" onClick={() => setSetup(null)}>Close</button></div>
+    {setup.loading ? <p className="cap">Loading…</p> : setup.error ? <p className="cap act-bad">{setup.error}</p> : !setup.url ? <p className="cap">No site secret is set, so no webhook token can be made.</p> : <>
+      <p className="cap">In the marketplace app's settings, paste this URL as the webhook URL and tick these events: {(setup.events || []).join(', ')}. One URL serves every connected account; each event names its own location. {setup.signed ? 'Deliveries are signature-checked.' : 'Set GHL_WEBHOOK_PUBLIC_KEY in the site environment to signature-check every delivery as well.'}</p>
+      <div className="act-note-btns"><input className="act-in hub-setup-url" type="text" readOnly value={setup.url} onFocus={(e) => e.target.select()} /><button type="button" className="btn-primary act-btn" onClick={() => { try { navigator.clipboard.writeText(setup.url) } catch { /* select and copy by hand */ } }}>Copy</button></div>
+    </>}
+  </div> : null
   if (st.status === 'loading') return <div className="act-wrap">{head}<div className="card"><Spinner label="Adding up the team…" /></div></div>
   if (st.status === 'err') return <div className="act-wrap">{head}<div className="card"><p className="cap act-bad" style={{ margin: 0 }}>{d.error || 'Could not load.'}</p></div></div>
   if (d.ghl === false) return <div className="card"><p className="cap">{d.error || 'This account has no Caalano Systems connection.'}</p></div>
   const lbTop = [...reps].sort((a, b) => b.revenue - a.revenue || b.won - a.won).slice(0, 3)
   const medal = ['🥇', '🥈', '🥉']
-  const winsFeed = (limit) => (d.wins || []).slice(0, limit).map((w) => <div className="hub-win" key={w.id}><span className="hub-win-m">🎉</span><div><b>{w.user || 'Someone'}</b> closed <b>{w.name}</b>{w.value ? ` for ${money(w.value)}` : ''}{cashOn && w.cash ? ` · ${money(w.cash)} collected` : ''}{multi && w.pipeline ? <span className="cap"> · {w.pipeline}</span> : null}</div><span className="cap">{actHrs(Math.round((Date.now() - w.at) / 3600000))}</span></div>)
+  dRef.current = d
+  const liveFeed = (live.wins || []).map((e) => ({ id: e.oppId, name: e.name || 'Deal', value: e.value, user: (d.users || {})[e.userId] || null, at: e.at, pipeline: null, live: true }))
+  const allWins = [...liveFeed, ...(d.wins || [])].filter((w, i, arr) => arr.findIndex((x) => x.id === w.id) === i).sort((a, b) => (b.at || 0) - (a.at || 0))
+  const winsFeed = (limit) => allWins.slice(0, limit).map((w) => <div className="hub-win" key={w.id}><span className="hub-win-m">🎉</span><div><b>{w.user || 'Someone'}</b> closed <b>{w.name}</b>{w.value ? ` for ${money(w.value)}` : ''}{cashOn && w.cash ? ` · ${money(w.cash)} collected` : ''}{multi && w.pipeline ? <span className="cap"> · {w.pipeline}</span> : null}</div><span className="cap">{actHrs(Math.round((Date.now() - w.at) / 3600000))}</span></div>)
   const leaderboard = (
     <div className="card rep-card hub-lb">
       <div className="rep-lb-head"><h4>Leaderboard</h4><span className="cap">by revenue{periodLabel ? ` · ${periodLabel}` : ''}{focus ? ` · ${focus.name}` : ''}</span></div>
@@ -16364,7 +16413,7 @@ function SalesHubView({ clientId, authUser, currency, nonce, pipe: pipeProp, onP
         {celebrate ? <HubGong key={celebrate.key} win={celebrate} currency={currency} onDone={() => { clearTimeout(strikeT.current); setCelebrate(null) }} /> : null}
         {dialDefs.length ? <div className="hub-tv-dials">{dials}{gaugeDetail}</div> : primary}
         <div className="hub-tv-grid">
-          <div className="hub-tv-col">{leaderboard}<div className="card rep-card"><h4>Latest wins</h4>{(d.wins || []).length ? winsFeed(6) : <p className="cap">No wins in the last 7 days yet.</p>}</div></div>
+          <div className="hub-tv-col">{leaderboard}<div className="card rep-card"><h4>Latest wins</h4>{allWins.length ? winsFeed(6) : <p className="cap">No wins in the last 7 days yet.</p>}</div></div>
           <div className="hub-tv-col">{spotlight}{boardsGrid}{!dialDefs.length && authUser && isAdminishFE(authUser.role) ? <p className="cap">Set Rep KPIs in Settings and the gauges light up here.</p> : null}</div>
         </div>
       </div>
@@ -16373,6 +16422,7 @@ function SalesHubView({ clientId, authUser, currency, nonce, pipe: pipeProp, onP
   return (
     <div className="act-wrap hub-wrap">
       {head}
+      {setupPanel}
       {celebrate ? <HubGong key={celebrate.key} win={celebrate} currency={currency} onDone={() => { clearTimeout(strikeT.current); setCelebrate(null) }} /> : null}
       {primary}
       {secondary}
@@ -16419,7 +16469,7 @@ function SalesHubView({ clientId, authUser, currency, nonce, pipe: pipeProp, onP
       </div>
       <div className={`hub-pipecards ${pipesAll.length > 1 ? 'many' : ''}`}>{pipesAll.map(pipeCard)}</div>
       <div className="rep-grid hub-bottom">
-        <div className="card rep-card"><h4>Latest wins</h4>{(d.wins || []).length ? winsFeed(10) : <p className="cap">No wins in the last 7 days yet.</p>}</div>
+        <div className="card rep-card"><h4>Latest wins</h4>{allWins.length ? winsFeed(10) : <p className="cap">No wins in the last 7 days yet.</p>}</div>
         {calCard}
         {lostCard}
       </div>

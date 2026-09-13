@@ -6171,11 +6171,17 @@ export async function buildSalesHub(locationId, { from, to, hours = null, staleD
   const fromMs = from ? zonedStartMs(from, tz) : null
   const toMs = to ? zonedEndMs(to, tz) : null
   const inPeriod = (ms) => Number.isFinite(ms) && (fromMs == null || ms >= fromMs) && (toMs == null || ms <= toMs)
-  const [inp, snap, rawAppts, speed, calls, cashField] = await Promise.all([
+  // Closed basis for everything sales: a win counts in the period its status
+  // changed to won, whatever month the lead came in (the same rule as the
+  // Overview's "Closed" toggle), so a deal closed today shows today. The read
+  // reaches 400 days back for the leads those wins came from.
+  const back = from ? new Date(new Date(from + 'T00:00:00Z').getTime() - 400 * 86400000).toISOString().slice(0, 10) : from
+  const [inp, snap, rawAppts, speed, wonOpps, calls, cashField] = await Promise.all([
     _userPerfInputs(locationId, from, to),
     oppSnapshot(locTok, locationId),
     _rawAppointments(locTok, locationId, (fromMs != null ? fromMs : now - 30 * ACT_DAY) - 7 * ACT_DAY, (toMs != null ? toMs : now) + 90 * ACT_DAY),
     buildSpeedToLead(locationId, from, to, { sample: 200, budgetMs: 12000, hours, byUser: true, pipeline: pipeline || null }).catch(() => null),
+    allOpportunities(locTok, locationId, back, to, 2500).catch(() => []),
     buildUserCalls(locationId, from, to, true).catch(() => null),
     oppCustomFields(locTok, locationId).then(cashFieldOf).catch(() => null),
   ])
@@ -6203,11 +6209,29 @@ export async function buildSalesHub(locationId, { from, to, hours = null, staleD
     calendars.set(a.calendarId, c)
   }
   // Now: open, value, stale (by tier), from the live snapshot; wins this week.
-  const nowBy = new Map()
-  const wins = []
-  const idleOf = (o) => { const u = Math.max(Date.parse(o.updatedAt) || 0, Date.parse(o.lastStatusChangeAt) || 0, Date.parse(o.lastStageChangeAt) || 0) || Date.parse(o.createdAt); return Number.isFinite(u) ? Math.max(0, Math.round((now - u) / ACT_DAY)) : null }
   const stageOf = {}; const pipeOf = {}
   for (const p of (inp.pipelines || [])) for (const st of (p.stages || [])) { stageOf[st.id] = st.name; pipeOf[st.id] = p.name }
+  const nowBy = new Map()
+  const wins = []
+  // Closed wins in the period, per rep and per pipeline, from the 400-day read
+  // merged with the snapshot (deduped by id) so an old lead that closed this
+  // month is counted for whoever owns it.
+  const wonById = new Map()
+  for (const o of [...(wonOpps || []), ...(snap.opps || [])]) if (o && o.id && String(o.status || '').toLowerCase() === 'won' && !wonById.has(o.id)) wonById.set(o.id, o)
+  const wonBy = new Map(), wonByPipe = new Map()
+  for (const o of wonById.values()) {
+    if (!inPipe(o)) continue
+    const sc = Date.parse(o.lastStatusChangeAt || o.lastStageChangeAt || o.updatedAt || ''); if (!Number.isFinite(sc)) continue
+    if (now - sc <= 7 * ACT_DAY) wins.push({ id: o.id, name: (o.contact && (o.contact.name || [o.contact.firstName, o.contact.lastName].filter(Boolean).join(' '))) || o.name || 'Deal', value: num(o.monetaryValue), cash: cashField ? num(oppCashValue(o, cashField)) : null, userId: o.assignedTo || null, user: userName[o.assignedTo] || null, at: sc, pipeline: pipeOf[o.pipelineStageId] || null })
+    if (!inPeriod(sc)) continue
+    const val = num(o.monetaryValue); const uid = o.assignedTo || 'unassigned'
+    const w = wonBy.get(uid) || { won: 0, revenue: 0, cash: 0, closeSum: 0, closeN: 0 }
+    w.won++; w.revenue += val; if (cashField) w.cash += num(oppCashValue(o, cashField))
+    const cr = Date.parse(o.createdAt); if (Number.isFinite(cr)) { const dd = (sc - cr) / ACT_DAY; if (dd >= 0 && dd < 400) { w.closeSum += dd; w.closeN++ } }
+    wonBy.set(uid, w)
+    const pid = pidOf(o) || 'none'; const wp = wonByPipe.get(pid) || { won: 0, revenue: 0 }; wp.won++; wp.revenue += val; wonByPipe.set(pid, wp)
+  }
+  const idleOf = (o) => { const u = Math.max(Date.parse(o.updatedAt) || 0, Date.parse(o.lastStatusChangeAt) || 0, Date.parse(o.lastStageChangeAt) || 0) || Date.parse(o.createdAt); return Number.isFinite(u) ? Math.max(0, Math.round((now - u) / ACT_DAY)) : null }
   const stageOpen = new Map()
   const openByPipe = new Map()
   for (const o of (snap.opps || [])) {
@@ -6225,18 +6249,10 @@ export async function buildSalesHub(locationId, { from, to, hours = null, staleD
       const so = stageOpen.get(k) || { stageId: k, stage: stageOf[k] || 'No stage', pipeline: pipeOf[k] || '', pipelineId: pipeIdOfStage[k] || null, open: 0, value: 0, stale: 0 }
       so.open++; so.value += num(o.monetaryValue); if (idle != null && idle >= staleDays) so.stale++
       stageOpen.set(k, so)
-    } else if (st === 'won') {
-      const w = Date.parse(o.lastStatusChangeAt || o.lastStageChangeAt || o.updatedAt || '')
-      if (Number.isFinite(w) && now - w <= 7 * ACT_DAY) wins.push({ id: o.id, name: (o.contact && (o.contact.name || [o.contact.firstName, o.contact.lastName].filter(Boolean).join(' '))) || o.name || 'Deal', value: num(o.monetaryValue), cash: cashField ? num(oppCashValue(o, cashField)) : null, userId: uid, user: userName[uid] || null, at: w, pipeline: pipeOf[o.pipelineStageId] || null })
     }
   }
   wins.sort((a, b) => b.at - a.at)
-  const cashOf = (uid) => {
-    if (!cashField) return null
-    let sum = 0
-    for (const o of (snap.opps || [])) { if (o.assignedTo !== uid || !inPipe(o) || String(o.status || '').toLowerCase() !== 'won') continue; const w = Date.parse(o.lastStatusChangeAt || o.lastStageChangeAt || o.updatedAt || ''); if (inPeriod(w)) sum += num(oppCashValue(o, cashField)) }
-    return Math.round(sum)
-  }
+  const cashOf = (uid) => (cashField ? Math.round((wonBy.get(uid) || {}).cash || 0) : null)
   // Stage reach and lost reasons per pipeline, from the period's leads, for the
   // team and for each rep. Never merged across pipelines: a stage called "New
   // Lead" in two pipelines is two different steps with two different bases.
@@ -6254,13 +6270,16 @@ export async function buildSalesHub(locationId, { from, to, hours = null, staleD
     for (const sdef of pi.stages) if (st === 'won' || (pos >= 0 && sdef.pos <= pos)) { t[sdef.name] = (t[sdef.name] || 0) + 1; rr[sdef.name] = (rr[sdef.name] || 0) + 1 }
     if (st === 'lost' || st === 'abandoned') { if (!lostByPipe.has(pid)) lostByPipe.set(pid, {}); const l = lostByPipe.get(pid); const rn = reasonOf(o); l[rn] = (l[rn] || 0) + 1 }
   }
-  const reps = (perf.users || []).filter((u) => u.leads > 0 || (nowBy.get(u.id) || {}).open > 0).map((u) => {
+  const baseUsers = [...(perf.users || [])]
+  for (const uid of wonBy.keys()) if (uid !== 'unassigned' && !baseUsers.some((u) => u.id === uid)) baseUsers.push({ id: uid, name: userName[uid] || 'User', leads: 0, qualified: 0, won: 0, lost: 0, revenue: 0, winRate: null, avgDeal: null, avgCloseDays: null, stages: {}, lostReasons: [], byPipeline: [] })
+  const reps = baseUsers.filter((u) => u.leads > 0 || (nowBy.get(u.id) || {}).open > 0 || wonBy.has(u.id)).map((u) => {
     const ap = apByUser.get(u.id) || { booked: 0, byStaff: 0, byCustomer: 0, showed: 0, noShow: 0, upcoming: 0, unresulted: 0 }
+    const w = wonBy.get(u.id) || { won: 0, revenue: 0, closeSum: 0, closeN: 0 }
     const c = callsByUser.get(u.id)
     const sp = spByUser[u.id] || null
     const n = nowBy.get(u.id) || { open: 0, openValue: 0, stale: 0, t7: 0, t14: 0, t21: 0, t30: 0, oldest: 0 }
     return {
-      id: u.id, name: u.name, leads: u.leads, qualified: u.qualified, won: u.won, lost: u.lost, revenue: u.revenue, winRate: u.winRate, avgDeal: u.avgDeal, avgCloseDays: u.avgCloseDays,
+      id: u.id, name: u.name, leads: u.leads, qualified: u.qualified, won: w.won, lost: u.lost, revenue: Math.round(w.revenue), winRate: u.leads ? Math.round((w.won / u.leads) * 100) : null, avgDeal: w.won ? Math.round(w.revenue / w.won) : null, avgCloseDays: w.closeN ? Math.round(w.closeSum / w.closeN) : null,
       booked: ap.booked, byStaff: ap.byStaff, byCustomer: ap.byCustomer, showed: ap.showed, noShow: ap.noShow, upcoming: ap.upcoming, unresulted: ap.unresulted,
       showRate: (ap.showed + ap.noShow) ? Math.round((ap.showed / (ap.showed + ap.noShow)) * 100) : null,
       calls: c ? (c.outbound || 0) : 0, connected: c ? (c.outboundConnected || 0) : 0, minutes: c ? Math.round(((c.outboundSec || 0) + (c.inboundSec || 0)) / 60) : 0,
@@ -6282,20 +6301,24 @@ export async function buildSalesHub(locationId, { from, to, hours = null, staleD
   // One entry per pipeline (only the chosen one when a pipeline is set): its
   // funnel, its lost reasons and its own totals from the reps' per-pipeline
   // figures, so a multi-pipeline account reads as the separate businesses it is.
+  // Only pipelines with something in them: a lead in the period or an open
+  // deal now. Empty ones (a web-form pipeline nobody uses) stay out of the way;
+  // a pipeline chosen by name is always shown.
   const pipelines = (perf.pipelines || []).filter((p) => !pipeline || p.id === pipeline).map((p) => {
     const t = reachTeam.get(p.id) || {}; const l = lostByPipe.get(p.id) || {}; const ob = openByPipe.get(p.id) || { open: 0, openValue: 0, stale: 0 }
-    let leads = 0, won = 0, revenue = 0
-    for (const r of reps) for (const bp of (r.byPipeline || [])) if (bp.id === p.id) { leads += bp.leads; won += bp.won; revenue += bp.revenue }
+    let leads = 0
+    for (const r of reps) for (const bp of (r.byPipeline || [])) if (bp.id === p.id) leads += bp.leads
+    const wp = wonByPipe.get(p.id) || { won: 0, revenue: 0 }; const won = wp.won, revenue = wp.revenue
     return {
       id: p.id, name: p.name, stages: (p.stages || []).map((name) => ({ name, reached: t[name] || 0 })),
       leads, won, revenue: Math.round(revenue), winRate: leads ? Math.round((won / leads) * 100) : null, open: ob.open, openValue: Math.round(ob.openValue), stale: ob.stale,
       lostReasons: Object.entries(l).map(([reason, count]) => ({ reason, count })).sort((a, b) => b.count - a.count),
     }
-  })
+  }).filter((p) => p.id === pipeline || p.leads > 0 || p.open > 0 || p.won > 0)
   const lostByReason = {}
   for (const r of reps) for (const lr of (r.lostReasons || [])) lostByReason[lr.reason] = (lostByReason[lr.reason] || 0) + lr.count
   return {
-    connected: true, tz, period: { from, to }, cashField: cashField || null, staleDays, pipelineId: pipeline || null,
+    connected: true, tz, period: { from, to }, cashField: cashField || null, staleDays, pipelineId: pipeline || null, wonBasis: 'closed',
     team, reps, wins: wins.slice(0, 40),
     pipelines, stageOpen: [...stageOpen.values()].map((x) => ({ ...x, value: Math.round(x.value) })).sort((a, b) => b.open - a.open),
     calendars: [...calendars.values()], lostByReason: Object.entries(lostByReason).map(([reason, count]) => ({ reason, count })).sort((a, b) => b.count - a.count),

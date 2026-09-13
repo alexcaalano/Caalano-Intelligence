@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.580.0'
+const APP_VERSION = '3.581.0'
 // The business clock. Every server window is cut on the client's local day
 // (Caalano Systems location timezone), so any day the app derives on its own -
 // preset ranges, "today", CSV dates - must use the same clock rather than the
@@ -16121,6 +16121,34 @@ function HubStat({ label, value, sub, tone, big }) {
   return <div className={`hub-stat ${tone || ''} ${big ? 'big' : ''}`}><div className="hub-stat-l">{label}</div><div className="hub-stat-v">{value}</div>{sub ? <div className="hub-stat-s">{sub}</div> : null}</div>
 }
 // Attainment against the summed rep targets for the month.
+// Team gauges: which summed rep targets get a dial, and how to read the team
+// and each rep's actual for them.
+const HUB_GAUGE_DEFS = [['revenue', 'Revenue', 'money'], ['cash', 'Cash collected', 'money'], ['won', 'Deals closed', 'count'], ['booked', 'Meetings booked', 'count'], ['userBooked', 'Booked by reps', 'count'], ['held', 'Meetings held', 'count'], ['calls', 'Calls made', 'count'], ['minutes', 'Minutes on the phone', 'count'], ['leads', 'Leads', 'count']]
+const hubTeamVal = (team, key) => (key === 'held' ? team.showed : key === 'userBooked' ? team.byStaff : team[key])
+const hubRepVal = (r, key) => (key === 'held' ? r.showed : key === 'userBooked' ? r.byStaff : r[key])
+// A half-circle dial: the arc fills with attainment, a tick marks where pace
+// says it should be today, the number in the middle is the percentage.
+function HubDial({ label, actual, target, fmt, elapsed, monthly, onClick, open }) {
+  const a = actual || 0; const ratio = Math.min(1, a / target); const need = target * (monthly ? elapsed : 1)
+  const tone = a >= need ? 'good' : a >= need * 0.8 ? 'warn' : 'bad'
+  const R = 54, C = Math.PI * R, cx = 64, cy = 70
+  const th = Math.PI * (1 - (monthly ? elapsed : 1)); const px = cx + Math.cos(th), py = cy - Math.sin(th)
+  const p1 = [cx + (R - 9) * Math.cos(th), cy - (R - 9) * Math.sin(th)], p2 = [cx + (R + 9) * Math.cos(th), cy - (R + 9) * Math.sin(th)]
+  void px; void py
+  return (
+    <button type="button" className={`hub-dial ${tone} ${open ? 'open' : ''}`} onClick={onClick} title="Tap for the split by rep">
+      <svg viewBox="0 0 128 82" aria-hidden="true">
+        <path className="hub-dial-bg" d={`M ${cx - R} ${cy} A ${R} ${R} 0 0 1 ${cx + R} ${cy}`} />
+        <path className="hub-dial-fg" d={`M ${cx - R} ${cy} A ${R} ${R} 0 0 1 ${cx + R} ${cy}`} style={{ strokeDasharray: C, strokeDashoffset: C * (1 - ratio) }} />
+        {monthly ? <line className="hub-dial-pace" x1={p1[0]} y1={p1[1]} x2={p2[0]} y2={p2[1]} /> : null}
+        <text className="hub-dial-pct" x={cx} y={cy - 4}>{Math.round((a / target) * 100)}%</text>
+      </svg>
+      <div className="hub-dial-l">{label}</div>
+      <div className="hub-dial-v">{fmt(a)} <small>/ {fmt(target)}</small></div>
+      <div className="hub-dial-s">{a >= target ? 'Target hit 🎯' : `${fmt(target - a)} to go`}</div>
+    </button>
+  )
+}
 function hubTargetsSum(clientId, reps) {
   const k = loadRepKpis(clientId)
   const out = {}
@@ -16140,6 +16168,8 @@ function SalesHubView({ clientId, authUser, currency, nonce, pipe: pipeProp, onP
   const [prefs, setPrefs] = useState(hubPrefs)
   const [sortKey, setSortKey] = useState('revenue')
   const [openRep, setOpenRep] = useState(null)
+  const [openGauge, setOpenGauge] = useState(null)
+  const [spot, setSpot] = useState(0)
   const seenWins = useRef(null)
   const [celebrate, setCelebrate] = useState(null)
   const strikeT = useRef(null)
@@ -16179,14 +16209,21 @@ function SalesHubView({ clientId, authUser, currency, nonce, pipe: pipeProp, onP
   const targets = useMemo(() => hubTargetsSum(clientId, reps), [clientId, reps, SETTINGS.repkpis]) // eslint-disable-line
   const now = new Date(); const dim = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate(); const day = now.getDate(); const elapsed = Math.min(1, Math.max(0.03, day / dim))
   const monthly = period === 'this_month'
-  const gauge = (key, label, actual, fmt) => {
-    const t = targets[key]; if (!t) return null
-    const ratio = Math.min(1, (actual || 0) / t); const need = t * (monthly ? elapsed : 1)
-    const tone = (actual || 0) >= need ? 'good' : (actual || 0) >= need * 0.8 ? 'warn' : 'bad'
-    const proj = monthly && elapsed > 0.1 ? Math.round((actual || 0) / elapsed) : null
-    return <div className={`rep-kpi ${tone}`} key={key}><div className="rep-kpi-l"><span>{label}</span><b>{fmt(actual || 0)}<small> / {fmt(t)}</small></b></div><div className="rep-kpi-t"><div className="rep-kpi-f" style={{ width: `${Math.round(ratio * 100)}%` }} />{monthly ? <div className="rep-kpi-pace" style={{ left: `${Math.round(elapsed * 100)}%` }} /> : null}</div><div className="cap">{(actual || 0) >= t ? 'target hit' : `${fmt(t - (actual || 0))} to go${proj != null ? ` · on this run rate the month ends at ${fmt(proj)}` : ''}`}</div></div>
-  }
-  const gauges = [gauge('revenue', 'Revenue', team.revenue, money), cashOn ? gauge('cash', 'Cash collected', team.cash, money) : null, gauge('won', 'Deals closed', team.won, fmtNumber), gauge('booked', 'Meetings booked', team.booked, fmtNumber), gauge('held', 'Meetings held', team.showed, fmtNumber), gauge('calls', 'Calls made', team.calls, fmtNumber), gauge('leads', 'Leads', team.leads, fmtNumber)].filter(Boolean)
+  const dialDefs = HUB_GAUGE_DEFS.filter(([k]) => targets[k] > 0 && (k !== 'cash' || cashOn))
+  // Mini leaderboards: who leads on each thing a sales floor competes on.
+  const boards = [
+    ['booked', 'Top booker', (r) => r.booked, fmtNumber, 'booked'],
+    ['showRate', 'Best show rate', (r) => ((r.showed + r.noShow) >= 3 ? r.showRate : null), (v) => `${v}%`, ''],
+    ['minutes', 'Most on the phone', (r) => r.minutes, fmtNumber, 'min'],
+    ['calls', 'Most calls', (r) => r.calls, fmtNumber, 'calls'],
+    ['speed', 'Fastest to lead', (r) => (r.speedMeasured >= 3 && r.speedMin != null ? r.speedMin : null), repMin, '', 'asc'],
+    ['showed', 'Most meetings held', (r) => r.showed, fmtNumber, 'held'],
+    ['won', 'Most deals closed', (r) => r.won, fmtNumber, 'won'],
+    ['openValue', 'Biggest open pipeline', (r) => r.openValue, money, 'open'],
+  ].map(([key, title, get, fmt, unit, dir]) => {
+    const rows = reps.filter((r) => r.id !== 'unassigned').map((r) => ({ r, v: get(r) })).filter((x) => x.v != null && (dir === 'asc' || x.v > 0)).sort(dir === 'asc' ? (a, b) => a.v - b.v : (a, b) => b.v - a.v).slice(0, 3)
+    return rows.length ? { key, title, rows, fmt, unit } : null
+  }).filter(Boolean)
   // Attainment per rep: revenue target first, then deals, then bookings.
   const attain = (r) => { const k = loadRepKpis(clientId); const t = { ...k.default, ...((k.byUser || {})[r.id] || {}) }; const key = t.revenue > 0 ? 'revenue' : t.won > 0 ? 'won' : t.booked > 0 ? 'booked' : null; if (!key) return null; const a = key === 'revenue' ? r.revenue : key === 'won' ? r.won : r.booked; return { key, pct: Math.round(((a || 0) / t[key]) * 100), need: monthly ? elapsed * 100 : 100 } }
   const status = (r) => { const a = attain(r); if (!a) return null; return a.pct >= a.need ? ['On pace', 'good'] : a.pct >= a.need * 0.8 ? ['At risk', 'warn'] : ['Behind', 'bad'] }
@@ -16207,6 +16244,7 @@ function SalesHubView({ clientId, authUser, currency, nonce, pipe: pipeProp, onP
     }
     return out.sort((a, b) => (a.tone === 'bad' ? 0 : 1) - (b.tone === 'bad' ? 0 : 1)).slice(0, 12)
   }, [reps, team]) // eslint-disable-line
+  useEffect(() => { if (!tv || boards.length < 2) return; const iv = setInterval(() => setSpot((x) => x + 1), 9000); return () => clearInterval(iv) }, [tv, boards.length])
   const pipesAll = d.pipelines || []
   const multi = (pipesProp && pipesProp.length > 1) || pipesAll.length > 1
   const focus = d.pipelineId ? (pipesAll.find((p) => p.id === d.pipelineId) || null) : null
@@ -16295,6 +16333,21 @@ function SalesHubView({ clientId, authUser, currency, nonce, pipe: pipeProp, onP
   )
   const flagsByRep = []
   for (const f of flags) { let g = flagsByRep.find((x) => x.rep.id === f.rep.id); if (!g) { g = { rep: f.rep, tone: f.tone, items: [] }; flagsByRep.push(g) } g.items.push(f.text); if (f.tone === 'bad') g.tone = 'bad' }
+  const dials = dialDefs.length ? <div className="hub-dials">{dialDefs.map(([k, label, kind]) => <HubDial key={k} label={label} actual={hubTeamVal(team, k)} target={targets[k]} fmt={kind === 'money' ? money : fmtNumber} elapsed={elapsed} monthly={monthly} open={openGauge === k} onClick={() => setOpenGauge(openGauge === k ? null : k)} />)}</div> : null
+  const gaugeDetail = (() => {
+    const def = openGauge && targets[openGauge] ? HUB_GAUGE_DEFS.find((x) => x[0] === openGauge) : null
+    if (!def) return null
+    const [k, label, kind] = def; const fmt = kind === 'money' ? money : fmtNumber; const share = monthly ? elapsed : 1
+    const rows = reps.filter((r) => r.id !== 'unassigned').map((r) => { const t = Number((repTargetsFor(clientId, r.id) || {})[k]) || 0; const v = hubRepVal(r, k) || 0; return { r, v, t, pct: t ? Math.round((v / t) * 100) : null } }).sort((a, b) => b.v - a.v)
+    const max = Math.max(1, ...rows.map((x) => Math.max(x.v, x.t)))
+    return <div className="hub-gauge-detail"><div className="rep-lb-head"><h4>{label} by rep</h4><span className="cap">{monthly ? `${Math.round(elapsed * 100)}% of the month gone` : ''}</span><button type="button" className="btn-ghost sm" onClick={() => setOpenGauge(null)}>Close</button></div>
+      {rows.map((x) => <RepBar key={x.r.id} label={x.r.name} value={x.v} max={max} text={x.t ? `${fmt(x.v)} / ${fmt(x.t)} · ${x.pct}%` : fmt(x.v)} tone={x.t ? (x.v >= x.t * share ? 'good' : x.v >= x.t * share * 0.8 ? 'warn' : 'bad') : ''} />)}</div>
+  })()
+  const gaugeCard = dialDefs.length ? <div className="card rep-cockpit"><div className="rep-cockpit-head"><h4>{monthly ? 'This month against the team\'s targets' : 'Against the team\'s monthly targets'}</h4><span className="cap">{monthly ? `Day ${day} of ${dim} · ${Math.round(elapsed * 100)}% of the month gone · ` : ''}tap a dial for the split by rep</span></div>{dials}{gaugeDetail}</div>
+    : (authUser && isAdminishFE(authUser.role) ? <div className="card rep-cockpit-empty"><b>No rep targets yet.</b> <span className="cap">Set them in Settings → this client → Rep KPIs and the gauges light up here.</span></div> : null)
+  const boardsGrid = boards.length ? <div className="hub-boards">{boards.map((b) => <div className="card hub-board-card" key={b.key}><div className="hub-board-t">{b.title}</div>{b.rows.map((x, i) => <div className="hub-board-row" key={x.r.id}><span>{medal[i]}</span><span className="hub-board-n">{x.r.name}</span><b>{b.fmt(x.v)}{b.unit ? <small> {b.unit}</small> : null}</b></div>)}</div>)}</div> : null
+  const sp = boards.length ? boards[spot % boards.length] : null
+  const spotlight = sp ? <div className="card hub-spot" key={sp.key}><div className="hub-spot-k">{sp.title}</div><div className="hub-spot-n">{sp.rows[0].r.name}</div><div className="hub-spot-v">{sp.fmt(sp.rows[0].v)}{sp.unit ? <small> {sp.unit}</small> : null}</div>{sp.rows.length > 1 ? <div className="hub-spot-r">{sp.rows.slice(1).map((x, i) => <span key={x.r.id}>{medal[i + 1]} {x.r.name} <b>{sp.fmt(x.v)}</b></span>)}</div> : null}</div> : null
   const facts = (title, rows) => <div className="hub-facts"><b>{title}</b><dl>{rows.filter((r) => r).map(([k, v]) => <React.Fragment key={k}><dt>{k}</dt><dd>{v == null || v === '' ? '-' : v}</dd></React.Fragment>)}</dl></div>
   if (tv) {
     return (
@@ -16307,12 +16360,10 @@ function SalesHubView({ clientId, authUser, currency, nonce, pipe: pipeProp, onP
             <button type="button" className="btn-ghost sm" onClick={() => setTv(false)}>Exit (Esc)</button>
           </div></div>
         {celebrate ? <HubGong key={celebrate.key} win={celebrate} currency={currency} onDone={() => { clearTimeout(strikeT.current); setCelebrate(null) }} /> : null}
+        {dialDefs.length ? <div className="hub-tv-dials">{dials}{gaugeDetail}</div> : primary}
         <div className="hub-tv-grid">
-          <div className="hub-tv-col">
-            {primary}
-            {gauges.length ? <div className="card rep-cockpit"><div className="rep-cockpit-grid">{gauges}</div></div> : null}
-          </div>
-          <div className="hub-tv-col">{leaderboard}<div className="card rep-card"><h4>Latest wins</h4>{(d.wins || []).length ? winsFeed(8) : <p className="cap">No wins in the last 7 days yet.</p>}</div></div>
+          <div className="hub-tv-col">{leaderboard}<div className="card rep-card"><h4>Latest wins</h4>{(d.wins || []).length ? winsFeed(6) : <p className="cap">No wins in the last 7 days yet.</p>}</div></div>
+          <div className="hub-tv-col">{spotlight}{boardsGrid}{!dialDefs.length && authUser && isAdminishFE(authUser.role) ? <p className="cap">Set Rep KPIs in Settings and the gauges light up here.</p> : null}</div>
         </div>
       </div>
     )
@@ -16329,8 +16380,8 @@ function SalesHubView({ clientId, authUser, currency, nonce, pipe: pipeProp, onP
         <span className="hub-pipe-go">Focus ›</span>
       </button>)}</div> : null}
       {focus ? <div className="hub-focus"><span>Showing <b>{focus.name}</b> only. Leads, deals, speed to lead and stages are within it; appointments and calls are per rep across the account.</span><button type="button" className="btn-ghost sm" onClick={() => setPipeSel('all')}>All pipelines</button></div> : null}
-      {gauges.length ? <div className="card rep-cockpit"><div className="rep-cockpit-head"><h4>{monthly ? `This month against the team's targets` : 'Against the team\'s monthly targets'}</h4>{monthly ? <span className="cap">Day {day} of {dim} · {Math.round(elapsed * 100)}% of the month gone</span> : null}</div><div className="rep-cockpit-grid">{gauges}</div></div>
-        : (authUser && isAdminishFE(authUser.role) ? <div className="card rep-cockpit-empty"><b>No rep targets yet.</b> <span className="cap">Set them in Settings → this client → Rep KPIs and the month gauges appear here.</span></div> : null)}
+      {gaugeCard}
+      {boardsGrid}
       <div className="hub-band">
         {flagsByRep.length ? <div className="card hub-flags"><div className="rep-lb-head"><h4>Coaching flags</h4><span className="cap">{flags.length} to talk about</span></div>{flagsByRep.map((g) => <button type="button" className={`hub-flag ${g.tone}`} key={g.rep.id} onClick={() => setOpenRep(openRep === g.rep.id ? null : g.rep.id)}><b>{g.rep.name}</b><ul>{g.items.map((t, i) => <li key={i}>{t}</li>)}</ul></button>)}</div> : null}
         {leaderboard}
@@ -16370,7 +16421,7 @@ function SalesHubView({ clientId, authUser, currency, nonce, pipe: pipeProp, onP
         {calCard}
         {lostCard}
       </div>
-      <p className="cap act-foot">Leads are deals created in the period, per assigned rep. Won and lost count deals from those leads. Open and stale are what is on the desk now. Each pipeline's funnel and lost reasons are kept apart; a stage is never counted across pipelines. Speed to lead follows the client's business-hours rule and counts the first reply a person sent{team.speedFull ? ', measured on every lead' : ', measured on as many leads as the read allowed'}. Calls come from the CRM's call export. Re-reads every 3 minutes, every minute in TV mode.</p>
+      <p className="cap act-foot">Won, revenue and cash count by close date: a deal counts in the period its status changed to won, whatever month the lead came in, so a deal closed today shows today. Leads are deals created in the period, per assigned rep; win rate is closed wins over those leads; lost counts deals from those leads. Open and stale are what is on the desk now. Each pipeline's funnel and lost reasons are kept apart; a stage is never counted across pipelines. Speed to lead follows the client's business-hours rule and counts the first reply a person sent{team.speedFull ? ', measured on every lead' : ', measured on as many leads as the read allowed'}. Calls come from the CRM's call export. Re-reads every 3 minutes, every minute in TV mode.</p>
     </div>
   )
 }

@@ -18,6 +18,35 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.581.0 - 2026-09-13 · `PENDING`
+
+**Sales by close date** - the Sales Hub now counts won deals, revenue and
+cash in the period the deal was closed, whatever month the lead came in,
+the same rule as the Overview's "Closed" toggle. A deal closed today shows
+today, on the tiles, the gauges, the leaderboard and the rep board. A rep
+with a closed win but no new leads still appears. Win rate is closed wins
+over leads created in the period; lost stays with the lead cohort.
+
+**Gauges** - every summed rep target is a half-circle dial: the arc fills
+with attainment, a tick marks where pace says it should be today, the
+percentage sits in the middle and "to go" underneath. Tap a dial for the
+split by rep against each rep's own target.
+
+**Leaderboards everywhere** - mini boards for top booker, best show rate,
+most on the phone, most calls, fastest to lead, most meetings held, most
+deals closed and biggest open pipeline, on the tab and in TV mode.
+
+**TV mode** - dials across the top, the revenue scoreboard and latest wins
+on the left, and on the right a spotlight card that rotates through the
+current leaders every nine seconds above the mini boards.
+
+**Only pipelines with something in them** - a pipeline with no lead in
+the period, no open deal and no win is left out of the hub, so unused
+web-form pipelines stop cluttering the view. A pipeline picked by name
+always shows.
+
+---
+
 ## v3.580.0 - 2026-09-13 · `494e4a5`
 
 **The real gong** - the win sound is now Alex's gong recording, shipped

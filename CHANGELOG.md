@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.587.0 - 2026-09-13 · `PENDING`
+## v3.587.0 - 2026-09-13 · `2b7b6c3`
 
 **Most cash collected** - when a client has a cash-collected field
 selected in Settings, the Sales Hub gets a "Most cash collected" board

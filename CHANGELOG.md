@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.585.0 - 2026-09-13 · `PENDING`
+## v3.585.0 - 2026-09-13 · `2a5445c`
 
 **The gong within seconds** - a CRM webhook receiver. The marketplace app
 posts an event the moment a deal is marked won or lost, a lead is

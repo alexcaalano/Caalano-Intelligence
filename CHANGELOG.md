@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.571.0 - 2026-09-13 · `PENDING`
+## v3.571.0 - 2026-09-13 · `d81c929`
 
 **Upcoming appointments** - a new section at the top of the Action list:
 the next 30 days of live appointments, soonest first, with the CRM status,

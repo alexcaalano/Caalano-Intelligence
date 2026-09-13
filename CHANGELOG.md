@@ -18,6 +18,13 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.589.0 - 2026-09-13 · `PENDING`
+
+**Branding visible** - "Powered by Caalano360" moves to the bottom left
+of the TV screen, out from under the data-status pill.
+
+---
+
 ## v3.588.0 - 2026-09-13 · `2f42d66`
 
 **TV mode tidy** - the header now reads "September 2026 · Sales Hub ·

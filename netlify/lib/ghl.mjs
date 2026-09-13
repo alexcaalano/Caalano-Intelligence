@@ -5658,6 +5658,7 @@ const ACT_CLOSED_LOOKBACK_DAYS = 180  // a win with no value from last year is h
 const ACT_APPT_GRACE_MS = 30 * 60000  // an appointment is "passed" half an hour after its start
 const ACT_DONE_MS = 40 * 60000        // a fixed row stays hidden until the snapshot catches up
 const ACT_OPEN_CAP = 400
+const ACT_UPCOMING_DAYS = 30      // how far ahead the upcoming-appointments list looks
 const _actStore = () => getStore({ name: 'caalano-pipecache', consistency: 'strong' })
 const _actDoneKey = (loc) => `actions:done:${loc}`
 // Rows fixed in the last while, so a fix does not reappear on the next load
@@ -5818,7 +5819,7 @@ export async function buildActions(locationId, { email = null, userId = null, mi
     fetchPipelines(locTok, locationId),
     ghlGet(locTok, '/opportunities/lost-reason', { locationId, limit: 200 }).then((j) => j.lostReasons || []).catch(() => []),
     ghlGet(locTok, '/users/', { locationId }).catch(() => ({ users: [] })),
-    _rawAppointments(locTok, locationId, now - ACT_APPT_LOOKBACK_DAYS * ACT_DAY, now + ACT_DAY),
+    _rawAppointments(locTok, locationId, now - ACT_APPT_LOOKBACK_DAYS * ACT_DAY, now + ACT_UPCOMING_DAYS * ACT_DAY),
     _readActDone(locationId),
     _inboundUnreplied(locTok, locationId),
   ])
@@ -5888,18 +5889,34 @@ export async function buildActions(locationId, { email = null, userId = null, mi
     })
     .filter((a) => isMine(a.userId))
     .sort((a, b) => b.startMs - a.startMs)
+  // Contacts with a message nobody has answered: flagged on every row that
+  // names them, so a rep sees "message waiting" before a call or a stage move.
+  const unreplied = new Set((inboundRaw || []).map((c) => c.contactId).filter(Boolean))
+  for (const r of open) if (r.contactId && unreplied.has(r.contactId)) r.unreplied = true
+  for (const a of apptRows) if (a.contactId && unreplied.has(a.contactId)) a.unreplied = true
+  // What is coming up: live appointments from now, soonest first.
+  const upcoming = appts
+    .filter((a) => a.id && Number.isFinite(a.startMs) && a.startMs > now && !APPT_INVALID_RE.test(a.status) && !APPT_CANCEL_RE.test(a.status))
+    .map((a) => {
+      const o = (a.contactId && (openByContact.get(a.contactId) || anyByContact.get(a.contactId))) || null
+      const uid = a.userId || (o && o.userId) || null
+      return { id: a.id, contactId: a.contactId, name: a.contactName || (o && o.name) || 'Unnamed', calendar: a.calendar, title: a.title, startMs: a.startMs, status: a.status || 'new', by: a.by, userId: uid, user: userName[uid] || null, oppId: o ? o.id : null, stage: o ? o.stage : null, pipeline: o ? o.pipeline : null, value: o ? o.value : 0, inDays: Math.floor((a.startMs - now) / ACT_DAY), unreplied: !!(a.contactId && unreplied.has(a.contactId)) }
+    })
+    .filter((a) => isMine(a.userId))
+    .sort((a, b) => a.startMs - b.startMs)
+    .slice(0, 300)
   const inbound = (inboundRaw || []).filter((c) => !done[c.id]).map((c) => {
     const o = (c.contactId && (openByContact.get(c.contactId) || anyByContact.get(c.contactId))) || null
     const uid = c.userId || (o && o.userId) || null
     return { ...c, userId: uid, user: userName[uid] || null, oppId: o ? o.id : null, stage: o ? o.stage : null, pipeline: o ? o.pipeline : null, hoursAgo: c.lastMs ? Math.max(0, Math.round((now - c.lastMs) / 3600000)) : null }
   }).filter((c) => isMine(c.userId))
-  const counts = { appts: apptRows.length, wonNoValue: wonNoValue.length, lostNoReason: lostNoReason.length, staleOpen: staleOpen.length, unassigned: wantMine ? 0 : unassigned.length, inbound: inbound.length, open: open.length }
+  const counts = { appts: apptRows.length, wonNoValue: wonNoValue.length, lostNoReason: lostNoReason.length, staleOpen: staleOpen.length, unassigned: wantMine ? 0 : unassigned.length, inbound: inbound.length, open: open.length, upcoming: upcoming.length }
   counts.todo = counts.appts + counts.wonNoValue + counts.lostNoReason + counts.staleOpen + counts.unassigned + counts.inbound
   return {
     at: now, tz, locationId, snapshotAt: snap.at, truncated: !!snap.truncated, staleDays,
     meId, mine: wantMine, meMatched: !!meId,
     users, reps, pipelines: pipes, lostReasons, calendars: [...new Map(appts.map((a) => [a.calendarId, a.calendar])).entries()].map(([id, name]) => ({ id, name })),
-    counts, staleTiers, appts: apptRows, wonNoValue, lostNoReason, staleOpen, unassigned: wantMine ? [] : unassigned, inbound, open: open.slice(0, ACT_OPEN_CAP),
+    counts, staleTiers, appts: apptRows, upcoming, wonNoValue, lostNoReason, staleOpen, unassigned: wantMine ? [] : unassigned, inbound, open: open.slice(0, ACT_OPEN_CAP),
   }
 }
 // One write to the CRM. `onlyUserId` (a CRM user id) restricts the write to
@@ -6030,6 +6047,13 @@ export async function buildRepCard(locationId, { userId, from, to, hours = null,
     else ap.unresulted++
   }
   ap.showRate = (ap.showed + ap.noShow) ? Math.round((ap.showed / (ap.showed + ap.noShow)) * 100) : null
+  // Per calendar, so the client's calendar key events can be read per rep.
+  const byCalendar = {}
+  for (const a of mine) {
+    if (APPT_INVALID_RE.test(a.status) || APPT_CANCEL_RE.test(a.status)) continue
+    const b = byCalendar[a.calendarId] || (byCalendar[a.calendarId] = { name: a.calendar, booked: 0, showed: 0, noShow: 0 })
+    b.booked++; if (apptShown(a.status)) b.showed++; else if (APPT_NOSHOW_RE.test(a.status)) b.noShow++
+  }
   // Stale and open, from the live snapshot (not the period): what is on their desk now.
   const openNow = (snap.opps || []).filter((o) => o.assignedTo === userId && String(o.status || '').toLowerCase() === 'open')
   const idleOf = (o) => { const u = Math.max(Date.parse(o.updatedAt) || 0, Date.parse(o.lastStatusChangeAt) || 0, Date.parse(o.lastStageChangeAt) || 0) || Date.parse(o.createdAt); return Number.isFinite(u) ? Math.max(0, Math.round((now - u) / ACT_DAY)) : null }
@@ -6065,7 +6089,7 @@ export async function buildRepCard(locationId, { userId, from, to, hours = null,
     winRate: me ? me.winRate : null, avgDeal: me ? me.avgDeal : null, avgCloseDays: me ? me.avgCloseDays : null,
     bookRate: me ? me.bookRate : null, pipelineValue: me ? me.pipelineValue : 0, wonValue: me ? me.wonValue : 0, lostValue: me ? me.lostValue : 0,
     stages: me ? me.stages : {}, stageOpen: me ? me.stageOpen : {}, lostReasons: me ? me.lostReasons : [], byPipeline: me ? me.byPipeline : [],
-    appointments: ap,
+    appointments: ap, byCalendar,
     speed: sp ? { full: !!sp.full, medianMin: sp.medianMin ?? null, avgMin: sp.avgMin ?? null, within5Pct: sp.within5Pct ?? null, measured: sp.measured ?? null, measuredAll: sp.measuredAll ?? null, sampled: sp.sampled ?? null, totalLeads: sp.totalLeads ?? null, inHours: sp.totalLeads != null ? sp.totalLeads - ((sp.after && sp.after.count) || 0) : null, buckets: sp.buckets || null, after: sp.after || null, hours: sp.hours || null, viaAppt: sp.viaAppt ?? null, viaMessage: sp.viaMessage ?? null } : null,
     now: { open: openNow.length, openValue: Math.round(openValue), stale },
     rank: { leads: rankOf('leads'), booked: rankOf('booked'), winRate: rankOf('winRate'), revenue: rankOf('revenue'), showRate: rankOf('showRate'), closeDays: rankOf('avgCloseDays', false) },

@@ -5254,3 +5254,5 @@ button.act-tier.on { border-color: var(--text); }
 .act-seg button:last-child { border-right: none; }
 .act-seg button.on { background: var(--brand); color: #fff; }
 @media (max-width: 900px) { .act-seg { width: 100%; } .act-seg button { flex: 1; min-height: 44px; } }
+.act-wait { display: inline-block; margin-left: 6px; font-size: 11px; font-weight: 800; color: #7a2e00; background: rgba(217,130,43,.16); border: 1px solid rgba(217,130,43,.4); padding: 1px 7px; border-radius: 999px; }
+.act-count.info { background: color-mix(in srgb, var(--brand) 16%, transparent); color: var(--brand); }

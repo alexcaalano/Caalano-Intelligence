@@ -18,6 +18,26 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.571.0 - 2026-09-13 · `PENDING`
+
+**Upcoming appointments** - a new section at the top of the Action list:
+the next 30 days of live appointments, soonest first, with the CRM status,
+who booked it, the deal's stage, a Confirm button for unconfirmed ones,
+and the contact's notes and conversation a tap away so a rep can read up
+before the call. Filters by calendar and rep like the rest of the list.
+
+**Message waiting** - any row whose contact has written last with no
+person replying since now carries a "Message waiting" flag: upcoming
+appointments, appointments to result, and every live deal. The
+conversation button on an upcoming row becomes "Reply".
+
+**Key events per rep** - My results and Compare now read the client's own
+key events (Settings -> Key events) for one rep: stage events as the leads
+that reached the stage, calendar events as appointments booked on that
+calendar with how many showed, each as a share of the rep's leads.
+
+---
+
 ## v3.570.0 - 2026-09-12 · `4cf0185`
 
 **Fix: notes showed raw HTML** - a booking workflow writes its notes as

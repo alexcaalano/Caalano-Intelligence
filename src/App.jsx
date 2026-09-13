@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.570.0'
+const APP_VERSION = '3.571.0'
 // The business clock. Every server window is cut on the client's local day
 // (Caalano Systems location timezone), so any day the app derives on its own -
 // preset ranges, "today", CSV dates - must use the same clock rather than the
@@ -16003,6 +16003,7 @@ function OptimisationLog({ clientId, sheet, embedded = false }) {
 // Writes go through the server, which limits an Account User to their own
 // records and logs every change. Cards, not tables, so a phone shows it whole.
 const ACT_SECTIONS = {
+  upcoming: ['Upcoming appointments', 'What is coming up, soonest first. Confirm, read the notes, or check the conversation before the call.'],
   appts: ['Appointments to result', 'New or confirmed appointments whose time has passed with no result yet. Pick one, then Save.'],
   wonNoValue: ['Won without a value', 'Marked won with no deal value, so revenue is understated.'],
   lostNoReason: ['Lost without a reason', 'Marked lost with no lost reason, so nothing can be learned from it.'],
@@ -16022,6 +16023,7 @@ const actHrs = (h) => (h == null ? '' : h < 1 ? 'just now' : h < 48 ? `${h} h ag
 const actTier = (r) => (r.idleDays == null ? null : r.idleDays >= 30 ? 't30' : r.idleDays >= 21 ? 't21' : r.idleDays >= 14 ? 't14' : r.idleDays >= 7 ? 't7' : null)
 function ActOpen({ href, label = 'Open in CRM' }) { return href ? <a className="act-open" href={href} target="_blank" rel="noreferrer">{label} ↗</a> : null }
 function ActTierBadge({ r }) { const t = actTier(r); return t ? <span className={`act-tier ${t}`}>{r.idleDays}d idle</span> : null }
+const ActWaiting = ({ r }) => (r && r.unreplied ? <span className="act-wait" title="The contact wrote last and nobody has replied">✉ Message waiting</span> : null)
 // The contact's notes: read the past ones, add a new one. Shared by every row.
 function ActNotes({ clientId, contactId, canWrite, write, busy, userName }) {
   const [open, setOpen] = useState(false)
@@ -16052,7 +16054,7 @@ function ActNotes({ clientId, contactId, canWrite, write, busy, userName }) {
 // The contact's conversation: the last messages, a reply on the same channel
 // (which marks the row handled), and the close-as-lost that an "I'm not
 // interested" message usually deserves.
-function ActConversation({ clientId, row, data, canWrite, write, busy, loc, userName }) {
+function ActConversation({ clientId, row, data, canWrite, write, busy, loc, userName, keep = false, label = 'Open & reply' }) {
   const [open, setOpen] = useState(false)
   const [st, setSt] = useState({ status: 'idle', conv: null })
   const [text, setText] = useState('')
@@ -16065,7 +16067,7 @@ function ActConversation({ clientId, row, data, canWrite, write, busy, loc, user
       .then((j) => setSt({ status: j && j.error ? 'err' : 'ok', conv: (j && j.conversation) || null, error: j && j.error }))
       .catch((e) => setSt({ status: 'err', conv: null, error: String((e && e.message) || e) }))
   }
-  if (!open) return <button type="button" className="btn-primary act-btn" onClick={() => { setOpen(true); load() }}>Open &amp; reply</button>
+  if (!open) return <button type="button" className={`${keep ? 'btn-ghost' : 'btn-primary'} act-btn`} onClick={() => { setOpen(true); load() }}>{label}</button>
   const conv = st.conv || {}
   const replyType = conv.replyType || 'SMS'
   const canReply = canWrite && ['SMS', 'WhatsApp', 'FB', 'IG', 'Live_Chat', 'Email'].includes(replyType)
@@ -16078,11 +16080,11 @@ function ActConversation({ clientId, row, data, canWrite, write, busy, loc, user
       {canReply ? <div className="act-note">
         <textarea value={text} onChange={(e) => setText(e.target.value)} placeholder={`Reply by ${replyType === 'Live_Chat' ? 'live chat' : replyType}…`} rows={2} />
         <div className="act-note-btns">
-          <button type="button" className="btn-primary act-btn" disabled={busy || !text.trim()} onClick={() => write({ op: 'reply', contactId: row.contactId, conversationId: conv.id || row.id, type: replyType, body: text.trim() }, row.id, null, true)}>Send &amp; mark handled</button>
+          <button type="button" className="btn-primary act-btn" disabled={busy || !text.trim()} onClick={async () => { const ok = await write({ op: 'reply', contactId: row.contactId, conversationId: conv.id || row.id, type: replyType, body: text.trim() }, row.id, null, !keep); if (ok && keep) { setText(''); load() } }}>{keep ? 'Send' : 'Send & mark handled'}</button>
           <ActOpen href={crmConvLink(loc, row.id)} label="Open in CRM" />
         </div>
       </div> : <div className="act-ctl"><ActOpen href={crmConvLink(loc, row.id)} label="Reply in CRM" /></div>}
-      {canWrite && row.oppId ? <div className="act-ctl act-close-lost">
+      {canWrite && row.oppId && !keep ? <div className="act-ctl act-close-lost">
         <span className="cap">Not interested?</span>
         <select className="act-in" value={reason} onChange={(e) => setReason(e.target.value)}><option value="">Lost reason…</option>{(data.lostReasons || []).map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}</select>
         <button type="button" className="btn-ghost act-btn" disabled={busy || !reason} onClick={async () => { const ok = await write({ op: 'opp', oppId: row.oppId, patch: { status: 'lost', lostReasonId: reason } }, row.oppId); if (ok) await write({ op: 'dismiss', id: row.id }, row.id, null, true) }}>Mark lost</button>
@@ -16152,6 +16154,32 @@ function RepLeaderboard({ rows, meId, currency }) {
           {sorted.map((r, i) => <div key={r.id} className={`rep-lb-row ${r.id === meId ? 'me' : ''}`}><span>{i + 1}</span><span className="rep-lb-name">{r.name}</span><span>{fmtNumber(r.leads)}</span><span>{fmtNumber(r.booked)}</span><span>{fmtNumber(r.showed)}</span><span>{fmtNumber(r.won)}</span><span>{money(r.revenue)}</span><span>{r.winRate == null ? '-' : `${r.winRate}%`}</span><span>{r.showRate == null ? '-' : `${r.showRate}%`}</span></div>)}
         </div>
       </>}
+    </div>
+  )
+}
+// The client's own key events (Settings -> Key events), read for one rep: a
+// stage event is the leads that reached that stage, a calendar event is the
+// appointments booked on that calendar (with how many showed).
+function repKeyEventRows(clientId, d) {
+  const ke = mergeCalKeyEvents(normKeyEvents(loadKeyEvents(clientId)))
+  const out = []
+  for (const e of ke) {
+    if (!e || WON_RE.test(e.label)) continue
+    if (e.kind === 'calendar') { const c = (d.byCalendar || {})[e.ref]; out.push({ label: e.label, kind: 'calendar', count: c ? c.booked : 0, showed: c ? c.showed : 0 }) }
+    else if (e.kind === 'stage') out.push({ label: e.label, kind: 'stage', count: (d.stages || {})[e.ref] || 0 })
+  }
+  return out
+}
+function RepKeyEvents({ clientId, d }) {
+  const rows = repKeyEventRows(clientId, d)
+  if (!rows.length) return null
+  const max = Math.max(1, d.leads || 0, ...rows.map((r) => r.count))
+  return (
+    <div className="card rep-card">
+      <h4>Key events</h4>
+      <RepBar label="Leads" value={d.leads || 0} max={max} />
+      {rows.map((r) => <RepBar key={r.kind + r.label} label={`${r.kind === 'calendar' ? '📅 ' : ''}${r.label}`} value={r.count} max={max} text={`${fmtNumber(r.count)} · ${d.leads ? Math.round((r.count / d.leads) * 100) : 0}%${r.kind === 'calendar' && r.count ? ` · ${r.showed} showed` : ''}`} tone={r.kind === 'calendar' ? 'good' : ''} />)}
+      <RepBar label="Won" value={d.won || 0} max={max} tone="good" text={`${fmtNumber(d.won || 0)} · ${d.leads ? Math.round(((d.won || 0) / d.leads) * 100) : 0}%`} />
     </div>
   )
 }
@@ -16230,6 +16258,7 @@ function RepCardView({ clientId, authUser, currency, reps, meId, nonce, onGoActi
             {ap.unresulted && onGoActions ? <button type="button" className="btn-ghost sm" onClick={onGoActions}>Result them in the Action list</button> : null}
           </> : <p className="cap">No appointments booked in this period.</p>}
         </div>
+        <RepKeyEvents clientId={clientId} d={d} />
         <div className="card rep-card">
           <h4>How far your leads got</h4>
           {stageRows.length ? stageRows.map(([n, v]) => <RepBar key={n} label={n} value={v} max={stageMax} text={`${fmtNumber(v)} · ${d.leads ? Math.round((v / d.leads) * 100) : 0}%`} />) : <p className="cap">No leads in this period.</p>}
@@ -16318,6 +16347,10 @@ function RepCompareView({ clientId, currency, reps, meId, nonce }) {
                 {rows.map(([label, get, fmt, dir]) => pair(label, get(da), get(db), fmt, dir))}
               </div>
               <div className="rep-grid">
+                {(() => { const ra = repKeyEventRows(clientId, da), rb = repKeyEventRows(clientId, db); return ra.length ? <div className="card rep-card cmp-card"><h4>Key events</h4>
+                  <div className="cmp-row cmp-head"><span className="cmp-l" /><span className="cmp-v">{da.name}</span><span className="cmp-v">{db.name}</span></div>
+                  {ra.map((r, i) => pair(`${r.kind === 'calendar' ? '📅 ' : ''}${r.label}`, r.count, (rb[i] || {}).count || 0, (v) => fmtNumber(v || 0), 'high'))}
+                </div> : null })()}
                 <div className="card rep-card cmp-card"><h4>How far leads got</h4>
                   <div className="cmp-row cmp-head"><span className="cmp-l" /><span className="cmp-v">{da.name}</span><span className="cmp-v">{db.name}</span></div>
                   {stageRows.length ? stageRows.map(([n, x, y]) => pair(n, x, y, (v) => fmtNumber(v || 0), 'high')) : <p className="cap">No leads in this period.</p>}
@@ -16408,11 +16441,12 @@ function DealsActionsView({ clientId, authUser, currency, nonce }) {
   const repOk = (uid) => rep === 'all' || (rep === 'none' ? !uid : uid === rep)
   const live = (rows) => (rows || []).filter((r) => !gone[r.id] && repOk(r.userId)).map((r) => (patched[r.id] ? { ...r, ...patched[r.id] } : r))
   const lists = {
+    upcoming: live(data.upcoming).filter((a) => cal === 'all' || a.calendar === cal),
     appts: live(data.appts).filter((a) => cal === 'all' || a.calendar === cal),
     wonNoValue: live(data.wonNoValue), lostNoReason: live(data.lostNoReason), inbound: live(data.inbound),
     staleOpen: live(data.staleOpen).filter((d) => !tier || (d.idleDays || 0) >= tier), unassigned: rep === 'all' || rep === 'none' ? live(data.unassigned) : [],
   }
-  const todo = Object.values(lists).reduce((n, l) => n + l.length, 0)
+  const todo = Object.entries(lists).reduce((n, [k, l]) => n + (k === 'upcoming' ? 0 : l.length), 0)
   const sorters = { newest: (a, b) => (b.createdMs || 0) - (a.createdMs || 0), oldest: (a, b) => (a.createdMs || 0) - (b.createdMs || 0), value: (a, b) => (b.value || 0) - (a.value || 0), idle: (a, b) => (b.idleDays || 0) - (a.idleDays || 0), recent: (a, b) => (b.updatedMs || 0) - (a.updatedMs || 0) }
   const deals = live(data.open).filter((d) => (pipeF === 'all' || d.pipelineId === pipeF) && (stageF === 'all' || d.stageId === stageF)).sort(sorters[sortBy] || sorters.newest)
   const pipeSel = (data.pipelines || []).find((p) => p.id === pipeF)
@@ -16427,12 +16461,12 @@ function DealsActionsView({ clientId, authUser, currency, nonce }) {
   }, [deals, data.pipelines])
   const money = (v) => fmtCurrency(v, currency)
   const isOpen = (k) => (openSec[k] == null ? true : openSec[k])
-  const sec = (key, title, help, rows, render, extra = null) => {
+  const sec = (key, title, help, rows, render, extra = null, tone = '') => {
     if (!rows.length && st.status === 'ok') return null
     return (
       <section className="act-sec" key={key}>
         <button type="button" className="act-sec-head" onClick={() => setOpenSec((o) => ({ ...o, [key]: !isOpen(key) }))}>
-          <span className={`act-count ${rows.length ? 'on' : ''}`}>{rows.length}</span><b>{title}</b><span className="cap">{help}</span><span className="act-chev">{isOpen(key) ? '▾' : '▸'}</span>
+          <span className={`act-count ${tone || (rows.length ? 'on' : '')}`}>{rows.length}</span><b>{title}</b><span className="cap">{help}</span><span className="act-chev">{isOpen(key) ? '▾' : '▸'}</span>
         </button>
         {isOpen(key) && extra ? <div className="act-sec-extra">{extra}</div> : null}
         {isOpen(key) ? <div className="act-rows">{rows.map(render)}</div> : null}
@@ -16443,7 +16477,7 @@ function DealsActionsView({ clientId, authUser, currency, nonce }) {
   const dealRow = (d) => (
     <div className="act-row" key={d.id}>
       {who(d)}
-      <div className="act-meta"><span>{d.value > 0 ? money(d.value) : <span className="cap">No value</span>}{d.idleDays >= 7 ? <> <ActTierBadge r={d} /></> : null}</span><span className="cap">Last activity {actAgo(d.idleDays)} · created {actAgo(d.ageDays)}</span></div>
+      <div className="act-meta"><span>{d.value > 0 ? money(d.value) : <span className="cap">No value</span>}{d.idleDays >= 7 ? <> <ActTierBadge r={d} /></> : null} <ActWaiting r={d} /></span><span className="cap">Last activity {actAgo(d.idleDays)} · created {actAgo(d.ageDays)}</span></div>
       <div className="act-ctl-col">
         {canWrite ? <ActDealControls d={d} data={data} busy={!!busy[d.id]} write={write} currency={currency} /> : null}
         <div className="act-ctl"><ActNotes clientId={clientId} contactId={d.contactId} canWrite={canWrite} write={write} busy={!!busy[d.contactId]} userName={userName} /><ActOpen href={crmLink(loc, d.contactId)} /></div>
@@ -16480,7 +16514,20 @@ function DealsActionsView({ clientId, authUser, currency, nonce }) {
       {screen !== 'results' && screen !== 'compare' && !canWrite ? <p className="cap act-ro">Read-only: you can see the list and open each record in the CRM, but not update it from here.{isViewer ? ' Ask your admin for CRM update access.' : ''}</p> : null}
       {screen !== 'results' && screen !== 'compare' && mine && !data.meMatched ? <p className="cap act-ro">Your login e-mail does not match a user in this CRM, so the list shows everyone.</p> : null}
       {screen === 'results' || screen === 'compare' ? null : screen === 'actions' ? (
-        todo === 0 && st.status === 'ok' ? <div className="card act-clear"><b>All clear.</b> <span className="cap">Nothing needs fixing{mine ? ' on your deals' : ''} right now.</span></div> : <>
+        todo === 0 && st.status === 'ok' && !lists.upcoming.length ? <div className="card act-clear"><b>All clear.</b> <span className="cap">Nothing needs fixing{mine ? ' on your deals' : ''} right now.</span></div> : <>
+          {todo === 0 && st.status === 'ok' ? <div className="card act-clear"><b>All clear.</b> <span className="cap">Nothing needs fixing{mine ? ' on your deals' : ''} right now.</span></div> : null}
+          {sec('upcoming', ...ACT_SECTIONS.upcoming, lists.upcoming, (a) => (
+            <div className="act-row" key={a.id}>
+              {who(a)}
+              <div className="act-meta"><span>{actWhen(a.startMs, tz)} <span className="act-status">{String(a.status || 'new').replace(/_/g, ' ')}</span> <ActWaiting r={a} /></span><span className="cap">{a.calendar}{a.title ? ` · ${a.title}` : ''} · {a.inDays === 0 ? 'today' : a.inDays === 1 ? 'tomorrow' : `in ${a.inDays} days`}{a.by === 'self' ? ' · booked by the customer' : ''}</span></div>
+              <div className="act-ctl">
+                {canWrite && /^new$|^booked$|^$/.test(String(a.status || '')) ? <button type="button" className="btn-primary act-btn" disabled={busy[a.id]} onClick={() => write({ op: 'appt', eventId: a.id, status: 'confirmed' }, a.id, { status: 'confirmed' })}>Confirm</button> : null}
+                <ActConversation clientId={clientId} row={{ id: null, contactId: a.contactId, oppId: a.oppId }} data={data} canWrite={canWrite} write={write} busy={!!busy[a.contactId]} loc={loc} userName={userName} keep label={a.unreplied ? 'Reply' : 'Conversation'} />
+                <ActNotes clientId={clientId} contactId={a.contactId} canWrite={canWrite} write={write} busy={!!busy[a.contactId]} userName={userName} />
+                <ActOpen href={crmLink(loc, a.contactId)} />
+              </div>
+            </div>
+          ), null, 'info')}
           {sec('appts', ...ACT_SECTIONS.appts, lists.appts, (a) => <ActApptRow key={a.id} a={a} tz={tz} busy={!!busy[a.id]} canWrite={canWrite} write={write} loc={loc} who={who} clientId={clientId} userName={userName} />)}
           {sec('wonNoValue', ...ACT_SECTIONS.wonNoValue, lists.wonNoValue, (d) => <ActValueRow key={d.id} d={d} busy={!!busy[d.id]} canWrite={canWrite} write={write} currency={currency} loc={loc} who={who} clientId={clientId} userName={userName} />)}
           {sec('lostNoReason', ...ACT_SECTIONS.lostNoReason, lists.lostNoReason, (d) => <ActReasonRow key={d.id} d={d} data={data} busy={!!busy[d.id]} canWrite={canWrite} write={write} loc={loc} who={who} clientId={clientId} userName={userName} />)}
@@ -16528,7 +16575,7 @@ function ActApptRow({ a, tz, busy, canWrite, write, loc, who, clientId, userName
   return (
     <div className="act-row">
       {who(a)}
-      <div className="act-meta"><span>{actWhen(a.startMs, tz)} <span className="act-status">{cur}</span></span><span className="cap">{a.calendar}{a.title ? ` · ${a.title}` : ''} · {actAgo(a.daysAgo)}</span></div>
+      <div className="act-meta"><span>{actWhen(a.startMs, tz)} <span className="act-status">{cur}</span> <ActWaiting r={a} /></span><span className="cap">{a.calendar}{a.title ? ` · ${a.title}` : ''} · {actAgo(a.daysAgo)}</span></div>
       <div className="act-ctl-col">
         {canWrite ? <div className="act-ctl">
           <div className="act-seg">{opts.map(([v, l]) => <button type="button" key={v} className={pick === v ? 'on' : ''} disabled={busy} onClick={() => setPick(pick === v ? '' : v)}>{l}</button>)}</div>

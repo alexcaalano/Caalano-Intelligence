@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.590.0 - 2026-09-13 · `PENDING`
+## v3.590.0 - 2026-09-13 · `7e71ddb`
 
 **Action list starts collapsed** - every section on Deals & Actions
 (upcoming, to result, won without a value, and the rest) opens closed

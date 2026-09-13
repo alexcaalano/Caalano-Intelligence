@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.600.0 - 2026-09-13 · `PENDING`
+## v3.600.0 - 2026-09-13 · `9a5b51d`
 
 **The TV hears the floor** - in TV mode, a new lead plays a short
 two-note ding and a booked appointment a rising three-note chime, each

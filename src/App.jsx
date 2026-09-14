@@ -9,6 +9,7 @@ import {
   fmtCurrency, fmtNumber, fmtCompact, fmtPct, pctChange,
 } from './lib/format.js'
 import { PHONE_COUNTRIES, DEFAULT_PHONE_COUNTRY, countryByIso, countryByDial, parsePhone, formatNational, isEmail as isEmailAddr } from './lib/contact.js'
+import { RESULT_CACHE_SCHEMA } from './lib/cache-schema.js'
 import { GOAL_METRICS, goalMetric, SPLITS, normGoals, newGoalId, goalShares, validateGoal, goalLevel, repValue, goalActual, repTargetsFromGoals, migrateRepKpis, goalWindow, goalTargetFor, monthKeysFrom, quarterKeysFrom, RATE_METRICS } from './lib/goals.js'
 // Views carved out of this file load on first open (React.lazy), so the first
 // paint carries the shell and the tabs people land on, not every screen.
@@ -34,7 +35,7 @@ const lazyView = (load, name) => {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-export const APP_VERSION = '3.619.0'
+export const APP_VERSION = '3.620.0'
 // The business clock. Every server window is cut on the client's local day
 // (Caalano Systems location timezone), so any day the app derives on its own -
 // preset ranges, "today", CSV dates - must use the same clock rather than the
@@ -656,7 +657,7 @@ function swrDb() {
 }
 function swrPersist(url, e) {
   if (!_swrWho || !e || !e.data || (e.data && e.data.error)) return
-  swrDb().then((db) => { if (!db) return; try { db.transaction(SWR_STORE, 'readwrite').objectStore(SWR_STORE).put({ ...e, who: _swrWho, ver: APP_VERSION }, url) } catch { /* quota / closed */ } }).catch(() => {})
+  swrDb().then((db) => { if (!db) return; try { db.transaction(SWR_STORE, 'readwrite').objectStore(SWR_STORE).put({ ...e, who: _swrWho, schema: RESULT_CACHE_SCHEMA }, url) } catch { /* quota / closed */ } }).catch(() => {})
 }
 // Restore this user's entries, dropping anyone else's and anything too old.
 // Subscribers of a restored url are told, so a component already on screen
@@ -672,9 +673,10 @@ function swrRestore(who) {
       req.onsuccess = () => {
         const c = req.result; if (!c) return res(n)
         const e = c.value
-        // Entries from another release are dropped: a release can change what a
-        // payload means, and a remembered copy would paint the old meaning first.
-        if (!e || e.who !== _swrWho || e.ver !== APP_VERSION || Date.now() - e.at > SWR_MAX_AGE_MS) c.delete()
+        // Entries built under an older result schema are dropped: that release
+        // changed what a payload means, and a remembered copy would paint the old
+        // meaning first. A release that left the numbers alone keeps them.
+        if (!e || e.who !== _swrWho || e.schema !== RESULT_CACHE_SCHEMA || Date.now() - e.at > SWR_MAX_AGE_MS) c.delete()
         else if (!_swr.has(c.key)) { _swr.set(c.key, { at: e.at, data: e.data }); n++; const subs = _swrSubs.get(c.key); if (subs) for (const fn of subs) fn(e.data) }
         c.continue()
       }

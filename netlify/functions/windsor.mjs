@@ -14,6 +14,7 @@ import { buildAttribution, sampleAttribution, sampleChannels, buildCrm, auditLoc
 import { DEMO_CLIENT_ID, demoWindsor } from '../lib/demo.mjs'
 import { BUILTIN_CLIENTS } from '../lib/clients.mjs'
 import { mirror } from '../lib/mirror.mjs'
+import { RESULT_CACHE_SCHEMA } from '../lib/cache-schema.mjs'
 // Stand-in for the Windsor API key, used only when the request is for the demo
 // client. windsorFetch reads it as "generate, don't fetch".
 const DEMO_KEY = 'demo::windsor'
@@ -2856,12 +2857,8 @@ async function hubBuild(client, ghl, { from, to, hours, today }) {
 async function readResultCache(key) { const t = Date.now(); try { return await cacheStore().get(key, { type: 'json' }) } catch { return null } finally { upstream.blob += Date.now() - t; upstream.blobN++ } }
 function writeResultCache(key, payload) { try { cacheStore().setJSON(key, { at: Date.now(), payload }).catch(() => {}) } catch { /* non-fatal */ } }
 function cacheKeyFrom(url) {
-  // Bump when the meaning of a cached payload changes (a results rule, a new
-  // field the UI relies on): every entry built by the previous code is then
-  // left behind instead of served until it expires, which for a settled ad
-  // range can be a day. Kept inside the function: warm.mjs and its test lift
-  // this function out of the file by its source, so it must stand alone.
-  const RESULT_CACHE_SCHEMA = 2
+  // RESULT_CACHE_SCHEMA (lib/cache-schema.mjs) prefixes every key, so a change
+  // to what a payload means leaves the old entries behind (see that file).
   const p = new URLSearchParams(url.search)
   // _r/nonce = refresh cache-buster, debug = raw sample, _a = the deep-fetch retry
   // counter (a per-attempt browser cache-buster). None should fragment the SERVER

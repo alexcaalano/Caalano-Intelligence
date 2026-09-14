@@ -18,6 +18,21 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.620.0 - 2026-09-14
+
+**Remembered payloads survive a release that leaves the numbers alone.** (commit PENDING)
+
+- The result-cache schema now lives in one shared constant
+  (`netlify/lib/cache-schema.mjs`, re-exported as `src/lib/cache-schema.js`)
+  used by the server's cache key and by the browser's remembered payloads.
+  A release that changes what a number means bumps it and both caches
+  start clean; any other release keeps the constant, so the app still
+  paints the remembered figures instantly and revalidates behind.
+- The v3.619.0 rule that dropped browser entries on every app version is
+  replaced by this.
+
+---
+
 ## v3.619.0 - 2026-09-14
 
 **A release that changes what a number means shows on the next load.** (commit 722059e)

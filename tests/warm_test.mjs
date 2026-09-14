@@ -5,9 +5,10 @@ const ROOT = new URL('../', import.meta.url).pathname
 import fs from 'fs'
 import { planForClient, planForAgency, rollingRange, prevRangeOf, warmToken, isWarmRequest } from '../netlify/lib/warm.mjs'
 const w = fs.readFileSync(ROOT + 'netlify/functions/windsor.mjs', 'utf8')
+const { RESULT_CACHE_SCHEMA } = await import('../netlify/lib/cache-schema.mjs')
 const app = fs.readFileSync(ROOT + 'src/App.jsx', 'utf8')
 const lift = (src, startRe, endRe) => { const a = src.search(startRe); const b = src.slice(a).search(endRe); return src.slice(a, a + b) }
-const cacheKeyFrom = new Function(lift(w, /function cacheKeyFrom\(url\)/, /\n}\n/) + '\n}; return cacheKeyFrom')()
+const cacheKeyFrom = new Function('RESULT_CACHE_SCHEMA', lift(w, /function cacheKeyFrom\(url\)/, /\n}\n/) + '\n}; return cacheKeyFrom')(RESULT_CACHE_SCHEMA)
 // Frontend builders. rangeQuery + the two consts are real; health / deep / agency
 // are the template literals from useHealth, the deep tab and useAgencyLive.
 const rangeQuery = (r) => `from=${r.from}&to=${r.to}`

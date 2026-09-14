@@ -336,6 +336,11 @@ export function PivotReport({ clients, currency }) {
       if (!alive) return
       if (!skel || !skel._ok) { setSt({ status: 'err', error: (skel && (skel.error || skel.crmErr)) || 'The CRM did not answer after twelve tries.' }); return }
       const data = { ...skel }
+      // The skeleton carries the range's frame and the CRM's wins; the ad
+      // platforms arrive a month at a time below and are added, so whatever ad
+      // figures the skeleton might carry (an older cached answer) are cleared
+      // first - otherwise a month would count twice.
+      for (const b of data.buckets) { for (const k in b.meta) b.meta[k] = 0; for (const k in b.google) b.google[k] = 0 }
       const months = monthChunks(bounds.from, bounds.to)
       const tasks = []
       if (skel.hasCrm) for (const c of months) tasks.push({ kind: 'crm', c })
@@ -446,11 +451,17 @@ export function PivotReport({ clients, currency }) {
   const applies = (m) => (m.month && by !== 'month') ? false : (m.need === 'meta' ? has.meta : m.need === 'google' ? has.google : m.need === 'ads' ? (has.meta || has.google) : m.need === 'crm' ? has.crm : m.need === 'cash' ? cashOn : m.need === 'crmads' ? has.crm && (has.meta || has.google) : true)
   const selected = ids.map((id) => byId[id]).filter((m) => m && applies(m))
   const total = useMemo(() => rows.reduce((a, r) => addBase(a, r.base), {}), [rows])
+  // Average per period: a count or an amount is its total over the periods; a
+  // rate or a cost (anything whose periods do not add up to its total) is the
+  // mean of the periods that have one.
   const avgOf = (m) => {
     if (!rows.length) return null
-    if (m.kind === 'count' || m.kind === 'money' && !/cost|cpm|cpc|avgdeal/i.test(m.id)) { const t = m.calc(total); return t == null ? null : t / rows.length }
     const vs = rows.map((r) => m.calc(r.base)).filter((v) => v != null && isFinite(v))
-    return vs.length ? vs.reduce((a, v) => a + v, 0) / vs.length : null
+    if (!vs.length) return null
+    const t = m.calc(total)
+    const additive = (m.kind === 'count' || m.kind === 'money') && t != null && isFinite(t) && Math.abs(vs.reduce((a, v) => a + v, 0) - t) <= Math.max(1e-6, Math.abs(t) * 1e-6)
+    if (additive) return t / rows.length
+    return vs.reduce((a, v) => a + v, 0) / vs.length
   }
   // A newly ticked metric joins the end of its own group (Meta, Google, Blended,
   // CRM, Key events) rather than the bottom of the table, so the sections stay

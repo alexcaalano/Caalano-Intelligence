@@ -4411,7 +4411,11 @@ export default async (req) => {
       await Promise.all(ej)
       void ents
     }
-    if (cc.meta && src !== 'crm' && src !== 'ents') jobs.push((async () => {
+    // The ad platforms answer the full build and the `ads` part only: the
+    // `closed` skeleton is the frame the app adds the monthly ads parts into, so
+    // ad figures there would count every month twice.
+    const wantAds = src === 'all' || src === 'ads'
+    if (cc.meta && wantAds) jobs.push((async () => {
       const fallback = await readMetaPrimary(client).catch(() => null)
       const fields = fallback && fallback.fields ? fallback.fields : null
       const std = fields ? fields.filter((f) => !isCustomConvField(f)) : []
@@ -4447,7 +4451,7 @@ export default async (req) => {
         }
       } catch { metaOk = false }
     })())
-    if (cc.google && src !== 'crm' && src !== 'ents') jobs.push((async () => {
+    if (cc.google && wantAds) jobs.push((async () => {
       try {
         const rows = await windsorFetch('google_ads', ['account_id', 'date', 'spend', 'impressions', 'clicks', 'conversions'], from, to, null, key, { accounts: cc.google })
         for (const r of rows) {

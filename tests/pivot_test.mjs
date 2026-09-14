@@ -40,6 +40,7 @@ assert.equal(ads.status, 200); assert.equal(ads.body.buckets.length, 1); assert.
 // The skeleton call: every bucket, stage positions, wins by close date, no created-basis figures.
 const sk = await call(`scope=pivot&client=norwest-mdc&from=${iso(from)}&to=${iso(now)}&by=month&src=closed`)
 assert.equal(sk.status, 200); assert.equal(sk.body.buckets.length, 6); assert.ok(sk.body.buckets.every((b) => b.crm && b.crm.leads.all === 0), 'closed part carries no created-basis leads')
+assert.ok(sk.body.buckets.every((b) => b.meta.spend === 0 && b.google.cost === 0), 'closed part carries no ad figures - the app adds those a month at a time, so any here would count twice')
 assert.ok(sk.body.buckets.some((b) => b.crm.wonClosed.all > 0), 'wins by close date come from the won snapshot')
 assert.ok(Object.keys(sk.body.stagePos).length > 0)
 // Cash collected rides along when the CRM records it (the demo does).

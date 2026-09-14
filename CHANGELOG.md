@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.640.0 - 2026-09-14 (commit PENDING)
+## v3.640.0 - 2026-09-14 (commit 7b0a919)
 
 ### Reporting: the Pivot report
 

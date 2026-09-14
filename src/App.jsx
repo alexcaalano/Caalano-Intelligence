@@ -35,7 +35,7 @@ const lazyView = (load, name) => {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-export const APP_VERSION = '3.621.0'
+export const APP_VERSION = '3.622.0'
 // The business clock. Every server window is cut on the client's local day
 // (Caalano Systems location timezone), so any day the app derives on its own -
 // preset ranges, "today", CSV dates - must use the same clock rather than the
@@ -3319,7 +3319,7 @@ function MetaDeep({ deep, currency, attr, clientId, range, nonce, pipe: pipeProp
         <button className="pg-btn" disabled={crePageC >= creTotalPages - 1} onClick={() => setCrePage(crePageC + 1)}>Next ›</button>
       </div>}
       </Blk><Blk id="meta:creativeperf">
-      <div className="lvl-title" style={{ marginTop: 14 }}>Creative performance <span className="sub">· big previews · sortable · 10 per page · green = Caalano360 key events for leads whose ad UTM (utm_content) matches · ▶ plays the Instagram post inline where available</span></div>
+      <div className="lvl-title" style={{ marginTop: 14 }}>Creative performance <span className="sub">· big previews · sortable · 10 per page · green = Caalano360 key events for leads whose ad UTM (utm_content) matches · ▶ plays the ad's video in a popup where Meta serves it</span></div>
       {adsFull.some((a) => (a.spend || 0) > 0)
         ? <MRCreativeSection
             ads={adsFull.filter((a) => (a.spend || 0) > 0)}
@@ -9149,7 +9149,7 @@ function mergeMetaParts(parts) {
   const metas = parts.map((p) => p && p.meta).filter(Boolean)
   if (!metas.length) return null
   const SUM = ['spend', 'impressions', 'clicks', 'linkClicks', 'leads', 'videoViews', 'reach', 'results']
-  const KEEP = ['campaign', 'adset', 'type', 'quality', 'thumb', 'igUrl', 'resultType', 'resultField']
+  const KEEP = ['campaign', 'adset', 'type', 'quality', 'thumb', 'video', 'preview', 'igUrl', 'resultType', 'resultField']
   const mergeList = (getList, keyOf) => {
     const m = new Map()
     for (const meta of metas) for (const r of (getList(meta) || [])) {

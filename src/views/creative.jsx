@@ -812,7 +812,7 @@ export function CreativeRow({ c, clientId, money, hasCrm, personaOpts, angleOpts
             {hasCrm && <><span><b>{fmtNumber(c.bk)}</b> booked</span><span><b>{fmtNumber(c.wn)}</b> won</span><span><b>{money(c.rev)}</b> revenue</span></>}
             <span><b>{fmtNumber(c.impressions)}</b> impr</span><span><b>{fmtNumber(c.clicks)}</b> clicks</span>
             <button className="ai-btn sm" onClick={suggest} disabled={ai.busy} title="Let Claude suggest awareness / persona / angle from the copy">{ai.busy ? 'Thinking…' : '✨ Suggest tags'}</button>
-            {c.igUrl && <a className="cc-view" href={c.igUrl} target="_blank" rel="noreferrer">↗ View ad on Instagram</a>}
+            {(c.preview || c.igUrl) && <a className="cc-view" href={c.preview || c.igUrl} target="_blank" rel="noreferrer">{c.preview ? '↗ Open the ad preview' : '↗ View ad on Instagram'}</a>}
           </div>
           {c.fat && c.fat.level !== 'Low' && <div className="cap cc-fat-reason"><FatigueBadge fat={c.fat} /> {c.fat.frequency != null ? `frequency ${c.fat.frequency}x` : ''}{c.fat.ctrDrop != null ? ` · CTR ${c.fat.ctrDrop >= 0 ? 'down' : 'up'} ${Math.abs(c.fat.ctrDrop)}% over the period` : ''}{(c.fat.reasons && c.fat.reasons.length) ? ` · ${c.fat.reasons.join(' · ')}` : ''} - consider a fresh variation.</div>}
           {ai.err && <div className="cap" style={{ color: 'var(--neg)' }}>{ai.err}</div>}

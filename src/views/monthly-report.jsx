@@ -802,6 +802,10 @@ export function MRDrill({ drill, currency, campMap, medMap, onClose }) {
 // this creative's UTM, plus inline Instagram playback via the ad's permalink.
 export function MRCreative({ a, money, n0, clientId, range, channel, currency }) {
   const [play, setPlay] = useState(false)
+  // The direct mp4 Meta serves for the ad's Instagram media plays in a popup;
+  // if that link has expired (they are signed for a limited time) the popup
+  // falls back to the Instagram embed, then to Meta's shareable preview.
+  const [videoFailed, setVideoFailed] = useState(false)
   const [drill, setDrill] = useState(null)
   const canDrill = !!(clientId && range)
   const ctrV = a.impressions ? (a.clicks / a.impressions) * 100 : null
@@ -809,6 +813,8 @@ export function MRCreative({ a, money, n0, clientId, range, channel, currency })
   const cprV = results ? a.spend / results : null
   const freqV = a.reach ? a.impressions / a.reach : null
   const embed = a.igUrl ? a.igUrl.replace(/\/+$/, '') + '/embed' : null
+  const canPlay = !!((a.video && !videoFailed) || embed)
+  const openHref = a.preview || a.igUrl || null
   const events = a.events || null // per-client configured key events [{label,count,kind}]
   const revenue = a.revenue != null ? a.revenue : (a.ke ? a.ke.revenue : 0)
   const roas = a.roas != null ? a.roas : (a.ke && a.ke.revenue && a.spend ? a.ke.revenue / a.spend : null)
@@ -826,9 +832,9 @@ export function MRCreative({ a, money, n0, clientId, range, channel, currency })
       <div className="mr-cre-top">
         <div className="mr-cre-thumb">
           {a.thumb ? <img src={a.thumb} alt="" loading="lazy" crossOrigin="anonymous" /> : <span className="mr-noimg">{a.type === 'Video' ? '▶' : '🖼'}</span>}
-          {embed
+          {canPlay
             ? <button className="mr-cre-play no-print" onClick={() => setPlay(true)} aria-label="Play">▶</button>
-            : (a.igUrl && <a className="mr-cre-play no-print" href={a.igUrl} target="_blank" rel="noreferrer" aria-label="Open on Instagram">▶</a>)}
+            : (openHref && <a className="mr-cre-play no-print" href={openHref} target="_blank" rel="noreferrer" aria-label="Open the ad preview">▶</a>)}
           {a.type === 'Video' && <span className="mr-cre-badge">▶ Video</span>}
         </div>
         <div className="mr-cre-head">
@@ -891,12 +897,14 @@ export function MRCreative({ a, money, n0, clientId, range, channel, currency })
           </div>
         </div>
       ) : <div className="mr-cre-ke mr-cre-ke-empty">No CRM-attributed leads matched this creative’s UTM (utm_content).</div>}
-      {play && embed && (
+      {play && canPlay && (
         <div className="mr-play-overlay no-print" onClick={() => setPlay(false)}>
           <div className="mr-play-modal" onClick={(e) => e.stopPropagation()}>
             <div className="mr-play-head"><b title={a.name}>{a.name}</b><button className="mr-play-x" onClick={() => setPlay(false)} aria-label="Close">✕</button></div>
-            <iframe className="mr-play-frame" src={embed} title={a.name} scrolling="no" frameBorder="0" allow="autoplay; encrypted-media; clipboard-write; picture-in-picture" allowFullScreen />
-            <a className="mr-play-open" href={a.igUrl} target="_blank" rel="noreferrer">Open on Instagram ↗</a>
+            {a.video && !videoFailed
+              ? <video className="mr-play-video" src={a.video} poster={a.thumb || undefined} controls autoPlay playsInline onError={() => setVideoFailed(true)} />
+              : <iframe className="mr-play-frame" src={embed} title={a.name} scrolling="no" frameBorder="0" allow="autoplay; encrypted-media; clipboard-write; picture-in-picture" allowFullScreen />}
+            {openHref && <a className="mr-play-open" href={openHref} target="_blank" rel="noreferrer">{a.preview ? 'Open the ad preview ↗' : 'Open on Instagram ↗'}</a>}
           </div>
         </div>
       )}

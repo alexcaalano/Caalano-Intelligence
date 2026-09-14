@@ -470,6 +470,21 @@ async function windsorFetchDirect(connector, fields, from, to, preset, key, opts
   return withDemo(rows)
 }
 
+// What a creative looks like and where it plays. Meta's creative thumbnail_url
+// is the link preview image for link ads, so every ad of a business that
+// promotes one page looked identical; the Instagram media behind the ad carries
+// the real video frame and a direct mp4, and promoted_post_full_picture the
+// full-size image for image ads. ad_preview_shareable_link opens the ad in a
+// browser without a login, for ads with no Instagram media.
+const CREATIVE_MEDIA_FIELDS = ['effective_instagram_media__media_type', 'effective_instagram_media__thumbnail_url', 'effective_instagram_media__media_url', 'promoted_post_full_picture', 'image_url', 'ad_preview_shareable_link']
+const CREATIVE_THUMB_FIELDS = ['effective_instagram_media__media_type', 'effective_instagram_media__thumbnail_url', 'promoted_post_full_picture', 'image_url']
+const igVideo = (r) => String(r.effective_instagram_media__media_type || '').toUpperCase() === 'VIDEO'
+const igImage = (r) => String(r.effective_instagram_media__media_type || '').toUpperCase() === 'IMAGE'
+// Video: the Instagram frame. Image: the Instagram media itself (the ad's own
+// picture, not the landing page's link preview). Then the post picture, the
+// creative image, and Meta's creative thumbnail as the last resort.
+const bestThumb = (r) => (igVideo(r) && r.effective_instagram_media__thumbnail_url) || (igImage(r) && r.effective_instagram_media__media_url) || r.promoted_post_full_picture || r.image_url || r.effective_instagram_media__thumbnail_url || r.thumbnail_url || null
+const creativeMedia = (r) => ({ thumb: bestThumb(r), video: igVideo(r) && r.effective_instagram_media__media_url ? r.effective_instagram_media__media_url : null, preview: r.ad_preview_shareable_link || null })
 // Aggregate a set of Meta rows by a key field into a metrics map. Leads use the
 // Ads-Manager-matching definition (fbLeads), not the double-counting superset.
 function aggMeta(rows, keyField, extra = []) {
@@ -546,8 +561,8 @@ function rollupMeta(adRows, dayRows, accRows, campRows, adsetRows, pCampRows, fa
     const spend = num(r.spend)
     return {
       name: r.ad_name, campaign: r.campaign, adset: r.adset_name,
-      type: num(r.actions_video_view) > 0 ? 'Video' : 'Image',
-      quality: r.quality_ranking || 'UNKNOWN', thumb: r.thumbnail_url, igUrl: r.instagram_permalink_url || null,
+      type: igVideo(r) || num(r.actions_video_view) > 0 ? 'Video' : 'Image',
+      quality: r.quality_ranking || 'UNKNOWN', ...creativeMedia(r), igUrl: r.instagram_permalink_url || null,
       reach: num(r.reach),
       spend, impressions: num(r.impressions), clicks: num(r.clicks),
       linkClicks: num(r.inline_link_clicks), leads: fbLeads(r), videoViews: num(r.actions_video_view),
@@ -989,8 +1004,8 @@ async function buildMeta(accountId, from, to, preset, key, fallback, opts = {}) 
   const adCatch = windowDays(from, to, preset) > 90
   const [adRows, dayRows, accRows, prevRows, adDayRows, campRows, adsetRows, pCampRows] = await Promise.all([
     core ? Promise.resolve([]) : (adCatch
-      ? windsorFetch('facebook', ['account_id', 'campaign', 'adset_name', 'ad_name', 'thumbnail_url', 'quality_ranking', 'reach', 'instagram_permalink_url', 'spend', 'impressions', 'clicks', 'inline_link_clicks', ...FB_LEAD_FIELDS, ...RESULT_FIELDS, 'actions_video_view'], from, to, preset, key, { accounts: accountId }).then(filt).catch(() => [])
-      : windsorFetch('facebook', ['account_id', 'campaign', 'adset_name', 'ad_name', 'thumbnail_url', 'quality_ranking', 'reach', 'instagram_permalink_url', 'spend', 'impressions', 'clicks', 'inline_link_clicks', ...FB_LEAD_FIELDS, ...RESULT_FIELDS, 'actions_video_view'], from, to, preset, key, { accounts: accountId }).then(filt)),
+      ? windsorFetch('facebook', ['account_id', 'campaign', 'adset_name', 'ad_name', 'thumbnail_url', 'quality_ranking', 'reach', 'instagram_permalink_url', ...CREATIVE_MEDIA_FIELDS, 'spend', 'impressions', 'clicks', 'inline_link_clicks', ...FB_LEAD_FIELDS, ...RESULT_FIELDS, 'actions_video_view'], from, to, preset, key, { accounts: accountId }).then(filt).catch(() => [])
+      : windsorFetch('facebook', ['account_id', 'campaign', 'adset_name', 'ad_name', 'thumbnail_url', 'quality_ranking', 'reach', 'instagram_permalink_url', ...CREATIVE_MEDIA_FIELDS, 'spend', 'impressions', 'clicks', 'inline_link_clicks', ...FB_LEAD_FIELDS, ...RESULT_FIELDS, 'actions_video_view'], from, to, preset, key, { accounts: accountId }).then(filt)),
     windsorFetch('facebook', ['account_id', 'date', 'spend', 'impressions', 'clicks', 'inline_link_clicks', ...FB_LEAD_FIELDS], from, to, preset, key, { accounts: accountId }).then(filt).catch(() => []),
     windsorFetch('facebook', accFields, from, to, preset, key, { accounts: accountId }).then(filt).catch(() => { adReadOk = false; return [] }),
     (core || !pr.from) ? Promise.resolve([]) : windsorFetch('facebook', accFields, pr.from, pr.to, null, key, { accounts: accountId }).then(filt).catch(() => []),
@@ -1091,10 +1106,10 @@ function metaFatigue(ads, daily, cfg) {
 async function buildFatigue(accountId, from, to, preset, key, cfg) {
   const filt = (rows) => rows.filter((r) => !r.account_id || acctEq(r.account_id, accountId))
   const [adRows, dayRows] = await Promise.all([
-    windsorFetch('facebook', ['account_id', 'campaign', 'adset_name', 'ad_name', 'thumbnail_url', 'quality_ranking', 'reach', 'impressions', 'clicks', 'spend', 'actions_video_view'], from, to, preset, key, { accounts: accountId }).then(filt),
+    windsorFetch('facebook', ['account_id', 'campaign', 'adset_name', 'ad_name', 'thumbnail_url', ...CREATIVE_THUMB_FIELDS, 'quality_ranking', 'reach', 'impressions', 'clicks', 'spend', 'actions_video_view'], from, to, preset, key, { accounts: accountId }).then(filt),
     windsorFetch('facebook', ['account_id', 'date', 'ad_name', 'impressions', 'clicks'], from, to, preset, key, { accounts: accountId }).then(filt).catch(() => []),
   ])
-  const ads = adRows.map((r) => ({ name: r.ad_name, campaign: r.campaign, adset: r.adset_name, thumb: r.thumbnail_url, type: num(r.actions_video_view) > 0 ? 'Video' : 'Image', quality: r.quality_ranking, reach: num(r.reach), impressions: num(r.impressions), clicks: num(r.clicks), spend: num(r.spend) }))
+  const ads = adRows.map((r) => ({ name: r.ad_name, campaign: r.campaign, adset: r.adset_name, thumb: bestThumb(r), type: igVideo(r) || num(r.actions_video_view) > 0 ? 'Video' : 'Image', quality: r.quality_ranking, reach: num(r.reach), impressions: num(r.impressions), clicks: num(r.clicks), spend: num(r.spend) }))
   return metaFatigue(ads, dayRows, cfg)
 }
 async function readFatigueConfig() {
@@ -1123,7 +1138,7 @@ async function buildAnomalies(accountId, from, to, preset, key) {
   const [curRows, prevRows, adRows] = await Promise.all([
     windsorFetch('facebook', accFields, from, to, preset, key, { accounts: accountId }).then(filt).catch(() => { adReadOk = false; return [] }),
     pr.from ? windsorFetch('facebook', accFields, pr.from, pr.to, null, key, { accounts: accountId }).then(filt).catch(() => []) : Promise.resolve([]),
-    windsorFetch('facebook', ['account_id', 'campaign', 'adset_name', 'ad_name', 'thumbnail_url', 'reach', 'spend', 'impressions', 'clicks', ...FB_LEAD_FIELDS], from, to, preset, key, { accounts: accountId }).then(filt).catch(() => []),
+    windsorFetch('facebook', ['account_id', 'campaign', 'adset_name', 'ad_name', 'thumbnail_url', ...CREATIVE_THUMB_FIELDS, 'reach', 'spend', 'impressions', 'clicks', ...FB_LEAD_FIELDS], from, to, preset, key, { accounts: accountId }).then(filt).catch(() => []),
   ])
   const cur = metaTotals(curRows), prev = metaTotals(prevRows)
   const met = (t) => ({ spend: t.spend, leads: t.leads, impressions: t.impressions, clicks: t.clicks, reach: t.reach, cpl: t.leads ? t.spend / t.leads : null, ctr: t.impressions ? t.clicks / t.impressions : null, freq: t.reach ? t.impressions / t.reach : null })
@@ -1162,7 +1177,7 @@ async function buildAnomalies(accountId, from, to, preset, key) {
   if (c.spend >= 100 && c.leads === 0) alerts.push({ metric: 'noleads', severity: 'high', cur: c.spend, prev: null, title: 'Spending with no leads', detail: `${Math.round(c.spend)} spent this window with zero reported leads - check tracking and delivery` })
   // Worst-offender ads: highest spend with zero leads (aggregated by ad name).
   const adAgg = new Map()
-  for (const r of adRows) { const n = r.ad_name; if (!n) continue; const e = adAgg.get(n) || { name: n, campaign: r.campaign, adset: r.adset_name, thumb: r.thumbnail_url, spend: 0, leads: 0, clicks: 0 }; e.spend += num(r.spend); e.leads += fbLeads(r); e.clicks += num(r.clicks); if (!e.thumb && r.thumbnail_url) e.thumb = r.thumbnail_url; adAgg.set(n, e) }
+  for (const r of adRows) { const n = r.ad_name; if (!n) continue; const e = adAgg.get(n) || { name: n, campaign: r.campaign, adset: r.adset_name, thumb: bestThumb(r), spend: 0, leads: 0, clicks: 0 }; e.spend += num(r.spend); e.leads += fbLeads(r); e.clicks += num(r.clicks); if (!e.thumb) e.thumb = bestThumb(r); adAgg.set(n, e) }
   const zeroLeadAds = [...adAgg.values()].filter((a) => a.spend >= 50 && a.leads === 0).sort((a, b) => b.spend - a.spend).slice(0, 6).map((a) => ({ ...a, spend: Math.round(a.spend) }))
   const order = { high: 0, med: 1, good: 2 }
   alerts.sort((a, b) => (order[a.severity] - order[b.severity]))

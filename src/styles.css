@@ -2477,6 +2477,7 @@ button.bn-cal-row.is-link:hover .bn-cal-go { color: var(--brand); }
 .mr-play-head b { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mr-play-x { border: 0; background: transparent; color: #fff; font-size: 16px; cursor: pointer; line-height: 1; }
 .mr-play-frame { flex: 1; width: 100%; border: 0; background: #000; }
+.mr-play-video { flex: 1; width: 100%; min-height: 0; max-height: 100%; object-fit: contain; background: #000; }
 .mr-play-open { text-align: center; padding: 9px; color: #fff; background: #141414; font-size: 12px; text-decoration: none; }
 .mr-play-open:hover { text-decoration: underline; }
 /* Caalano360 green key-events by campaign (report) */

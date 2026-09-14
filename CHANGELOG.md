@@ -18,6 +18,28 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.622.0 - 2026-09-14
+
+**Creative cards show the real creative and play the video in a popup.** (commit PENDING)
+
+- Thumbnails came from Meta's creative thumbnail, which for link ads is the
+  landing page's preview image, so every ad of a business promoting one page
+  looked identical. Cards now use the Instagram media behind the ad: the
+  video frame for videos, the ad's own picture for images, then the post
+  picture, the creative image and the old thumbnail as fallbacks. Applies
+  to the Meta tab creative performance, the Monthly Report, creative
+  fatigue and the creative curator lists.
+- The play button plays the ad's video in the popup directly, from the mp4
+  Meta serves for the Instagram media, with the thumbnail as its poster.
+  If that link has expired the popup falls back to the Instagram embed, and
+  the link under it opens Meta's shareable ad preview, which needs no login.
+  Creative curator rows link to the same preview.
+- An ad with Instagram video media counts as a video even before it has
+  3-second plays.
+- Result cache schema bumped to 3 so the new fields arrive on the next load.
+
+---
+
 ## v3.621.0 - 2026-09-14
 
 **Mirror status reads the database, not one process's counters.** (commit 3cd0893)

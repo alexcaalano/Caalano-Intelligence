@@ -20,7 +20,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ## v3.622.0 - 2026-09-14
 
-**Creative cards show the real creative and play the video in a popup.** (commit PENDING)
+**Creative cards show the real creative and play the video in a popup.** (commit 9e3b9e5)
 
 - Thumbnails came from Meta's creative thumbnail, which for link ads is the
   landing page's preview image, so every ad of a business promoting one page

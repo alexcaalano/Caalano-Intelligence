@@ -20,7 +20,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ## v3.617.0 - 2026-09-14
 
-**Every account carries first name, last name, email and mobile number.** (commit PENDING)
+**Every account carries first name, last name, email and mobile number.** (commit 9f5953b)
 
 - Request access, invite acceptance and first-account setup ask for first
   name, last name, email and mobile number, all required, on both the app

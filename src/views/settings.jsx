@@ -3,8 +3,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { APP_VERSION, AnnotationToggle, Avatar, BIZ_TYPES, CC_CHANS, Caveat, ChangePasswordCard, ClinicSettings, DASH_AUD, DASH_MODULES, DASH_PRESETS, DEFAULT_HOURS, DOW_LABELS, FATIGUE_DEFAULTS, FAVICON, FormsSettingsTab, GeoSettings, HelpNote, OptLogSettings, PROFILE_FIELDS, ROLE_LABEL, SEED_KEYEVENTS, SETTINGS, SignOutEverywhereCard, YourDetailsCard, Spinner, TAB_OPTIONS, TermsAdmin, TermsRegister, UsersAdmin, acolor, apiJson, applyAliases, clientLogoSrc, dashAudience, dashModuleFits, dedupeFetch, deleteClient, domainOf, dpClientOn, dpPipeOn, fetchDiscover, fmtDMY, fmtHours, formKeyEvents, formsDoneCount, hhmm, initials, isAdminishFE, isClientDeleted, iso, loadAliases, loadBizType, loadCampMap, loadCashOn, loadCloseOverride, loadDashboard, loadFatigueCfg, loadHours, loadKeep, loadKeyEvents, loadKeyEventsRaw, loadKpis, loadLogo, loadMetaConv, loadProfile, loadQualStage, loadSocialKpis, mkOutcomeMap, normId, presetRange, rangeLabel, rangeMaturity, rangeQuery, readNavUrl, removeCustomClient, restoreClient, roleLabelOf, saveBizType, saveCampMap, saveCashOn, saveCloseOverride, saveCustomClient, saveDashboard, saveFatigueCfg, saveHours, saveKeyEvents, saveKpis, saveLogo, saveMetaConv, saveProfile, saveQualStage, saveSocialKpis, setAlias, setDpClient, setDpPipe, setKeep, syncLogos, unorm, useDiscoverNames, useSettingsSync, writeNavUrl, normCrmUrl, saveCrmUrl, CRM_DEFAULT_URL } from '../App.jsx'
 import { fmtCurrency, fmtNumber } from '../lib/format.js'
-import { VIS_VIEWS, VIS_TABS, VIS_ROLES, VIS_ROLE_LABELS, viewsForRole, tabsForRole, normVisibility } from '../lib/visibility.js'
-import { authApi, saveSettingsRemote, bumpSettings } from '../App.jsx'
+import { VIS_VIEWS, VIS_TABS, VIS_SETTINGS, VIS_ROLES, VIS_ROLE_LABELS, viewsForRole, tabsForRole, settingsForRole, normVisibility, isHiddenSetting } from '../lib/visibility.js'
+import { authApi, saveSettingsRemote, bumpSettings, userHidden } from '../App.jsx'
 import { GoalsEditor } from './sales-hub.jsx'
 
 /* ============ Settings ============ */
@@ -1581,11 +1581,12 @@ export function CrmAddressCard() {
 const VIS_ITEMS = [
   ...VIS_VIEWS.map((v) => ({ ...v, kind: 'views', group: 'Sidebar' })),
   ...VIS_TABS.map((t) => ({ ...t, kind: 'tabs', group: 'Client workspace tabs' })),
+  ...VIS_SETTINGS.map((t) => ({ ...t, kind: 'settings', group: 'Settings sections' })),
 ]
 const visRoleOf = (r) => (r === 'viewer' ? 'account_admin' : r)
-const visApplies = (item, role) => (item.kind === 'views' ? viewsForRole(role) : tabsForRole(role)).some((x) => x.id === item.id)
+const visApplies = (item, role) => (item.kind === 'views' ? viewsForRole(role) : item.kind === 'settings' ? settingsForRole(role) : tabsForRole(role)).some((x) => x.id === item.id)
 const visOn = (entry, item) => !(entry && entry[item.kind] && entry[item.kind][item.id] === false)
-const visFlip = (entry, item) => { const cur = { ...((entry && entry[item.kind]) || {}) }; if (cur[item.id] === false) delete cur[item.id]; else cur[item.id] = false; return { views: {}, tabs: {}, ...entry, [item.kind]: cur } }
+const visFlip = (entry, item) => { const cur = { ...((entry && entry[item.kind]) || {}) }; if (cur[item.id] === false) delete cur[item.id]; else cur[item.id] = false; return { views: {}, tabs: {}, settings: {}, ...entry, [item.kind]: cur } }
 const visSame = (a, b) => JSON.stringify(normVisibility({ users: { x: a } }).users.x) === JSON.stringify(normVisibility({ users: { x: b } }).users.x)
 // One matrix: rows are the items, columns are whatever is passed in. Each
 // column answers on/off for an item, whether the item applies, and how to flip.
@@ -1638,7 +1639,7 @@ export function VisibilitySettings({ clients = [] }) {
     saveSettingsRemote({ visibility: { roles: next.roles } }); bumpSettings()
     setVis(next); setDraftRoles(next.roles); setSaved('Role defaults saved. People get them on their next page load.')
   }
-  const showAllRoles = () => { const d = {}; for (const r of VIS_ROLES) d[r] = { views: {}, tabs: {} }; setDraftRoles(d); setSaved(null) }
+  const showAllRoles = () => { const d = {}; for (const r of VIS_ROLES) d[r] = { views: {}, tabs: {}, settings: {} }; setDraftRoles(d); setSaved(null) }
   // ---- people (by client / by role) ----
   const effective = (u) => { const key = u.email.toLowerCase(); if (key in draftUsers) return draftUsers[key] || vis.roles[visRoleOf(u.role)]; return vis.users[key] || vis.roles[visRoleOf(u.role)] }
   const isCustom = (u) => { const key = u.email.toLowerCase(); return key in draftUsers ? draftUsers[key] != null : !!vis.users[key] }
@@ -1681,11 +1682,11 @@ export function VisibilitySettings({ clients = [] }) {
   return (
     <div className="card vis-card">
       <h3 style={{ marginTop: 0 }}>Visibility</h3>
-      <p className="cap" style={{ marginTop: -4 }}>Every page and client tab down the left; who sees it across the top. <b>By role</b> sets the default for everyone of that role. <b>By client</b> shows the Account Admins and Account Users on one client, and <b>Agency people</b> everyone at Caalano, as columns: a switch there gives that person their own set (marked <i>custom</i>) and <b>Use default</b> puts them back on the role. Anything new is visible until you switch it off, so this is where a feature waits until launch. That includes you: switch something off for Super Admin and it leaves your own sidebar too, but Settings and this page are always there to switch it back on. Use <b>View as</b> in the sidebar to check what someone else gets.</p>
+      <p className="cap" style={{ marginTop: -4 }}>Every page, client tab and Settings section down the left; who sees it across the top. <b>By role</b> sets the default for everyone of that role. <b>By client</b> shows the Account Admins and Account Users on one client, and <b>Agency</b> everyone at Caalano, as columns: a switch there gives that person their own set (marked <i>custom</i>) and <b>Use default</b> puts them back on the role. Anything new is visible until you switch it off, so this is where a feature waits until launch. That includes you: switch something off for Super Admin and it leaves your own sidebar too, but Settings and this page are always there to switch it back on. Use <b>View as</b> in the sidebar to check what someone else gets.</p>
       <div className="chan-toggle sm vis-mode">
         <button className={mode === 'roles' ? 'on' : ''} onClick={() => setMode('roles')}>By role</button>
         <button className={mode === 'client' ? 'on' : ''} onClick={() => setMode('client')}>By client</button>
-        <button className={mode === 'agency' ? 'on' : ''} onClick={() => setMode('agency')}>Agency people</button>
+        <button className={mode === 'agency' ? 'on' : ''} onClick={() => setMode('agency')}>Agency</button>
       </div>
       {mode === 'roles' ? (
         <>
@@ -1735,15 +1736,20 @@ export function SettingsPage({ config, enabled, setEnabled, restricted = {}, set
   const isSuper = !authEnabled || role === 'superadmin' // legacy/basic = super
   // Sections this person can actually reach - a deep link to one they can't
   // would otherwise render an empty page.
+  // Sections a Super Admin has hidden from this role or person (Settings ->
+  // Visibility). Your account, Appearance and the Super Admin sections are
+  // never in that list.
+  const hid = authEnabled ? userHidden(authUser) : null
+  const on = (id) => !isHiddenSetting(hid, id)
   const allowedSections = [
-    ...(isAdmin ? ['clients', 'crm', 'fatigue', 'socialkpis', 'dailyperf'] : []),
-    ...((!authEnabled || isAdmin) ? ['team'] : []),
+    ...(isAdmin ? ['clients', 'crm', 'fatigue', 'socialkpis', 'dailyperf'].filter(on) : []),
+    ...((!authEnabled || isAdmin) && on('team') ? ['team'] : []),
     ...(authEnabled ? ['account'] : []),
     'appearance',
     ...(isSuper && authEnabled ? ['visibility', 'terms'] : []),
     ...(isSuper ? ['logs'] : []),
   ]
-  const defaultSection = isAdmin ? 'clients' : 'account'
+  const defaultSection = allowedSections[0]
   const sectionFromUrl = () => { const want = readNavUrl().s; return want && allowedSections.includes(want) ? want : defaultSection }
   const [section, setSectionRaw] = useState(sectionFromUrl)
   // Pushed, not replaced, so Back steps through the sections you visited.
@@ -1780,12 +1786,12 @@ export function SettingsPage({ config, enabled, setEnabled, restricted = {}, set
   return (
     <div className="settings-page">
       <div className="set-sections">
-        {isAdmin && <button className={section === 'clients' ? 'on' : ''} onClick={() => setSection('clients')}>Clients</button>}
-        {isAdmin && <button className={section === 'crm' ? 'on' : ''} onClick={() => setSection('crm')}>CRM connection</button>}
-        {isAdmin && <button className={section === 'fatigue' ? 'on' : ''} onClick={() => setSection('fatigue')}>Creative fatigue</button>}
-        {isAdmin && <button className={section === 'socialkpis' ? 'on' : ''} onClick={() => setSection('socialkpis')}>Organic KPIs</button>}
-        {isAdmin && <button className={section === 'dailyperf' ? 'on' : ''} onClick={() => setSection('dailyperf')}>Daily performance</button>}
-        {(!authEnabled || isAdmin) && <button className={section === 'team' ? 'on' : ''} onClick={() => setSection('team')}>Team &amp; access</button>}
+        {isAdmin && on('clients') && <button className={section === 'clients' ? 'on' : ''} onClick={() => setSection('clients')}>Clients</button>}
+        {isAdmin && on('crm') && <button className={section === 'crm' ? 'on' : ''} onClick={() => setSection('crm')}>CRM connection</button>}
+        {isAdmin && on('fatigue') && <button className={section === 'fatigue' ? 'on' : ''} onClick={() => setSection('fatigue')}>Creative fatigue</button>}
+        {isAdmin && on('socialkpis') && <button className={section === 'socialkpis' ? 'on' : ''} onClick={() => setSection('socialkpis')}>Organic KPIs</button>}
+        {isAdmin && on('dailyperf') && <button className={section === 'dailyperf' ? 'on' : ''} onClick={() => setSection('dailyperf')}>Daily performance</button>}
+        {(!authEnabled || isAdmin) && on('team') && <button className={section === 'team' ? 'on' : ''} onClick={() => setSection('team')}>Team &amp; access</button>}
         {authEnabled && <button className={section === 'account' ? 'on' : ''} onClick={() => setSection('account')}>Your account</button>}
         <button className={section === 'appearance' ? 'on' : ''} onClick={() => setSection('appearance')}>Appearance</button>
         {isSuper && authEnabled && <button className={section === 'visibility' ? 'on' : ''} onClick={() => setSection('visibility')}>Visibility</button>}
@@ -1808,11 +1814,11 @@ export function SettingsPage({ config, enabled, setEnabled, restricted = {}, set
           {isSuper ? <AnnotationToggle /> : null}
         </div>
       )}
-      {isAdmin && section === 'crm' && <CrmConnectionSection isSuper={isSuper} clients={liveClients} />}
-      {isAdmin && section === 'fatigue' && <FatigueSettings />}
-      {isAdmin && section === 'socialkpis' && <SocialKpiSettings clients={config.clients} />}
-      {isAdmin && section === 'dailyperf' && <DailyPerfSettings clients={config.clients} />}
-      {section === 'team' && (!authEnabled || isAdmin) && <UsersAdmin authUser={authUser} authEnabled={authEnabled} clients={(config.clients || []).map((c) => ({ id: c.id, name: c.name, meta: c.meta || null, google: c.google || null, ga4: c.ga4 || null, ghl: c.ghl || null }))} />}
+      {isAdmin && on('crm') && section === 'crm' && <CrmConnectionSection isSuper={isSuper} clients={liveClients} />}
+      {isAdmin && on('fatigue') && section === 'fatigue' && <FatigueSettings />}
+      {isAdmin && on('socialkpis') && section === 'socialkpis' && <SocialKpiSettings clients={config.clients} />}
+      {isAdmin && on('dailyperf') && section === 'dailyperf' && <DailyPerfSettings clients={config.clients} />}
+      {section === 'team' && (!authEnabled || isAdmin) && on('team') && <UsersAdmin authUser={authUser} authEnabled={authEnabled} clients={(config.clients || []).map((c) => ({ id: c.id, name: c.name, meta: c.meta || null, google: c.google || null, ga4: c.ga4 || null, ghl: c.ghl || null }))} />}
       {authEnabled && section === 'account' && (
         <div className="card">
           <h3 style={{ marginTop: 0 }}>Your account</h3>
@@ -1823,7 +1829,7 @@ export function SettingsPage({ config, enabled, setEnabled, restricted = {}, set
           <SignOutEverywhereCard />
         </div>
       )}
-      {isAdmin && section === 'clients' && (<>
+      {isAdmin && on('clients') && section === 'clients' && (<>
       <div className="set-stats">
         <div className="set-stat"><div className="v">{liveClients.length}</div><div className="l">Clients</div></div>
         <div className="set-stat"><div className="v">{activeCount}</div><div className="l">Active</div></div>

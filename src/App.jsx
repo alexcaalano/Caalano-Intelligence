@@ -36,7 +36,7 @@ const lazyView = (load, name) => {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-export const APP_VERSION = '3.633.0'
+export const APP_VERSION = '3.634.0'
 // The business clock. Every server window is cut on the client's local day
 // (Caalano Systems location timezone), so any day the app derives on its own -
 // preset ranges, "today", CSV dates - must use the same clock rather than the
@@ -16500,7 +16500,7 @@ function canSeeClientFE(user, id) {
 // accepted from older records and means Account Admin.
 export const isClientRoleFE = (r) => r === 'account_admin' || r === 'account_user' || r === 'viewer'
 export function userHidden(u) {
-  if (!u) return { views: [], tabs: [] }
+  if (!u) return { views: [], tabs: [], settings: [] }
   const v = SETTINGS.visibility
   const haveSection = !!(v && (v.roles || v.users))
   if (u.hidden && !u.viewAs && !haveSection) return u.hidden

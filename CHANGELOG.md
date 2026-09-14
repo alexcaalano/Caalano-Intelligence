@@ -18,6 +18,16 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.634.0 - 2026-09-14 (commit PENDING)
+
+### Visibility: Settings sections in the chart; "Agency" tab
+
+- A third group, **Settings sections**: Clients, CRM connection, Creative fatigue, Organic KPIs, Daily performance and Team & access, switchable for Super Admin and Agency Admin (the only roles that hold them). A hidden section leaves the Settings page for that role or person; Your account, Appearance, Visibility, Terms of use and Logs are never in the list, so Settings and the way back are always there.
+- The "Agency people" tab is now **Agency**.
+- The session's `hidden` carries a `settings` list alongside views and tabs.
+
+---
+
 ## v3.633.0 - 2026-09-14 (commit acec932)
 
 ### Daily performance reads closer together; Key events by source defaults to Paid

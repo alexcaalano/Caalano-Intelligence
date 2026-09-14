@@ -49,14 +49,26 @@ export const VIS_TABS = [
   { id: 'lostreasons', label: 'Lost Reasons' },
   { id: 'optlog', label: 'Change Log' },
 ]
+// Settings sections. Only the agency-level ones: Your account and Appearance
+// are for everyone, and the three Super Admin sections (Visibility, Terms of
+// use, Logs) stay outside the list - Visibility is the way back.
+export const VIS_SETTINGS = [
+  { id: 'clients', label: 'Clients', roles: ['superadmin', 'admin'] },
+  { id: 'crm', label: 'CRM connection', roles: ['superadmin', 'admin'] },
+  { id: 'fatigue', label: 'Creative fatigue', roles: ['superadmin', 'admin'] },
+  { id: 'socialkpis', label: 'Organic KPIs', roles: ['superadmin', 'admin'] },
+  { id: 'dailyperf', label: 'Daily performance', roles: ['superadmin', 'admin'] },
+  { id: 'team', label: 'Team & access', roles: ['superadmin', 'admin'] },
+]
 export const VIS_ROLES = ['superadmin', 'admin', 'user', 'account_admin', 'account_user']
 export const VIS_ROLE_LABELS = { superadmin: 'Super Admin', admin: 'Agency Admin', user: 'Agency User', account_admin: 'Account Admin', account_user: 'Account User' }
 const normRole = (r) => (r === 'viewer' ? 'account_admin' : r)
 export const viewsForRole = (role) => VIS_VIEWS.filter((v) => v.roles.includes(normRole(role)))
 export const tabsForRole = (role) => (normRole(role) === 'account_user' ? VIS_TABS.filter((t) => t.id === 'actions') : VIS_TABS)
+export const settingsForRole = (role) => VIS_SETTINGS.filter((v) => v.roles.includes(normRole(role)))
 
 const offMap = (m) => { const o = {}; for (const k in (m || {})) if (m[k] === false) o[k] = false; return o }
-const normEntry = (e) => ({ views: offMap(e && e.views), tabs: offMap(e && e.tabs) })
+const normEntry = (e) => ({ views: offMap(e && e.views), tabs: offMap(e && e.tabs), settings: offMap(e && e.settings) })
 // A tidy copy of the section: only known roles, only "off" entries, users keyed
 // by lower-cased email.
 export function normVisibility(v) {
@@ -74,16 +86,19 @@ export function entryFor(user, v) {
   const own = vis.users[String(user.email || '').trim().toLowerCase()]
   return own || vis.roles[normRole(user.role)] || null
 }
-// What is hidden from this person: { views: [ids], tabs: [ids] }. Only ids that
-// can apply to their role count, so a stale entry cannot hide anything odd.
+// What is hidden from this person: { views: [ids], tabs: [ids], settings: [ids] }.
+// Only ids that can apply to their role count, so a stale entry cannot hide
+// anything odd.
 export function hiddenFor(user, v) {
   const e = entryFor(user, v)
-  if (!e) return { views: [], tabs: [] }
-  const okViews = new Set(viewsForRole(user.role).map((x) => x.id)), okTabs = new Set(tabsForRole(user.role).map((x) => x.id))
+  if (!e) return { views: [], tabs: [], settings: [] }
+  const okViews = new Set(viewsForRole(user.role).map((x) => x.id)), okTabs = new Set(tabsForRole(user.role).map((x) => x.id)), okSettings = new Set(settingsForRole(user.role).map((x) => x.id))
   return {
     views: Object.keys(e.views).filter((id) => okViews.has(id)),
     tabs: Object.keys(e.tabs).filter((id) => okTabs.has(id)),
+    settings: Object.keys(e.settings || {}).filter((id) => okSettings.has(id)),
   }
 }
 export const isHiddenView = (hidden, id) => !!(hidden && Array.isArray(hidden.views) && hidden.views.includes(id))
 export const isHiddenTab = (hidden, id) => !!(hidden && Array.isArray(hidden.tabs) && hidden.tabs.includes(id))
+export const isHiddenSetting = (hidden, id) => !!(hidden && Array.isArray(hidden.settings) && hidden.settings.includes(id))

@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.632.0 - 2026-09-14 (commit PENDING)
+## v3.632.0 - 2026-09-14 (commit 6fa64bf)
 
 ### Visibility: a narrow chart, account people by client, agency people on their own tab
 

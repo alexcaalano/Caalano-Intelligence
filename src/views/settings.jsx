@@ -1248,7 +1248,7 @@ export function parseChangelog(raw) {
 // Human labels for the top-level views, for the activity trail.
 export const VIEW_LABEL = {
   overview: 'Agency Overview', trends: 'Trends', weekly: 'Weekly Traffic Light', forecast: 'Funnel Forecaster', cockpit: 'Creative Cockpit',
-  insights: 'Meta Insights', update: 'Client Update', monthly: 'Monthly Report', reports: 'Monthly Reports',
+  insights: 'Meta Insights', update: 'Client Update', monthly: 'Reporting', reports: 'Monthly Reports',
   social: 'Organic Social Media', settings: 'Settings', clients: 'Client workspace',
 }
 export const auditMins = (n) => (n == null ? null : n < 60 ? `${n}m` : `${Math.floor(n / 60)}h ${n % 60}m`)

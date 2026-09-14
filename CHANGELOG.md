@@ -18,6 +18,18 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.640.0 - 2026-09-14 (commit PENDING)
+
+### Reporting: the Pivot report
+
+**Monthly Report becomes Reporting**, with two tabs: Monthly Report (the frozen decks, unchanged) and the new **Pivot report**.
+
+**Pivot report** - one client, any period, laid out period by period like a P&L. Pick the client, a period (last 12 months, last 12 full months, last 6 months, this year, last year, last 2 years, this quarter, last 90 days, last 30 days, or custom dates) and how to group it (day, week, month, quarter, year). Tick the metrics: Meta (spend, results on the client's own result type, cost per result, impressions, link clicks, CTR, CPM, cost per click), Google (spend, conversions, cost per conversion, clicks, impressions, conversion rate, CTR, cost per click), blended (total ad spend, ad results, blended cost per result), the CRM funnel (leads in total and by Meta / Google / non-paid, cost per lead, booked and booking rate, cost per booked, won and win rate, cost per won, revenue, average deal, ROAS, won and revenue by close date, lost) and every key event configured for the client, each with its count and cost per event. Drag a row's handle (or use the arrows) to order them; the chart icon on a row graphs it, up to four at once, counts as bars and money or rates as lines. Every cell can show its move against the column before; the Total column re-derives ratios from the summed inputs. Save a view under a name for the whole team, copy the link (the whole set-up lives in the URL), export CSV, or rebuild live.
+
+**Server** - a new `pivot` scope pulls Meta and Google by day and the CRM's opportunities (leads, booked, won, revenue, lost, and every pipeline stage reached, per lead-source channel; wins and revenue also on the day they closed) for the range, sums them into the chosen buckets, and is cached like the other client scopes.
+
+---
+
 ## v3.639.0 - 2026-09-14 (commit 0417c34)
 
 ### Agency Overview leaderboard fix; Daily Performance on a phone; less text

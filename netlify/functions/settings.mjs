@@ -10,7 +10,7 @@ import { mirror, mirrorStatus } from '../lib/mirror.mjs'
 
 const store = () => getStore({ name: 'caalano-settings', consistency: 'strong' })
 const KEY = 'all'
-const SECTIONS = ['keyevents', 'kpis', 'campmap', 'enabled', 'restricted', 'insights', 'clients', 'formmeta', 'metaconv', 'health', 'creativemeta', 'creativetax', 'clientctx', 'fatigue', 'competitors', 'socialkpis', 'optlog', 'qualstage', 'aliases', 'logos', 'curator', 'profile', 'dailyperf', 'adnames', 'pdfdl', 'clinic', 'geo', 'forecasts', 'ui', 'dashboards', 'repkpis', 'goals', 'visibility']
+const SECTIONS = ['keyevents', 'kpis', 'campmap', 'enabled', 'restricted', 'insights', 'clients', 'formmeta', 'metaconv', 'health', 'creativemeta', 'creativetax', 'clientctx', 'fatigue', 'competitors', 'socialkpis', 'optlog', 'qualstage', 'aliases', 'logos', 'curator', 'profile', 'dailyperf', 'adnames', 'pdfdl', 'clinic', 'geo', 'forecasts', 'ui', 'dashboards', 'repkpis', 'goals', 'visibility', 'pivot']
 const json = (obj, status = 200) => new Response(JSON.stringify(obj), {
   status, headers: { 'content-type': 'application/json', 'cache-control': 'no-store' },
 })

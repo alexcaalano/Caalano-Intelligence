@@ -2873,7 +2873,7 @@ function resultTtlFor(scope, channel, to) {
 const cacheStore = () => getStore({ name: 'caalano-cache', consistency: 'strong' })
 // Scopes safe to cache: client-scoped, GET, identical for every authorised
 // caller. (Agency-wide aggregates are filtered per-caller, so they're excluded.)
-const CACHEABLE_SCOPES = new Set(['saleshub', 'repcard', 'spenddaily', 'bizloc', 'users', 'callcohort', 'ccdrill', 'speed', 'appts', 'cohorts', 'forms', 'weekly', 'ovrow', 'health', 'updateextra', 'anomalies', 'social', 'socialtrend', 'stagetiming', 'enqtimes', 'usercalls', 'clinic', 'calperf'])
+const CACHEABLE_SCOPES = new Set(['pivot', 'saleshub', 'repcard', 'spenddaily', 'bizloc', 'users', 'callcohort', 'ccdrill', 'speed', 'appts', 'cohorts', 'forms', 'weekly', 'ovrow', 'health', 'updateextra', 'anomalies', 'social', 'socialtrend', 'stagetiming', 'enqtimes', 'usercalls', 'clinic', 'calperf'])
 const CACHEABLE_CHANNELS = new Set(['meta', 'google', 'attribution', 'blend'])
 // Agency-wide scopes that carry NO client param. They ARE the slowest first-load
 // calls (whole-roster Windsor + GHL fan-out), so caching them is the single
@@ -4198,6 +4198,127 @@ export default async (req) => {
   }
 
   // Rolling-window performance trends across all clients (own date logic).
+  // ---- Pivot report: one client, any period, grouped by day / week / month /
+  // quarter / year. Meta, Google and the CRM (leads, booked, won, revenue, and
+  // every pipeline stage reached, per lead-source channel) per bucket, so the
+  // app can lay any metric the user picks out period by period, P&L style.
+  // Ad figures come by day (the same daily basis Daily Performance uses) and
+  // are summed into the bucket; CRM figures are counted on the lead's created
+  // date, with wins and revenue also counted on the day the deal closed.
+  if (url.searchParams.get('scope') === 'pivot') {
+    const cc = CLIENTS[client]
+    if (!cc || !canView(client)) return json({ error: `unknown client ${client}` }, 404)
+    if (!from || !to) return json({ error: 'from/to required' }, 400)
+    const by = ['day', 'week', 'month', 'quarter', 'year'].includes(url.searchParams.get('by')) ? url.searchParams.get('by') : 'month'
+    const d0 = new Date(from + 'T00:00:00Z'), d1 = new Date(to + 'T00:00:00Z')
+    if (!isFinite(d0) || !isFinite(d1) || d1 < d0) return json({ error: 'bad range' }, 400)
+    const spanDays = Math.round((d1 - d0) / 86400000) + 1
+    if (spanDays > 1100) return json({ error: 'range too long (3 years max)' }, 400)
+    if (by === 'day' && spanDays > 400) return json({ error: 'by day: 400 days max' }, 400)
+    const isod = (d) => d.toISOString().slice(0, 10)
+    // Which bucket a date belongs to, and the buckets in order with their bounds.
+    const keyOf = (ds) => {
+      const d = new Date(ds + 'T00:00:00Z')
+      if (by === 'day') return ds
+      if (by === 'week') { const wd = (d.getUTCDay() + 6) % 7; d.setUTCDate(d.getUTCDate() - wd); return isod(d) }
+      if (by === 'month') return ds.slice(0, 7)
+      if (by === 'quarter') return `${d.getUTCFullYear()}-Q${Math.floor(d.getUTCMonth() / 3) + 1}`
+      return ds.slice(0, 4)
+    }
+    const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+    const labelOf = (k) => {
+      if (by === 'day') { const d = new Date(k + 'T00:00:00Z'); return `${d.getUTCDate()} ${MON[d.getUTCMonth()]}` }
+      if (by === 'week') { const d = new Date(k + 'T00:00:00Z'); return `w/c ${d.getUTCDate()} ${MON[d.getUTCMonth()]}` }
+      if (by === 'month') { const [y, m] = k.split('-'); return `${MON[Number(m) - 1]} ${y.slice(2)}` }
+      return k
+    }
+    const buckets = new Map()
+    const mkB = () => ({ meta: { spend: 0, impressions: 0, clicks: 0, linkClicks: 0, results: 0 }, google: { cost: 0, impressions: 0, clicks: 0, conversions: 0 }, crm: null })
+    for (let d = new Date(d0); d <= d1; d.setUTCDate(d.getUTCDate() + 1)) {
+      const ds = isod(d), k = keyOf(ds)
+      let b = buckets.get(k)
+      if (!b) { b = { key: k, label: labelOf(k), from: ds, to: ds, ...mkB() }; buckets.set(k, b) }
+      b.to = ds
+    }
+    const bucketOf = (ds) => buckets.get(keyOf(ds))
+    let metaOk = true, googleOk = true, crmOk = true, crmErr = null
+    let resultType = 'Leads'
+    const jobs = []
+    if (cc.meta) jobs.push((async () => {
+      const fallback = await readMetaPrimary(client).catch(() => null)
+      const fields = fallback && fallback.fields ? fallback.fields : null
+      const std = fields ? fields.filter((f) => !isCustomConvField(f)) : []
+      const extra = std.filter((f) => !FB_LEAD_FIELDS.includes(f))
+      if (fallback && fallback.label) resultType = fallback.label
+      try {
+        const rows = await windsorFetch('facebook', ['account_id', 'date', 'spend', 'impressions', 'clicks', 'inline_link_clicks', ...FB_LEAD_FIELDS, ...extra], from, to, null, key, { accounts: cc.meta })
+        for (const r of rows) {
+          if (r.account_id && !acctEq(r.account_id, cc.meta)) continue
+          const b = bucketOf(String(r.date || '').slice(0, 10)); if (!b) continue
+          b.meta.spend += num(r.spend); b.meta.impressions += num(r.impressions); b.meta.clicks += num(r.clicks); b.meta.linkClicks += num(r.inline_link_clicks)
+          b.meta.results += std.length ? std.reduce((s, f) => s + num(r[f]), 0) : fbLeads(r)
+        }
+        // A custom-conversion primary is served by Windsor's Custom Conversions
+        // table, by day, so it is added the same way Daily Performance adds it.
+        const custom = fields ? fields.filter(isCustomConvField) : []
+        if (custom.length) {
+          const tset = new Set(custom.map(ccActionName).filter(Boolean).map((t) => t.toLowerCase()))
+          const cr = await windsorFetch('facebook', ['account_id', 'date', 'custom_conversion_action_name', 'custom_conversion_action_count'], from, to, null, key, { accounts: cc.meta }).catch(() => [])
+          for (const r of cr) {
+            if (r.account_id && !acctEq(r.account_id, cc.meta)) continue
+            if (!tset.has(String(r.custom_conversion_action_name || '').trim().toLowerCase())) continue
+            const b = bucketOf(String(r.date || '').slice(0, 10)); if (b) b.meta.results += num(r.custom_conversion_action_count)
+          }
+        }
+      } catch { metaOk = false }
+    })())
+    if (cc.google) jobs.push((async () => {
+      try {
+        const rows = await windsorFetch('google_ads', ['account_id', 'date', 'spend', 'impressions', 'clicks', 'conversions'], from, to, null, key, { accounts: cc.google })
+        for (const r of rows) {
+          if (r.account_id && !acctEq(r.account_id, cc.google)) continue
+          const b = bucketOf(String(r.date || '').slice(0, 10)); if (!b) continue
+          b.google.cost += num(r.spend); b.google.impressions += num(r.impressions); b.google.clicks += num(r.clicks); b.google.conversions += num(r.conversions)
+        }
+      } catch { googleOk = false }
+    })())
+    let stagePos = {}
+    if (cc.ghl) jobs.push((async () => {
+      try {
+        const ghlOK = await isConnected().catch(() => false)
+        if (!ghlOK && client !== DEMO_CLIENT_ID) { crmOk = false; crmErr = 'CRM not connected'; return }
+        const CH = ['all', 'meta', 'google', 'other']
+        const bun = () => ({ all: 0, meta: 0, google: 0, other: 0 })
+        const mkC = () => ({ leads: bun(), booked: bun(), won: bun(), lost: bun(), revenue: bun(), wonClosed: bun(), revenueClosed: bun(), reach: { all: {}, meta: {}, google: {}, other: {} } })
+        for (const b of buckets.values()) b.crm = mkC()
+        // Closed-basis wins need leads created well before the range.
+        const back = new Date(d0); back.setUTCDate(back.getUTCDate() - 400)
+        const [rows, pipes] = await Promise.all([crmTrends(cc.ghl, isod(back), to), ghlPipelineRows(cc.ghl).catch(() => [])])
+        const idx = stageIndex(pipes)
+        for (const [pid, pinfo] of idx) for (const sid in pinfo.byId) { const st = pinfo.byId[sid]; if (stagePos[st.name] == null || st.pos < stagePos[st.name]) stagePos[st.name] = st.pos; stagePos[pid + '::' + st.name] = st.pos }
+        for (const r of rows) {
+          const ch = r.channel === 'meta' ? 'meta' : r.channel === 'google' ? 'google' : 'other'
+          const val = num(r.value)
+          const bc = r.statusDate ? bucketOf(r.statusDate) : null
+          if (bc && r.won) { bc.crm.wonClosed.all++; bc.crm.wonClosed[ch]++; bc.crm.revenueClosed.all += val; bc.crm.revenueClosed[ch] += val }
+          const b = bucketOf(r.date); if (!b) continue
+          const c = b.crm
+          c.leads.all++; c.leads[ch]++
+          if (r.booked) { c.booked.all++; c.booked[ch]++ }
+          if (r.won) { c.won.all++; c.won[ch]++; c.revenue.all += val; c.revenue[ch] += val }
+          if (r.lost) { c.lost.all++; c.lost[ch]++ }
+          for (const nm of r.reached) for (const k of [nm, r.pipelineId + '::' + nm]) { c.reach.all[k] = (c.reach.all[k] || 0) + 1; c.reach[ch][k] = (c.reach[ch][k] || 0) + 1 }
+        }
+        void CH
+      } catch (e) { crmOk = false; crmErr = String((e && e.message) || e).slice(0, 140) }
+    })())
+    await Promise.all(jobs)
+    const r2 = (v) => Math.round(v * 100) / 100
+    const out = [...buckets.values()].map((b) => ({ ...b, meta: { ...b.meta, spend: r2(b.meta.spend) }, google: { ...b.google, cost: r2(b.google.cost), conversions: r2(b.google.conversions) } }))
+    const complete = metaOk && googleOk && crmOk
+    return json({ scope: 'pivot', client, by, from, to, hasMeta: !!cc.meta, hasGoogle: !!cc.google, hasCrm: !!cc.ghl, resultType, metaOk, googleOk, crmOk, crmErr, stagePos, buckets: out }, 200, !filtered && complete)
+  }
+
   if (url.searchParams.get('scope') === 'trends') {
     // Don't cache a partial pull (Meta or Google timed out) - otherwise the blank
     // result is served for 10 min and the user has to hammer Refresh. Skipping the

@@ -934,7 +934,7 @@ tenants ships:
 | Agency Overview | agency plan only | |
 | Account area (section below) | yes | new |
 | Daily Performance, Weekly Traffic Light, Funnel Forecaster, Creative Cockpit, Meta Insights, Client Update, Organic Social Media | no | later releases, each behind its own feature flag |
-| Monthly Report (build and publish) and Monthly Reports (viewer side) | yes | as it is today; see the note on customisable reports below |
+| Reporting - Monthly Report (build and publish), the Pivot report (v3.640.0: any metric by day / week / month / quarter / year, saved views, CSV) - and Monthly Reports (viewer side) | yes | as it is today; see the note on customisable reports below |
 | Clinic tab, optimisation log, curator, Meta creative-fatigue webhook, competitors | no | Caalano-internal for now |
 
 Every module is a **feature flag in `plans.features`** (`module.trends`,

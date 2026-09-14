@@ -36,7 +36,7 @@ const lazyView = (load, name) => {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-export const APP_VERSION = '3.639.0'
+export const APP_VERSION = '3.640.0'
 // The business clock. Every server window is cut on the client's local day
 // (Caalano Systems location timezone), so any day the app derives on its own -
 // preset ranges, "today", CSV dates - must use the same clock rather than the
@@ -4420,7 +4420,7 @@ const UI_LAYOUT_KEY = 'caalano_ui_layout'      // 'v1' | 'v2' - this browser's o
 const PDFDL_KEY = 'caalano_pdfdl'                // { clientId: bool } - per-client "clients may download the report PDF" (admin-toggled)
 const readLS = (k) => { try { return JSON.parse(localStorage.getItem(k) || '{}') } catch { return {} } }
 export const writeLS = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)) } catch {} }
-export const SETTINGS = { visibility: {}, campmap: readLS(CMAP_KEY), kpis: readLS(KPI_KEY), keyevents: readLS(KEV_KEY), annotations: readLS(ANNOT_KEY), enabled: readLS(ENABLED_KEY), restricted: readLS(RESTRICTED_KEY), insights: readLS(AI_KEY), clients: readLS(CLIENTS_KEY), formmeta: readLS(FORMMETA_KEY), metaconv: readLS(METACONV_KEY), creativemeta: readLS(CREATIVEMETA_KEY), creativetax: readLS(CREATIVETAX_KEY), clientctx: readLS(CLIENTCTX_KEY), fatigue: readLS(FATIGUE_KEY), competitors: readLS(COMPETITORS_KEY), socialkpis: readLS(SOCIALKPIS_KEY), optlog: readLS(OPTLOG_KEY), qualstage: readLS(QUALSTAGE_KEY), aliases: readLS(ALIASES_KEY), logos: readLS(LOGOS_KEY), curator: readLS(CURATOR_KEY), profile: readLS(PROFILE_KEY), dailyperf: readLS(DAILYPERF_KEY), adnames: readLS(ADNAMES_KEY), pdfdl: readLS(PDFDL_KEY), clinic: readLS(CLINIC_CFG_KEY), geo: readLS(GEO_KEY), forecasts: readLS(FORECAST_KEY), ui: readLS(UI_KEY), dashboards: readLS(DASH_KEY), repkpis: readLS(REPKPI_KEY), goals: readLS(GOALS_KEY), loaded: false }
+export const SETTINGS = { visibility: {}, pivot: {}, campmap: readLS(CMAP_KEY), kpis: readLS(KPI_KEY), keyevents: readLS(KEV_KEY), annotations: readLS(ANNOT_KEY), enabled: readLS(ENABLED_KEY), restricted: readLS(RESTRICTED_KEY), insights: readLS(AI_KEY), clients: readLS(CLIENTS_KEY), formmeta: readLS(FORMMETA_KEY), metaconv: readLS(METACONV_KEY), creativemeta: readLS(CREATIVEMETA_KEY), creativetax: readLS(CREATIVETAX_KEY), clientctx: readLS(CLIENTCTX_KEY), fatigue: readLS(FATIGUE_KEY), competitors: readLS(COMPETITORS_KEY), socialkpis: readLS(SOCIALKPIS_KEY), optlog: readLS(OPTLOG_KEY), qualstage: readLS(QUALSTAGE_KEY), aliases: readLS(ALIASES_KEY), logos: readLS(LOGOS_KEY), curator: readLS(CURATOR_KEY), profile: readLS(PROFILE_KEY), dailyperf: readLS(DAILYPERF_KEY), adnames: readLS(ADNAMES_KEY), pdfdl: readLS(PDFDL_KEY), clinic: readLS(CLINIC_CFG_KEY), geo: readLS(GEO_KEY), forecasts: readLS(FORECAST_KEY), ui: readLS(UI_KEY), dashboards: readLS(DASH_KEY), repkpis: readLS(REPKPI_KEY), goals: readLS(GOALS_KEY), loaded: false }
 const settingsSubs = new Set()
 export const bumpSettings = () => { for (const fn of settingsSubs) fn() }
 function onSettings(fn) { settingsSubs.add(fn); return () => settingsSubs.delete(fn) }
@@ -4450,7 +4450,7 @@ async function hydrateSettings() {
       // First run: migrate whatever this browser holds up to the server.
       saveSettingsRemote({ campmap: SETTINGS.campmap, kpis: SETTINGS.kpis, keyevents: SETTINGS.keyevents, enabled: SETTINGS.enabled, restricted: SETTINGS.restricted, insights: SETTINGS.insights, clients: SETTINGS.clients, formmeta: SETTINGS.formmeta, metaconv: SETTINGS.metaconv, creativemeta: SETTINGS.creativemeta, creativetax: SETTINGS.creativetax, clientctx: SETTINGS.clientctx, fatigue: SETTINGS.fatigue })
     } else {
-      for (const s of ['campmap', 'kpis', 'keyevents', 'enabled', 'restricted', 'insights', 'clients', 'formmeta', 'metaconv', 'creativemeta', 'creativetax', 'clientctx', 'fatigue', 'competitors', 'socialkpis', 'optlog', 'qualstage', 'aliases', 'logos', 'curator', 'profile', 'dailyperf', 'adnames', 'pdfdl', 'geo', 'annotations', 'forecasts', 'ui', 'dashboards', 'repkpis', 'goals', 'visibility']) SETTINGS[s] = { ...SETTINGS[s], ...(d[s] || {}) }
+      for (const s of ['campmap', 'kpis', 'keyevents', 'enabled', 'restricted', 'insights', 'clients', 'formmeta', 'metaconv', 'creativemeta', 'creativetax', 'clientctx', 'fatigue', 'competitors', 'socialkpis', 'optlog', 'qualstage', 'aliases', 'logos', 'curator', 'profile', 'dailyperf', 'adnames', 'pdfdl', 'geo', 'annotations', 'forecasts', 'ui', 'dashboards', 'repkpis', 'goals', 'visibility', 'pivot']) SETTINGS[s] = { ...SETTINGS[s], ...(d[s] || {}) }
       writeLS(CMAP_KEY, SETTINGS.campmap); writeLS(KPI_KEY, SETTINGS.kpis); writeLS(KEV_KEY, SETTINGS.keyevents); writeLS(ENABLED_KEY, SETTINGS.enabled); writeLS(RESTRICTED_KEY, SETTINGS.restricted); writeLS(AI_KEY, SETTINGS.insights); writeLS(CLIENTS_KEY, SETTINGS.clients); writeLS(FORMMETA_KEY, SETTINGS.formmeta); writeLS(METACONV_KEY, SETTINGS.metaconv); writeLS(CREATIVEMETA_KEY, SETTINGS.creativemeta); writeLS(CREATIVETAX_KEY, SETTINGS.creativetax); writeLS(CLIENTCTX_KEY, SETTINGS.clientctx); writeLS(FATIGUE_KEY, SETTINGS.fatigue); writeLS(COMPETITORS_KEY, SETTINGS.competitors); writeLS(SOCIALKPIS_KEY, SETTINGS.socialkpis); writeLS(OPTLOG_KEY, SETTINGS.optlog); writeLS(QUALSTAGE_KEY, SETTINGS.qualstage); writeLS(ALIASES_KEY, SETTINGS.aliases); writeLS(LOGOS_KEY, SETTINGS.logos); writeLS(CURATOR_KEY, SETTINGS.curator); writeLS(PROFILE_KEY, SETTINGS.profile); writeLS(DAILYPERF_KEY, SETTINGS.dailyperf); writeLS(ADNAMES_KEY, SETTINGS.adnames); writeLS(PDFDL_KEY, SETTINGS.pdfdl); writeLS(FORECAST_KEY, SETTINGS.forecasts); writeLS(UI_KEY, SETTINGS.ui); writeLS(DASH_KEY, SETTINGS.dashboards); writeLS(GEO_KEY, SETTINGS.geo); writeLS(REPKPI_KEY, SETTINGS.repkpis); writeLS(ANNOT_KEY, SETTINGS.annotations)
       writeLS(GOALS_KEY, SETTINGS.goals)
     }
@@ -18076,6 +18076,23 @@ const ClientUpdatePage = lazyView(() => import('./views/creative.jsx'), 'ClientU
 // ---- Monthly Report: src/views/monthly-report.jsx, loaded on first open ----
 const ClientReports = lazyView(() => import('./views/monthly-report.jsx'), 'ClientReports')
 const MonthlyReport = lazyView(() => import('./views/monthly-report.jsx'), 'MonthlyReport')
+// ---- Pivot report: src/views/pivot.jsx, loaded on first open ----
+const PivotReport = lazyView(() => import('./views/pivot.jsx'), 'PivotReport')
+// Reporting: the Monthly Report decks and the Pivot report, as tabs. The tab
+// rides in the URL (?s=pivot) so a shared link opens on the right one.
+function ReportingPage({ clients, currency, authUser }) {
+  const [tab, setTabRaw] = useState(() => (readNavUrl().s === 'pivot' ? 'pivot' : 'monthly'))
+  const setTab = (t) => { setTabRaw(t); writeNavUrl({ s: t === 'pivot' ? 'pivot' : null, pp: null, pf: null, pt: null, pb: null, pm: null, pch: null, pd: null }, true) }
+  return (
+    <>
+      <div className="subtabs set-subtabs">
+        <button className={tab === 'monthly' ? 'active' : ''} onClick={() => setTab('monthly')}>Monthly Report</button>
+        <button className={tab === 'pivot' ? 'active' : ''} onClick={() => setTab('pivot')}>Pivot report</button>
+      </div>
+      {tab === 'pivot' ? <PivotReport clients={clients} currency={currency} authUser={authUser} /> : <MonthlyReport clients={clients} currency={currency} authUser={authUser} />}
+    </>
+  )
+}
 const MRCreativeSection = lazyView(() => import('./views/monthly-report.jsx'), 'MRCreativeSection')
 // Display an ISO (YYYY-MM-DD) date as DD/MM/YYYY.
 export function fmtDate(s) {
@@ -19147,7 +19164,7 @@ function Dashboard({ authUser, authEnabled, onLogout, realUser, onViewAs }) {
             {showView('cockpit') && <button className={curView === 'cockpit' ? 'active' : ''} onClick={() => go('cockpit')}><span className="ic"><NavIcon name="cockpit" /></span>Creative Cockpit</button>}
             {showView('insights') && <button className={curView === 'insights' ? 'active' : ''} onClick={() => go('insights')}><span className="ic"><NavIcon name="insights" /></span>Meta Insights</button>}
             {showView('update') && <button className={curView === 'update' ? 'active' : ''} onClick={() => go('update')}><span className="ic"><NavIcon name="update" /></span>Client Update</button>}
-            {showView('monthly') && <button className={curView === 'monthly' ? 'active' : ''} onClick={() => go('monthly')}><span className="ic"><NavIcon name="monthly" /></span>Monthly Report</button>}
+            {showView('monthly') && <button className={curView === 'monthly' ? 'active' : ''} onClick={() => go('monthly')}><span className="ic"><NavIcon name="monthly" /></span>Reporting</button>}
             {showView('social') && <button className={curView === 'social' ? 'active' : ''} onClick={() => go('social')}><span className="ic"><NavIcon name="social" /></span>Organic Social Media</button>}
           </>}
           {isViewer && <>
@@ -19194,8 +19211,8 @@ function Dashboard({ authUser, authEnabled, onLogout, realUser, onViewAs }) {
         </div> : null}
         <div className="head">
           <div>
-            <h2>{curView === 'overview' ? 'Agency Overview' : curView === 'trends' ? 'Daily Performance' : curView === 'weekly' ? 'Weekly Traffic Light' : curView === 'forecast' ? 'Funnel Forecaster' : curView === 'cockpit' ? 'Creative Cockpit' : curView === 'curator' ? 'Creative Curator' : curView === 'insights' ? 'Meta Insights' : curView === 'update' ? 'Client Update' : curView === 'monthly' ? 'Monthly Report' : curView === 'social' ? 'Organic Social Media' : curView === 'reports' ? 'Monthly Reports' : curView === 'settings' ? 'Settings' : isViewer ? 'Your report' : 'Clients'}</h2>
-            <p>{curView === 'overview' ? 'Blended paid performance across all clients, live for the selected range.' : curView === 'trends' ? 'Rolling 3 / 7 / 14 / 21 / 28-day performance per client, each vs the prior equal window.' : curView === 'weekly' ? 'One client at a time, reported Monday-Sunday by ISO week - spend pacing, leads, appointments and wins vs KPI.' : curView === 'forecast' ? 'What a month of spend should turn into, stage by stage - from each client\u2019s own last 90 days, or a scenario you build.' : curView === 'cockpit' ? 'Every creative for a client, with performance, categorisation and AI strategy.' : curView === 'curator' ? 'Strategise new creatives to make: pick Format, Style, CTA, Audience and Angle for instant or AI concept ideas, and save the best to a board.' : curView === 'insights' ? 'Everything Meta-derived in one place - delivery health, creative fatigue and more, across every active Meta client.' : curView === 'update' ? 'Generate a client-ready account update (WhatsApp + email) for the selected range.' : curView === 'monthly' ? 'Build a frozen, slide-based monthly report for one client - campaign → ad set → creative → Google → Caalano360 → team → ROI. Export to PDF.' : curView === 'social' ? 'Organic Instagram + Facebook Page performance per client - followers, reach, engagement, best posts and audience, for the selected range.' : curView === 'reports' ? 'Your published monthly reports - frozen snapshots you can read on screen or download as a PDF.' : curView === 'settings' ? (isViewer ? 'Your account.' : 'Clients, key events, KPI targets and campaign links - saved to the server and shared across your team.') : isViewer ? 'Your live reporting for the selected range.' : 'Open any client for their Overall, CRM, Meta and Google workspace.'}</p>
+            <h2>{curView === 'overview' ? 'Agency Overview' : curView === 'trends' ? 'Daily Performance' : curView === 'weekly' ? 'Weekly Traffic Light' : curView === 'forecast' ? 'Funnel Forecaster' : curView === 'cockpit' ? 'Creative Cockpit' : curView === 'curator' ? 'Creative Curator' : curView === 'insights' ? 'Meta Insights' : curView === 'update' ? 'Client Update' : curView === 'monthly' ? 'Reporting' : curView === 'social' ? 'Organic Social Media' : curView === 'reports' ? 'Monthly Reports' : curView === 'settings' ? 'Settings' : isViewer ? 'Your report' : 'Clients'}</h2>
+            <p>{curView === 'overview' ? 'Blended paid performance across all clients, live for the selected range.' : curView === 'trends' ? 'Rolling 3 / 7 / 14 / 21 / 28-day performance per client, each vs the prior equal window.' : curView === 'weekly' ? 'One client at a time, reported Monday-Sunday by ISO week - spend pacing, leads, appointments and wins vs KPI.' : curView === 'forecast' ? 'What a month of spend should turn into, stage by stage - from each client\u2019s own last 90 days, or a scenario you build.' : curView === 'cockpit' ? 'Every creative for a client, with performance, categorisation and AI strategy.' : curView === 'curator' ? 'Strategise new creatives to make: pick Format, Style, CTA, Audience and Angle for instant or AI concept ideas, and save the best to a board.' : curView === 'insights' ? 'Everything Meta-derived in one place - delivery health, creative fatigue and more, across every active Meta client.' : curView === 'update' ? 'Generate a client-ready account update (WhatsApp + email) for the selected range.' : curView === 'monthly' ? 'Monthly Report decks, and the Pivot report: any metric, any period, by day, week, month, quarter or year.' : curView === 'social' ? 'Organic Instagram + Facebook Page performance per client - followers, reach, engagement, best posts and audience, for the selected range.' : curView === 'reports' ? 'Your published monthly reports - frozen snapshots you can read on screen or download as a PDF.' : curView === 'settings' ? (isViewer ? 'Your account.' : 'Clients, key events, KPI targets and campaign links - saved to the server and shared across your team.') : isViewer ? 'Your live reporting for the selected range.' : 'Open any client for their Overall, CRM, Meta and Google workspace.'}</p>
           </div>
           <div className="spacer" />
           {curView !== 'settings' && curView !== 'monthly' && curView !== 'reports' && curView !== 'trends' && <DateRange range={range} onChange={setRange} busy={agency.status === 'loading'} />}
@@ -19210,7 +19227,7 @@ function Dashboard({ authUser, authEnabled, onLogout, realUser, onViewAs }) {
           {curView === 'cockpit' && !isViewer && <CreativeCockpitPage clients={visibleClients} currency={data.currency} range={range} nonce={refreshKey} authUser={authUser} />}
           {curView === 'insights' && !isViewer && <MetaInsightsPage clients={visibleClients} currency={data.currency} range={range} nonce={refreshKey} />}
           {curView === 'update' && !isViewer && <ClientUpdatePage clients={visibleClients} currency={data.currency} range={range} nonce={refreshKey} authUser={authUser} />}
-          {curView === 'monthly' && !isViewer && <MonthlyReport clients={visibleClients} currency={data.currency} authUser={authUser} />}
+          {curView === 'monthly' && !isViewer && <ReportingPage clients={visibleClients} currency={data.currency} authUser={authUser} />}
           {curView === 'reports' && isViewer && canReports && <ClientReports clients={myClients} currency={data.currency} authUser={authUser} />}
           {curView === 'social' && !isViewer && <SocialDashboard clients={visibleClients} range={range} nonce={refreshKey} />}
           {curView === 'settings' && <SettingsPage config={cfgMerged} enabled={enabled} setEnabled={setEnabled} restricted={restricted} setRestricted={setRestricted} currency={data.currency} authUser={authUser} authEnabled={authEnabled} theme={theme} setTheme={setTheme} onPick={(c) => openClient(baseClients.find((x) => x.id === c.id) || c)} />}

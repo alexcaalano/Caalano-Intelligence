@@ -22,7 +22,7 @@ export const VIS_VIEWS = [
   { id: 'cockpit', label: 'Creative Cockpit', roles: ['superadmin', 'admin', 'user'] },
   { id: 'insights', label: 'Meta Insights', roles: ['superadmin', 'admin', 'user'] },
   { id: 'update', label: 'Client Update', roles: ['superadmin', 'admin', 'user'] },
-  { id: 'monthly', label: 'Monthly Report', roles: ['superadmin', 'admin', 'user'] },
+  { id: 'monthly', label: 'Reporting', roles: ['superadmin', 'admin', 'user'] },
   { id: 'social', label: 'Organic Social Media', roles: ['superadmin', 'admin', 'user'] },
   { id: 'reports', label: 'Monthly Reports', roles: ['account_admin', 'account_user'] },
   { id: 'dashboards', label: 'Client workspaces (My dashboards)', roles: ['account_admin', 'account_user'] },

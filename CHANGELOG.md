@@ -20,7 +20,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ## v3.620.0 - 2026-09-14
 
-**Remembered payloads survive a release that leaves the numbers alone.** (commit PENDING)
+**Remembered payloads survive a release that leaves the numbers alone.** (commit 5bef8c4)
 
 - The result-cache schema now lives in one shared constant
   (`netlify/lib/cache-schema.mjs`, re-exported as `src/lib/cache-schema.js`)

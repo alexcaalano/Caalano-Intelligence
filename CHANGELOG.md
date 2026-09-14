@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.629.0 - 2026-09-14 (commit PENDING)
+## v3.629.0 - 2026-09-14 (commit 1d6150b)
 
 ### Settings → Visibility: who sees which pages and client tabs (Super Admin)
 

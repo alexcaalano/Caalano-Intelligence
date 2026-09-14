@@ -36,7 +36,7 @@ const lazyView = (load, name) => {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-export const APP_VERSION = '3.636.0'
+export const APP_VERSION = '3.637.0'
 // The business clock. Every server window is cut on the client's local day
 // (Caalano Systems location timezone), so any day the app derives on its own -
 // preset ranges, "today", CSV dates - must use the same clock rather than the
@@ -1061,13 +1061,16 @@ function HoverPop({ children, className = '', render, style }) {
 //   <Help>…</Help>            just the ? - beside a label or heading
 //   <HelpNote>…</HelpNote>    ? plus a short "How this works" label - in place of
 //                             a paragraph, where there is no label to sit beside
-function Help({ children, label, title, className = '' }) {
+function Help({ children, label, title, className = '', icon = '?' }) {
   return (
     <HoverPop className={`help-a ${className}`} render={() => <span className="hp-body help-pop">{title ? <span className="hp-t">{title}</span> : null}<span className="help-txt">{children}</span></span>}>
-      <span className="help-q" aria-label="Help">?</span>{label ? <span className="help-l">{label}</span> : null}
+      <span className="help-q" aria-label="Help">{icon}</span>{label ? <span className="help-l">{label}</span> : null}
     </HoverPop>
   )
 }
+// Settings: a small "i" beside a heading or a row label. The explanation lives
+// in the hover, so the page shows the controls and nothing else.
+export function InfoTip({ children, title }) { return <Help className="itip" icon="i" title={title}>{children}</Help> }
 export function HelpNote({ children, label = 'How this works', title }) { return <div className="help-note"><Help label={label} title={title}>{children}</Help></div> }
 // A signed % chip for the channel-breakdown popups (cur vs prev).
 function ChanDelta({ cur, prev, goodWhenDown = false }) {
@@ -16427,8 +16430,8 @@ export function authApi(action, opts = {}) {
    text is not in the DOM to be found. */
 const ViewerCtx = React.createContext(false)
 const SuperCtx = React.createContext(false)
-function loadAnnot() { const a = SETTINGS.annotations; return !!(a && a.on) }
-function saveAnnot(on) {
+export function loadAnnot() { const a = SETTINGS.annotations; return !!(a && a.on) }
+export function saveAnnot(on) {
   SETTINGS.annotations = { on: !!on }
   writeLS(ANNOT_KEY, SETTINGS.annotations); saveSettingsRemote({ annotations: { on: !!on } }); bumpSettings()
 }
@@ -16707,7 +16710,7 @@ function AcceptInvite({ token, onSignedIn }) {
     </AuthShell>
   )
 }
-// Team & access manager, shown inside Settings for admins.
+// Access manager (Settings -> Access -> Access), shown for admins.
 // What a newly invited client starts with. Everything else is a deliberate tick.
 const VIEWER_DEFAULT_TABS = ['users']
 export const TAB_OPTIONS = [
@@ -16775,7 +16778,7 @@ function AccessPreview({ draft, clients, email, onClose }) {
               <p className="prev-note"><b>No accounts picked yet.</b> They would sign in and see nothing.</p>
             ) : (
               <>
-                <p className="prev-note">Tabs follow <b>Settings → Visibility</b>: the {ROLE_LABEL[draft.role] || draft.role} default, or this person's own set.</p>
+                <p className="prev-note">Tabs follow the <b>Visibility</b> tab (next to this one): the {ROLE_LABEL[draft.role] || draft.role} default, or this person's own set.</p>
                 {rows.map(({ c, offered, shown, fellBack }) => (
                   <div className="prev-client" key={c.id}>
                     <div className="prev-client-h"><b>{c.name}</b><span className="cap">{shown.length} of {offered.length} tabs</span></div>
@@ -16837,7 +16840,7 @@ function AllocationEditor({ value, clients, onChange, actorRole }) {
         <ClientPicker clients={clients} selected={v.clients || []} onToggle={toggleClient} />
         <CrmUserLinks v={v} clients={clients} onChange={onChange} />
         {v.role === 'account_user' ? <p className="alloc-note"><b>Account User</b> - an employee of the Account Admin. Holds <b>Deals &amp; Actions</b> only: their own deals, action list and results, and can update their own deals and appointments. Their login e-mail must match their user in the CRM.</p> : <>
-        <p className="alloc-note">Which tabs they see is set under <b>Settings → Visibility → By client</b> (the Account Admin default, or their own set).</p>
+        <p className="alloc-note">Which tabs they see is set under the <b>Visibility</b> tab → <b>By client</b> (the Account Admin default, or their own set).</p>
         <div className="alloc-lab" style={{ marginTop: 10 }}>Extra access</div>
         <label className="alloc-check"><input type="checkbox" checked={v.crm === true} onChange={(e) => onChange({ ...v, crm: e.target.checked })} /> <b>CRM updates</b> - can fix things from the <b>Deals &amp; Actions</b> tab (result appointments, set deal values and lost reasons, move stages, add notes)</label>
         <label className="alloc-check"><input type="checkbox" checked={v.reports === true} onChange={(e) => onChange({ ...v, reports: e.target.checked })} /> <b>Monthly Reports</b> - can view the <b>published</b> monthly reports for the clients above</label>
@@ -17022,7 +17025,7 @@ export function UsersAdmin({ authUser, authEnabled, clients }) {
 
   if (state.status === 'off') return (
     <div className="card set-users-off">
-      <h3 style={{ marginTop: 0 }}>Team &amp; access</h3>
+      <h3 style={{ marginTop: 0 }}>Access</h3>
       <p>The multi-user login system is <b>not enabled yet</b>. The site is currently protected by the single shared password.</p>
       <p>To switch on individual accounts, add an <code>AUTH_SECRET</code> environment variable in Netlify (any long random string - this signs everyone’s login sessions). Once it’s set and redeployed, reload this page and you’ll be asked to create the first admin account, then you can invite your team here.</p>
       <p className="cap">Tip: keep the old <code>SITE_PASSWORD</code> set during the switch - it keeps working as a fallback so you can’t get locked out. Remove it once everyone has their own login.</p>
@@ -17095,16 +17098,15 @@ export function UsersAdmin({ authUser, authEnabled, clients }) {
     <div className="u-wrap">
       {pending.length > 0 && (
         <div className="card u-approvals">
-          <h3 style={{ marginTop: 0 }}>Pending approvals <span className="u-badge pend">{pending.length}</span></h3>
-          <p className="cap" style={{ marginTop: -4 }}>People who requested access. Set their role and what they can see, then approve - nothing is granted until you do.</p>
+          <div className="set-head"><div className="set-head-t"><h3>Pending approvals <span className="u-badge pend">{pending.length}</span><InfoTip>People who requested access. Set their role and what they can see, then approve - nothing is granted until you do.</InfoTip></h3></div></div>
           {pending.map((u) => <PendingRow key={u.email} u={u} clients={clients} onApprove={approve} onReject={rejectPending} actorRole={actorRole} />)}
         </div>
       )}
 
       <div className="card">
-        <div className="u-head-row">
-          <div><h3 style={{ margin: 0 }}>Team &amp; access</h3><p className="cap" style={{ margin: '4px 0 0' }}><b>Super Admin</b> = owner · <b>Agency Admin</b> = full control · <b>Agency User</b> = agency staff · <b>Account Admin</b> = the client, ticked accounts and tabs · <b>Account User</b> = the client's rep, Deals &amp; Actions only.</p></div>
-          <button className="btn-primary" onClick={() => setModal({ invite: true })}>+ Invite person</button>
+        <div className="set-head">
+          <div className="set-head-t"><h3>Access<InfoTip title="Roles"><ul className="itip-list"><li><b>Super Admin</b> - the owner. Everything, including who sees what.</li><li><b>Agency Admin</b> - full control of clients, settings and the team.</li><li><b>Agency User</b> - agency staff. Dashboards for their allowed accounts.</li><li><b>Account Admin</b> - the client. Their ticked accounts, tabs per Visibility.</li><li><b>Account User</b> - the client's rep. Deals &amp; Actions only.</li></ul></InfoTip></h3></div>
+          <div className="set-head-a"><button className="btn-primary" onClick={() => setModal({ invite: true })}>+ Invite person</button></div>
         </div>
 
         <div className="u-filters">
@@ -17169,12 +17171,10 @@ export function SignOutEverywhereCard() {
     setMsg(r && r.ok ? { ok: true, t: 'Every other session has been signed out.' } : { ok: false, t: (r && r.error) || 'Couldn\u2019t sign out other devices.' })
   }
   return (
-    <div className="card">
-      <h3 style={{ marginTop: 0 }}>Devices</h3>
-      <p className="cap" style={{ marginTop: -4 }}>Sessions last 14 days. If you\u2019ve signed in somewhere you no longer control - a shared computer, an old phone, a laptop that went missing - end those sessions now rather than waiting for them to expire.</p>
+    <>
       <button className="btn-ghost" onClick={go} disabled={busy}>{busy ? 'Signing out…' : 'Sign out of all other devices'}</button>
-      {msg && <p className={`cap ${msg.ok ? 'u-ok' : 'u-err'}`} style={{ marginTop: 8 }}>{msg.t}</p>}
-    </div>
+      {msg && <span className={`cap ${msg.ok ? 'u-ok' : 'u-err'}`}>{msg.t}</span>}
+    </>
   )
 }
 /* ============ Terms of use ============
@@ -17565,21 +17565,17 @@ export function TermsAdmin({ authUser }) {
 
   return (
     <div className="card">
-      <div className="u-head-row">
-        <div>
-          <h3 style={{ margin: 0 }}>
+      <div className="set-head">
+        <div className="set-head-t">
+          <h3>
             <button type="button" className="ed-toggle" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
-              <span className={`ed-chev${open ? ' on' : ''}`}>▸</span>Terms of use · the document
+              <span className={`ed-chev${open ? ' on' : ''}`}>▸</span>The document
             </button>
+            <InfoTip>What people are shown and asked to sign. Edit it here - no deploy needed. Wording digest <b className="mono">{st.hash}</b>{st.custom ? <> · edited in-app{st.updatedBy ? ` by ${st.updatedBy}` : ''}{st.updatedAt ? ` on ${new Date(st.updatedAt).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })}` : ''}</> : ' · the built-in wording'}. Leave the re-sign box off for wording fixes: existing signatures keep standing and nobody sees the gate. Tick it only when a change is material enough that an old signature shouldn't cover it.</InfoTip>
           </h3>
-          <p className="cap terms-ed-intro" style={{ margin: '4px 0 0', maxWidth: 720 }}>
-            This is what people are shown and asked to sign. Edit it here - no deploy needed. Live version <b>{st.terms.version}</b>
-            {' '}(effective {st.terms.effective}) · wording <b className="mono">{st.hash}</b> ·{' '}
-            {st.custom ? <>edited in-app{st.updatedBy ? ` by ${st.updatedBy}` : ''}{st.updatedAt ? ` on ${new Date(st.updatedAt).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })}` : ''}</> : <>the built-in wording</>}.
-            {' '}Signatures from <b>{st.minVersion}</b> onwards still stand.
-          </p>
+          <p className="set-sub">Live version <b>{st.terms.version}</b> · effective {st.terms.effective} · signatures from <b>{st.minVersion}</b> onwards still stand</p>
         </div>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <div className="set-head-a">
           <button className="btn-ghost sm" onClick={() => setShowPreview(true)}>👁 Preview the signing screen</button>
           {!open && <button className="btn-ghost sm" onClick={() => setOpen(true)}>Edit the wording</button>}
           {open && <>
@@ -17611,10 +17607,6 @@ export function TermsAdmin({ authUser }) {
           </label>
         </div>
       </div>
-      <Caveat style={{ marginTop: 0 }}>
-        Leave the re-sign box off for wording fixes - existing signatures keep standing and nobody sees the gate. Tick it
-        only when a change is material enough that an old signature shouldn’t be taken to cover it.
-      </Caveat>
 
       <div className="terms-ed-block">
         <h4>Notice above the terms</h4>
@@ -17706,17 +17698,12 @@ export function TermsRegister() {
   }
   return (
     <div className="card">
-      <div className="u-head-row">
-        <div>
-          <h3 style={{ margin: 0 }}>Terms of use · signed register</h3>
-          <p className="cap terms-reg-intro" style={{ margin: '4px 0 0' }}>
-            Everyone who has accepted the Caalano360 terms, with the version they signed and their signature.
-            Click a row to open their signed record - their details, their signature, and the agreement exactly as it was
-            worded on the day. Current version <b>{st.current || '-'}</b>; signatures from <b>{st.minVersion || '-'}</b> onwards
-            still stand, so publishing a new version does not send everyone back through the gate.
-          </p>
+      <div className="set-head">
+        <div className="set-head-t">
+          <h3>Signed register<InfoTip>Everyone who has accepted the Caalano360 terms, with the version they signed and their signature. Click a row to open their signed record: their details, their signature, and the agreement exactly as it was worded on the day. Each acceptance stores the version and a digest of the exact wording on screen, so a signature can always be matched back to what was agreed. Earlier acceptances are kept, not overwritten.</InfoTip></h3>
+          <p className="set-sub">Current version <b>{st.current || '-'}</b> · signatures from <b>{st.minVersion || '-'}</b> onwards still stand</p>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
+        <div className="set-head-a">
           <button className="btn-ghost sm" onClick={openPreview}>👁 Preview signing screen</button>
           <button className="btn-ghost sm" onClick={load}>Refresh</button>
           <button className="btn-ghost sm" onClick={exportCsv} disabled={!st.rows.length}>⭳ CSV</button>
@@ -17750,11 +17737,6 @@ export function TermsRegister() {
                 ))}</tbody>
               </table></div>
             )}
-      <Caveat style={{ marginTop: 10 }}>
-        Each acceptance stores the terms version and a digest of the exact wording that was on screen, so a signature can
-        always be matched back to what was actually agreed - even after the terms have since changed. Earlier acceptances
-        are kept rather than overwritten.
-      </Caveat>
       {open ? <TermsRecordModal rec={open} onClose={() => setOpen(null)} /> : null}
     </div>
   )

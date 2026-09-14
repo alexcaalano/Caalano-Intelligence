@@ -307,6 +307,63 @@ tbody tr:hover { background: var(--panel-2); }
 .subtabs button:hover { color: var(--text); }
 .subtabs button.active { color: var(--text); border-bottom-color: var(--brand); }
 .subtabs .lock { font-size: 10px; opacity: .6; margin-left: 5px; }
+/* Settings -> Access: the Access / Visibility tabs sit above the card, not inside one. */
+.subtabs.set-subtabs { margin: -4px 0 16px; }
+/* ---- Settings: one shell for every panel ----
+   A panel is a card with a head (title, an "i" that explains it on hover, the
+   actions on the right) and rows: label on the left, control on the right.
+   The explanation is in the hover, so the page shows the controls. */
+.settings-page .card { padding: 20px 22px; }
+.settings-page .card + .card, .settings-page .u-wrap + .card { margin-top: 14px; }
+.set-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px 16px; flex-wrap: wrap; margin-bottom: 14px; }
+.set-head-t { min-width: 0; }
+.set-head h3 { margin: 0; font-size: 17px; font-weight: 800; letter-spacing: -.01em; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.set-head h3 .u-badge { margin-left: 2px; }
+.set-sub { margin: 4px 0 0; font-size: 12.5px; color: var(--muted); line-height: 1.45; }
+.set-sub b { color: var(--text); }
+.set-head-a { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-left: auto; }
+.set-rows { display: flex; flex-direction: column; }
+.set-row { display: grid; grid-template-columns: minmax(170px, 280px) minmax(0, 1fr); gap: 8px 24px; padding: 14px 0; border-top: 1px solid var(--border); align-items: center; }
+.set-rows > .set-row:first-child { border-top: 0; padding-top: 2px; }
+.set-rows > .set-row:last-child { padding-bottom: 2px; }
+.set-row.wide { grid-template-columns: minmax(0, 1fr); }
+.set-row-l { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.set-row-lab { font-size: 13px; font-weight: 700; display: inline-flex; align-items: center; gap: 6px; }
+.set-row-hint { font-size: 11.5px; color: var(--muted); line-height: 1.45; }
+.set-row-hint b { color: var(--text); }
+.set-row-c { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; min-width: 0; }
+.set-row-c > input[type="text"], .set-row-c > input[type="url"], .set-row-c > input[type="number"], .set-row-c > select { background: var(--panel-2); border: 1px solid var(--border-2); border-radius: 9px; padding: 9px 11px; font-size: 13px; color: var(--text); }
+.set-row-c > input[type="text"], .set-row-c > input[type="url"] { flex: 1 1 240px; max-width: 420px; min-width: 0; }
+.set-row-c .u-invite { margin-top: 0; }
+.set-row-c .btn-ghost { background: var(--panel-2); }
+/* Status pills: connected / attention / not connected / coming soon. */
+.set-pill { display: inline-flex; align-items: center; gap: 6px; font-size: 10.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; padding: 4px 10px; border-radius: 999px; background: var(--panel-2); color: var(--muted); border: 1px solid var(--border); white-space: nowrap; }
+.set-pill::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: currentColor; opacity: .8; }
+.set-pill.good { color: var(--pos); background: color-mix(in srgb, var(--pos) 13%, transparent); border-color: transparent; }
+.set-pill.warn { color: #b26a00; background: color-mix(in srgb, var(--warn) 16%, transparent); border-color: transparent; }
+:root:not([data-theme="light"]) .set-pill.warn { color: var(--warn); }
+.set-pill.bad { color: var(--neg); background: color-mix(in srgb, var(--neg) 12%, transparent); border-color: transparent; }
+.set-pill.soon { color: var(--brand); background: color-mix(in srgb, var(--brand) 13%, transparent); border-color: transparent; }
+.set-pill.soon::before { display: none; }
+.set-pill.plain::before { display: none; }
+/* The "i" - a quieter cousin of the "?" help mark. */
+.itip { vertical-align: middle; }
+.itip .help-q { width: 16px; height: 16px; font-size: 10.5px; font-weight: 800; font-family: Georgia, 'Times New Roman', serif; font-style: italic; color: var(--faint); background: transparent; border-color: var(--border-2); }
+.itip:hover .help-q { color: #fff; background: var(--brand); border-color: var(--brand); }
+.help-txt ol, .help-txt ul { margin: 4px 0 0; padding-left: 18px; }
+.help-txt li + li { margin-top: 3px; }
+.help-txt .itip-list { list-style: none; padding: 0; }
+.help-pop { max-width: min(400px, calc(100vw - 32px)); }
+.set-sections button { padding: 8px 16px; }
+a.btn-ghost, a.btn-primary { text-decoration: none; display: inline-flex; align-items: center; }
+.users-tbl .u-badge, .users-tbl .u-role-tag, .users-tbl .btn-ghost, .users-tbl .u-you { white-space: nowrap; }
+@media (max-width: 700px) {
+  .set-row { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  .set-head h3 { font-size: 16px; }
+}
+/* Daily Performance list and the fatigue grid inherit the shell's spacing. */
+.dp-set .dp-bar { margin: 0 0 4px; }
+.fat-set .fat-set-grid { margin-top: 4px; }
 
 /* Level tables */
 .lvl-title { font-size: 13px; font-weight: 700; margin: 22px 2px 10px; display: flex; align-items: baseline; gap: 8px; }

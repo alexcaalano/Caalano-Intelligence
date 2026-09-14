@@ -782,13 +782,13 @@ organisation level, and the sign-in gains an organisation switcher.
       report ready) are a separate, later plan once the sender exists; they
       are opt-in per person and per client, and are out of the SaaS launch
       scope. Raised 2026-09-14.
-- [ ] **Settings → "CRM connection" becomes "Integrations".** Once Meta and
-      Google connect from inside the app (section 7.3), the section that today
-      holds only the Caalano Systems connection carries every provider:
-      Caalano Systems, Meta, Google, GA4 and whatever follows, each with its
-      connect / reconnect state and health. Rename the section and its
-      Visibility row at that point; keep the `crm` id so saved visibility
-      settings and deep links (?s=crm) still resolve. Raised 2026-09-14.
+- [x] **Settings → "CRM connection" becomes "Integrations".** Done in
+      v3.637.0: Settings → Integrations holds the CRM, Meta and Google tabs
+      (Meta and Google are "coming soon" placeholders until the agency-level
+      connections in section 7.3 land; today each client's accounts are
+      linked on their card under Clients). The `crm` id is kept, so saved
+      visibility settings and deep links (?s=crm) still resolve, and every
+      tab has its own Visibility switch. Raised and done 2026-09-14.
 - [ ] **Server-enforced Visibility for agency roles.** Settings → Visibility
       (v3.629.0–v3.632.0) hides sidebar pages and client tabs per role and
       per person. For Account roles the tab ticks are already checked on

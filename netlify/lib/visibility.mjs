@@ -49,17 +49,25 @@ export const VIS_TABS = [
   { id: 'lostreasons', label: 'Lost Reasons' },
   { id: 'optlog', label: 'Change Log' },
 ]
-// Settings sections. Only the agency-level ones: Your account and Appearance
-// are for everyone, and the three Super Admin sections (Visibility, Terms of
-// use, Logs) stay outside the list - Visibility is the way back.
+// Settings tabs. Only the agency-level ones: My Profile (My Account,
+// Appearance) is for everyone, and the Super Admin pages (Visibility, Terms of
+// Use, Logs) stay outside the list - Visibility is the way back. Settings is
+// grouped into sections with tabs; `sec` names the section a tab sits in, and
+// a section shows only while at least one of its tabs is on, so hiding every
+// tab hides the section.
+const AGENCY_ADMINS = ['superadmin', 'admin']
 export const VIS_SETTINGS = [
-  { id: 'clients', label: 'Clients', roles: ['superadmin', 'admin'] },
-  { id: 'crm', label: 'CRM connection', roles: ['superadmin', 'admin'] },
-  { id: 'fatigue', label: 'Creative fatigue', roles: ['superadmin', 'admin'] },
-  { id: 'socialkpis', label: 'Organic KPIs', roles: ['superadmin', 'admin'] },
-  { id: 'dailyperf', label: 'Daily performance', roles: ['superadmin', 'admin'] },
-  { id: 'team', label: 'Team & access', roles: ['superadmin', 'admin'] },
+  { id: 'clients', label: 'Clients', roles: AGENCY_ADMINS },
+  { id: 'crm', label: 'CRM', sec: 'Integrations', roles: AGENCY_ADMINS },
+  { id: 'meta', label: 'Meta', sec: 'Integrations', roles: AGENCY_ADMINS },
+  { id: 'google', label: 'Google', sec: 'Integrations', roles: AGENCY_ADMINS },
+  { id: 'dailyperf', label: 'Daily Performance', sec: 'Performance & KPIs', roles: AGENCY_ADMINS },
+  { id: 'fatigue', label: 'Creative Fatigue', sec: 'Performance & KPIs', roles: AGENCY_ADMINS },
+  { id: 'socialkpis', label: 'Organic KPIs', sec: 'Performance & KPIs', roles: AGENCY_ADMINS },
+  { id: 'team', label: 'Access', sec: 'Access', roles: AGENCY_ADMINS },
 ]
+// "Integrations · CRM" - the tab with its section, for the Visibility chart.
+export const visSettingLabel = (t) => (t.sec && t.sec !== t.label ? `${t.sec} · ${t.label}` : t.label)
 export const VIS_ROLES = ['superadmin', 'admin', 'user', 'account_admin', 'account_user']
 export const VIS_ROLE_LABELS = { superadmin: 'Super Admin', admin: 'Agency Admin', user: 'Agency User', account_admin: 'Account Admin', account_user: 'Account User' }
 const normRole = (r) => (r === 'viewer' ? 'account_admin' : r)

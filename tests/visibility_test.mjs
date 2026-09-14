@@ -25,6 +25,11 @@ assert.deepEqual(V.hiddenFor({ email: 'SAM@example.com', role: 'admin' }, vis), 
 assert.deepEqual(V.hiddenFor({ email: 'a@x', role: 'superadmin' }, vis), { views: [], tabs: [], settings: [] }, 'no Super Admin entry: nothing hidden')
 assert.deepEqual(V.hiddenFor({ email: 'a@x', role: 'superadmin' }, { roles: { superadmin: { views: { forecast: false }, tabs: { clinic: false } } } }), { views: ['forecast'], tabs: ['clinic'], settings: [] }, 'a Super Admin can hide things from themselves')
 assert.ok(!V.VIS_VIEWS.some((x) => x.id === 'settings'), 'Settings is never in the list')
+// Settings is grouped into sections with tabs; every tab is its own switch.
+assert.deepEqual(V.VIS_SETTINGS.map((x) => x.id), ['clients', 'crm', 'meta', 'google', 'dailyperf', 'fatigue', 'socialkpis', 'team'], 'every Settings tab can be hidden')
+assert.equal(V.visSettingLabel(V.VIS_SETTINGS.find((x) => x.id === 'crm')), 'Integrations · CRM')
+assert.equal(V.visSettingLabel(V.VIS_SETTINGS.find((x) => x.id === 'team')), 'Access', 'a section with one tab of the same name reads once')
+assert.deepEqual(V.hiddenFor({ email: 'a@x', role: 'admin' }, { roles: { admin: { settings: { meta: false, google: false, crm: false } } } }).settings.sort(), ['crm', 'google', 'meta'], 'hiding every Integrations tab hides them all (the section follows)')
 // Tabs moved from Team & access to Visibility. Old ticks still apply until the
 // person is saved in Visibility; an Account Admin starts without Sales Hub only
 // while the role has never been saved; the server reads tabs as a plain list.

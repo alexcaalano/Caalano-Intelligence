@@ -1,10 +1,10 @@
 // Settings: the client editors and the Settings page. Carved out of App.jsx so it loads on first open; the
 // helpers it shares with the rest of the app are imported from there.
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { APP_VERSION, AnnotationToggle, Avatar, BIZ_TYPES, CC_CHANS, Caveat, ChangePasswordCard, ClinicSettings, DASH_AUD, DASH_MODULES, DASH_PRESETS, DEFAULT_HOURS, DOW_LABELS, FATIGUE_DEFAULTS, FAVICON, FormsSettingsTab, GeoSettings, HelpNote, OptLogSettings, PROFILE_FIELDS, ROLE_LABEL, SEED_KEYEVENTS, SETTINGS, SignOutEverywhereCard, YourDetailsCard, Spinner, TAB_OPTIONS, TermsAdmin, TermsRegister, UsersAdmin, acolor, apiJson, applyAliases, clientLogoSrc, dashAudience, dashModuleFits, dedupeFetch, deleteClient, domainOf, dpClientOn, dpPipeOn, fetchDiscover, fmtDMY, fmtHours, formKeyEvents, formsDoneCount, hhmm, initials, isAdminishFE, isClientDeleted, iso, loadAliases, loadBizType, loadCampMap, loadCashOn, loadCloseOverride, loadDashboard, loadFatigueCfg, loadHours, loadKeep, loadKeyEvents, loadKeyEventsRaw, loadKpis, loadLogo, loadMetaConv, loadProfile, loadQualStage, loadSocialKpis, mkOutcomeMap, normId, presetRange, rangeLabel, rangeMaturity, rangeQuery, readNavUrl, removeCustomClient, restoreClient, roleLabelOf, saveBizType, saveCampMap, saveCashOn, saveCloseOverride, saveCustomClient, saveDashboard, saveFatigueCfg, saveHours, saveKeyEvents, saveKpis, saveLogo, saveMetaConv, saveProfile, saveQualStage, saveSocialKpis, setAlias, setDpClient, setDpPipe, setKeep, syncLogos, unorm, useDiscoverNames, useSettingsSync, writeNavUrl, normCrmUrl, saveCrmUrl, CRM_DEFAULT_URL } from '../App.jsx'
+import { APP_VERSION, Avatar, BIZ_TYPES, CC_CHANS, Caveat, ChangePasswordCard, ClinicSettings, DASH_AUD, DASH_MODULES, DASH_PRESETS, DEFAULT_HOURS, DOW_LABELS, FATIGUE_DEFAULTS, FAVICON, FormsSettingsTab, GeoSettings, HelpNote, OptLogSettings, PROFILE_FIELDS, ROLE_LABEL, SEED_KEYEVENTS, SETTINGS, SignOutEverywhereCard, YourDetailsCard, Spinner, TAB_OPTIONS, TermsAdmin, TermsRegister, UsersAdmin, acolor, apiJson, applyAliases, clientLogoSrc, dashAudience, dashModuleFits, dedupeFetch, deleteClient, domainOf, dpClientOn, dpPipeOn, fetchDiscover, fmtDMY, fmtHours, formKeyEvents, formsDoneCount, hhmm, initials, isAdminishFE, isClientDeleted, iso, loadAliases, loadBizType, loadCampMap, loadCashOn, loadCloseOverride, loadDashboard, loadFatigueCfg, loadHours, loadKeep, loadKeyEvents, loadKeyEventsRaw, loadKpis, loadLogo, loadMetaConv, loadProfile, loadQualStage, loadSocialKpis, mkOutcomeMap, normId, presetRange, rangeLabel, rangeMaturity, rangeQuery, readNavUrl, removeCustomClient, restoreClient, roleLabelOf, saveBizType, saveCampMap, saveCashOn, saveCloseOverride, saveCustomClient, saveDashboard, saveFatigueCfg, saveHours, saveKeyEvents, saveKpis, saveLogo, saveMetaConv, saveProfile, saveQualStage, saveSocialKpis, setAlias, setDpClient, setDpPipe, setKeep, syncLogos, unorm, useDiscoverNames, useSettingsSync, writeNavUrl, normCrmUrl, saveCrmUrl, CRM_DEFAULT_URL } from '../App.jsx'
 import { fmtCurrency, fmtNumber } from '../lib/format.js'
-import { VIS_VIEWS, VIS_TABS, VIS_SETTINGS, VIS_ROLES, VIS_ROLE_LABELS, viewsForRole, tabsForRole, settingsForRole, normVisibility, isHiddenSetting, entryFor, hasLegacyTicks } from '../lib/visibility.js'
-import { authApi, saveSettingsRemote, bumpSettings, userHidden } from '../App.jsx'
+import { VIS_VIEWS, VIS_TABS, VIS_SETTINGS, VIS_ROLES, VIS_ROLE_LABELS, viewsForRole, tabsForRole, settingsForRole, normVisibility, isHiddenSetting, entryFor, hasLegacyTicks, visSettingLabel } from '../lib/visibility.js'
+import { authApi, saveSettingsRemote, bumpSettings, userHidden, InfoTip, loadAnnot, saveAnnot } from '../App.jsx'
 import { GoalsEditor } from './sales-hub.jsx'
 
 /* ============ Settings ============ */
@@ -1065,6 +1065,26 @@ export function LogoSyncButton() {
 export const SET_FILTERS = [['all', 'All'], ['active', 'Active'], ['inactive', 'Inactive'], ['deleted', 'Deleted']]
 // Global creative-fatigue thresholds - one shared set, applied to every active
 // Meta client's fatigue read (Cockpit badges + the Meta Creative Fatigue tab).
+// ---- The Settings shell ----
+// Every panel is a card with a head (title, an "i" that explains it on hover,
+// actions on the right) and rows: the label on the left, the control on the
+// right. What a setting means lives in the hover, so the page is the controls.
+export function SetHead({ title, info, infoTitle, sub, actions, children }) {
+  return (
+    <div className="set-head">
+      <div className="set-head-t"><h3>{title}{info ? <InfoTip title={infoTitle}>{info}</InfoTip> : null}</h3>{sub ? <p className="set-sub">{sub}</p> : null}</div>
+      {actions || children ? <div className="set-head-a">{actions}{children}</div> : null}
+    </div>
+  )
+}
+export function SetRow({ label, info, hint, wide, children }) {
+  return (
+    <div className={`set-row${wide ? ' wide' : ''}`}>
+      <div className="set-row-l"><span className="set-row-lab">{label}{info ? <InfoTip>{info}</InfoTip> : null}</span>{hint ? <span className="set-row-hint">{hint}</span> : null}</div>
+      <div className="set-row-c">{children}</div>
+    </div>
+  )
+}
 export function FatigueSettings() {
   useSettingsSync()
   const [cfg, setCfg] = useState(() => loadFatigueCfg())
@@ -1080,8 +1100,8 @@ export function FatigueSettings() {
   )
   return (
     <div className="card fat-set">
-      <h3 style={{ marginTop: 0 }}>Creative fatigue thresholds</h3>
-      <HelpNote>One shared set of rules, applied live to every active Meta client. A creative scores points for high frequency, a falling click-through rate, and a below-average quality ranking: <b>2+ points = High 🔥</b>, <b>1 point = Medium 👀</b>. Changes save to the server and apply on the next load.</HelpNote>
+      <SetHead title="Creative Fatigue" info={<>One shared set of rules, applied live to every active Meta client. A creative scores points for high frequency, a falling click-through rate, and a below-average quality ranking: <b>2+ points = High 🔥</b>, <b>1 point = Medium 👀</b>. Changes save to the server and apply on the next load.</>}
+        actions={<><button className="btn-ghost sm" onClick={reset}>Reset to defaults</button><span className="set-saved">✓ Saved to server</span></>} />
       <div className="fat-set-grid">
         <div className="fat-set-col">
           <div className="fat-set-t">Frequency (impressions ÷ reach)</div>
@@ -1098,7 +1118,6 @@ export function FatigueSettings() {
           <Row label="Ignore creatives under" k="minImpr" suffix="impressions" step={100} hint="too little data to judge" />
         </div>
       </div>
-      <div style={{ marginTop: 12 }}><button className="link-btn sm" onClick={reset}>Reset to defaults</button> <span className="set-saved" style={{ marginLeft: 8 }}>✓ Saved to server · shared across your team</span></div>
     </div>
   )
 }
@@ -1123,11 +1142,8 @@ export function SocialKpiSettings({ clients }) {
   ]
   return (
     <div className="card">
-      <h3 style={{ marginTop: 0 }}>Organic social KPIs</h3>
-      <HelpNote>Set each client's <b>monthly</b> organic-social targets. They're scored against the latest month on the Blended view of Organic Social → <b>KPIs &amp; Trends</b>. Saved to the server and shared with the team.</HelpNote>
-      <div className="pipe-sel" style={{ marginBottom: 12 }}><label>Client</label>
-        <select value={cid} onChange={(e) => setCid(e.target.value)}>{list.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
-      </div>
+      <SetHead title="Organic KPIs" info={<>Each client's <b>monthly</b> organic-social targets. They're scored against the latest month on the Blended view of Organic Social → <b>KPIs &amp; Trends</b>. Saved to the server and shared with the team.</>}
+        actions={<label className="act-sel">Client<select value={cid} onChange={(e) => setCid(e.target.value)}>{list.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>} />
       <div className="soc-kpiset-grid">
         {FIELDS.map((f) => (
           <label className="soc-kpiset" key={f.k}>
@@ -1171,12 +1187,8 @@ export function DailyPerfSettings({ clients }) {
   const setAll = (on) => { for (const c of list) setDpClient(c.id, on) }
   return (
     <div className="card dp-set">
-      <h3 style={{ marginTop: 0 }}>Daily performance visibility</h3>
-      <HelpNote>Choose which clients appear on the <b>Daily Performance</b> tab - and, for clients running more than one pipeline, which pipeline tiles show. Everything is on by default. Saved to the server &amp; shared across your team.</HelpNote>
-      <div className="dp-bar">
-        <span className="dp-count">{shown} of {list.length} clients shown</span>
-        <div className="dp-bulk"><button onClick={() => setAll(true)}>Show all</button><button onClick={() => setAll(false)}>Hide all</button></div>
-      </div>
+      <SetHead title="Daily Performance" info={<>Which clients appear on the <b>Daily Performance</b> page and, for clients running more than one pipeline, which pipeline tiles show. Everything is on by default. Saved to the server and shared across your team.</>}
+        actions={<><span className="set-pill plain">{shown} of {list.length} shown</span><div className="dp-bulk"><button onClick={() => setAll(true)}>Show all</button><button onClick={() => setAll(false)}>Hide all</button></div></>} />
       <div className="dp-list">
         {list.map((c) => {
           const t = tc[c.id]
@@ -1350,8 +1362,8 @@ export function LogsPanel({ clients }) {
   return (
     <div className="logs-panel">
       <div className="card">
-        <div className="logs-head">
-          <div><h3 style={{ margin: 0 }}>Logs</h3><p className="cap" style={{ margin: '4px 0 0' }}>Super-Admin only. Build history, the reliability log, and where each person has been in the app.</p></div>
+        <div className="set-head">
+          <div className="set-head-t"><h3>Logs<InfoTip>Super Admin only. Build history, the reliability log, and where each person has been in the app.</InfoTip></h3></div>
           <div className="chan-toggle">
             <button className={tab === 'versions' ? 'on' : ''} onClick={() => setTab('versions')}>Build versions</button>
             <button className={tab === 'failures' ? 'on' : ''} onClick={() => setTab('failures')}>Failure logs</button>
@@ -1395,15 +1407,9 @@ export function LogsPanel({ clients }) {
       {tab === 'activity' && (
         <>
           <div className="card">
-            <div className="u-head-row">
-              <div>
-                <h3 style={{ margin: 0 }}>Activity trail</h3>
-                <p className="cap terms-reg-intro" style={{ margin: '4px 0 0', maxWidth: 760 }}>
-                  Where each person went and how long they stayed - views, clients and tabs. Navigation only: within-page
-                  clicks aren&rsquo;t recorded. Kept for 90 days. Disclosed in clause 6 of the terms everyone signs.
-                </p>
-              </div>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            <div className="set-head">
+              <div className="set-head-t"><h3>Activity trail<InfoTip>Where each person went and how long they stayed - views, clients and tabs. Navigation only: within-page clicks aren't recorded. Kept for 90 days. Disclosed in clause 6 of the terms everyone signs.</InfoTip></h3></div>
+              <div className="set-head-a">
                 <select className="inp sm" value={aUser} onChange={(e) => setAUser(e.target.value)} title="Filter to one person">
                   <option value="">Everyone</option>
                   {(audit.data && audit.data.summary || []).map((u) => <option key={u.user} value={u.user}>{u.name || u.user}</option>)}
@@ -1457,9 +1463,9 @@ export function LogsPanel({ clients }) {
       )}
       {tab === 'failures' && (
         <div className="card">
-          <div className="logs-head" style={{ marginBottom: 8 }}>
-            <div className="cap" style={{ fontWeight: 700 }}>Reliability log <span style={{ fontWeight: 400 }}>· failures &amp; slow builds (&gt;6s), newest first</span></div>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <div className="set-head">
+            <div className="set-head-t"><h3>Reliability log<InfoTip>Failures and slow builds (over 6s), newest first. Rolling log, ~400 entries a day, kept ~60 days. <b>Slow</b> = a build over 6s, close to the 10s function ceiling and a caching candidate. <b>Error (served cached)</b> = a rebuild failed but the person still saw the last good data instead of an error.</InfoTip></h3></div>
+            <div className="set-head-a">
               <div className="chan-toggle">{[1, 3, 7, 14].map((d) => <button key={d} className={days === d ? 'on' : ''} onClick={() => setDays(d)}>{d}d</button>)}</div>
               <button className="set-add" onClick={loadLog}>↻ Refresh</button>
               <button className="set-add" onClick={() => exportLog('json')} disabled={!canExport} title={canExport ? 'Download the log as JSON (best for sharing / diagnosis)' : 'Nothing to export yet'}>⭳ Export JSON</button>
@@ -1503,7 +1509,6 @@ export function LogsPanel({ clients }) {
                   </tr>
                 ) })}</tbody>
               </table></div>
-              <Caveat style={{ marginTop: 10 }}>Rolling log, ~400 entries/day, kept ~60 days. <b>Slow</b> = a build over 6s (close to the 10s function ceiling - a caching candidate). <b>Error (served cached)</b> = a rebuild failed but the user still saw the last good data instead of an error.</Caveat>
             </>))}
         </div>
       )}
@@ -1521,34 +1526,37 @@ export function CrmConnectionSection({ isSuper, clients }) {
   const load = () => { setSt({ loading: true }); fetch('/.netlify/functions/caalano-connect?status=1', { credentials: 'same-origin' }).then((r) => r.json().catch(() => ({}))).then((j) => setSt(j && typeof j === 'object' ? j : { error: 'Could not read the connection.' })).catch(() => setSt({ error: 'Could not read the connection.' })) }
   useEffect(load, [])
   const agency = !!(st.connected && String(st.tokenType || '').toLowerCase() === 'company' && st.hasCompanyId)
-  const tone = st.loading ? '' : agency ? 'good' : st.connected ? 'warn' : 'bad'
-  const line = st.loading ? 'Checking…' : st.error ? st.error : !st.hasClientId ? 'The app credentials are not set on the site.' : agency ? `Connected at agency level${st.companyId ? ` (company ${st.companyId})` : ''}: every sub-account can be read.` : st.connected ? `Connected to a single sub-account only (${st.tokenType || 'location'} token). Reconnect at agency level.` : 'Not connected.'
+  const tone = st.loading ? 'plain' : agency ? 'good' : st.connected ? 'warn' : 'bad'
+  const pill = st.loading ? 'Checking' : agency ? 'Connected' : st.connected ? 'Needs attention' : 'Not connected'
+  const line = st.loading ? 'Checking…' : st.error ? st.error : !st.hasClientId ? 'The app credentials are not set on the site.' : agency ? `Agency level${st.companyId ? ` · company ${st.companyId}` : ''}: every sub-account can be read.` : st.connected ? `A single sub-account only (${st.tokenType || 'location'} token). Reconnect at agency level.` : 'Not connected.'
+  const showHook = () => { setHook({ loading: true }); fetch(`/.netlify/functions/windsor?scope=webhookurl${firstClient ? `&client=${encodeURIComponent(firstClient.id)}` : ''}`, { credentials: 'same-origin' }).then((r) => r.json().catch(() => ({}))).then((j) => setHook(j || {})).catch(() => setHook({ error: 'Could not load.' })) }
   return (
-    <>
-      <div className="card">
-        <h3 style={{ marginTop: 0 }}>Caalano Systems connection</h3>
-        <p className={`cap ${tone === 'bad' ? 'act-bad' : ''}`} style={{ marginTop: -4 }}><span className={`hub-livechip ${tone === 'good' ? 'on' : ''}`}>{tone === 'good' ? '●' : '○'}</span> {line}</p>
-        <div className="set-sec-t" style={{ marginTop: 14 }}>How to connect or reconnect at agency level</div>
-        <ol className="cap" style={{ margin: '6px 0 0 18px', padding: 0, lineHeight: 1.6 }}>
-          <li>Sign in here as an admin, in this browser.</li>
-          <li>In GoHighLevel, switch to the agency view, open Marketplace, find <b>Caalano 360 Reporting</b> and install it for all sub-accounts.</li>
-          <li>GoHighLevel brings you back to a Caalano360 page that says "Complete the connection". Click the button.</li>
-          <li>The next page must show the green "Agency (Company) token" line. Come back here and press Check again.</li>
-        </ol>
-        <p className="cap">Reinstalling the app inside the CRM without step 3 does not store the access here. Removing the app from the agency revokes the access until it is connected again.</p>
-        <div className="act-note-btns" style={{ marginTop: 10 }}><button type="button" className="btn-ghost sm" onClick={load}>Check again</button><a className="btn-ghost sm" href="/.netlify/functions/caalano-connect" target="_blank" rel="noreferrer">Open the connect page</a></div>
+    <div className="card">
+      <SetHead title="Caalano Systems" actions={<span className={`set-pill ${tone}`}>{pill}</span>}
+        info={<>The agency-level link to the CRM: every Open in CRM link, the live deal feed, calendars, forms and the Sales Hub read through it. Reinstalling the app inside the CRM without completing the connection here does not store the access. Removing the app from the agency revokes it until it is connected again.</>} />
+      <div className="set-rows">
+        <SetRow label="Connection" hint={<span className={tone === 'bad' ? 'act-bad' : ''}>{line}</span>}
+          info={<>To connect or reconnect at agency level:<ol><li>Sign in here as an admin, in this browser.</li><li>In GoHighLevel, switch to the agency view, open Marketplace, find <b>Caalano 360 Reporting</b> and install it for all sub-accounts.</li><li>GoHighLevel brings you back to a Caalano360 page that says "Complete the connection". Click the button.</li><li>The next page must show the green "Agency (Company) token" line. Come back here and press Check again.</li></ol></>}>
+          <button type="button" className="btn-ghost sm" onClick={load}>Check again</button>
+          <a className="btn-ghost sm" href="/.netlify/functions/caalano-connect" target="_blank" rel="noreferrer">Open the connect page</a>
+        </SetRow>
+        <CrmAddressCard />
+        {isSuper ? (
+          <SetRow label="Live events webhook" hint="Super Admin only"
+            info={<>The address the marketplace app posts to the moment a deal, appointment or message changes; it drives the gong and the TV cues. One address serves every connected account. In the marketplace app's Webhooks page paste it as the webhook URL and tick the listed events.</>}>
+            {!hook ? <button type="button" className="btn-ghost sm" onClick={showHook}>Show the webhook address</button>
+              : hook.loading ? <span className="cap">Loading…</span>
+                : hook.error ? <span className="cap act-bad">{hook.error}</span>
+                  : !hook.url ? <span className="cap">No site secret is set, so no webhook token can be made.</span>
+                    : <>
+                      <input className="act-in hub-setup-url" type="text" readOnly value={hook.url} onFocus={(e) => e.target.select()} />
+                      <button type="button" className="btn-primary act-btn" onClick={() => { try { navigator.clipboard.writeText(hook.url) } catch { /* select and copy by hand */ } }}>Copy</button>
+                      <span className="set-row-hint">Events: {(hook.events || []).join(', ')}. {hook.signed ? 'Deliveries are signature-checked.' : 'Set GHL_WEBHOOK_PUBLIC_KEY on the site to signature-check every delivery.'}</span>
+                    </>}
+          </SetRow>
+        ) : null}
       </div>
-      <div className="card"><CrmAddressCard /></div>
-      {isSuper ? <div className="card">
-        <div className="set-sec-t" style={{ marginTop: 0 }}>Live events webhook <span className="cap">· Super Admin only</span></div>
-        <p className="cap">The address the marketplace app posts to the moment a deal, appointment or message changes; it drives the gong and the TV cues. One address serves every connected account.</p>
-        {!hook ? <div className="act-note-btns"><button type="button" className="btn-ghost sm" onClick={() => { setHook({ loading: true }); fetch(`/.netlify/functions/windsor?scope=webhookurl${firstClient ? `&client=${encodeURIComponent(firstClient.id)}` : ''}`, { credentials: 'same-origin' }).then((r) => r.json().catch(() => ({}))).then((j) => setHook(j || {})).catch(() => setHook({ error: 'Could not load.' })) }}>Show the webhook address</button></div>
-          : hook.loading ? <p className="cap">Loading…</p> : hook.error ? <p className="cap act-bad">{hook.error}</p> : !hook.url ? <p className="cap">No site secret is set, so no webhook token can be made.</p> : <>
-            <p className="cap">In the marketplace app's Webhooks page paste this as the webhook URL and tick: {(hook.events || []).join(', ')}. {hook.signed ? 'Deliveries are signature-checked.' : 'Set GHL_WEBHOOK_PUBLIC_KEY on the site to signature-check every delivery as well.'}</p>
-            <div className="act-note-btns"><input className="act-in hub-setup-url" type="text" readOnly value={hook.url} onFocus={(e) => e.target.select()} /><button type="button" className="btn-primary act-btn" onClick={() => { try { navigator.clipboard.writeText(hook.url) } catch { /* select and copy by hand */ } }}>Copy</button></div>
-          </>}
-      </div> : null}
-    </>
+    </div>
   )
 }
 // The CRM web address, agency-wide: every "Open in CRM" link across the app
@@ -1562,12 +1570,26 @@ export function CrmAddressCard() {
   const clean = normCrmUrl(v)
   const dirty = clean !== normCrmUrl(cur)
   return (
-    <div className="annot-set">
-      <div className="set-sec-t" style={{ marginTop: 0 }}>CRM web address <span className="cap">· agency-wide</span></div>
-      <p className="cap" style={{ marginTop: 4 }}>Where "Open in CRM" links go. Enter the white-label address your team and clients sign in at, such as <code>app.caalanosystems.com.au</code>. Leave it blank to use {CRM_DEFAULT_URL.replace('https://', '')}. Links open as <b>{clean || CRM_DEFAULT_URL}</b>.</p>
-      <div className="act-note-btns"><input type="text" inputMode="url" placeholder={CRM_DEFAULT_URL} value={v} onChange={(e) => { setV(e.target.value); setSaved(false) }} style={{ minWidth: 280 }} />
-        <button type="button" className="btn-primary act-btn" disabled={!dirty || (!!v.trim() && !clean)} onClick={() => { saveCrmUrl(v); setSaved(true) }}>Save</button>
-        {saved ? <span className="cap">Saved.</span> : v.trim() && !clean ? <span className="cap act-bad">Enter a web address such as app.example.com</span> : null}</div>
+    <SetRow label="CRM web address" hint={<>Links open as <b>{clean || CRM_DEFAULT_URL}</b></>}
+      info={<>Where every "Open in CRM" link goes, agency-wide. Enter the white-label address your team and clients sign in at, such as <code>app.caalanosystems.com.au</code>. Leave it blank to use {CRM_DEFAULT_URL.replace('https://', '')}.</>}>
+      <input type="text" inputMode="url" placeholder={CRM_DEFAULT_URL} value={v} onChange={(e) => { setV(e.target.value); setSaved(false) }} />
+      <button type="button" className="btn-primary act-btn" disabled={!dirty || (!!v.trim() && !clean)} onClick={() => { saveCrmUrl(v); setSaved(true) }}>Save</button>
+      {saved ? <span className="cap">Saved.</span> : v.trim() && !clean ? <span className="cap act-bad">Enter a web address such as app.example.com</span> : null}
+    </SetRow>
+  )
+}
+// Integrations › Meta / Google: the agency-level connection is on the roadmap;
+// today each client's ad accounts are linked on their card under Clients.
+export function IntegrationSoon({ name, what, onClients }) {
+  return (
+    <div className="card">
+      <SetHead title={name} actions={<span className="set-pill soon">Coming soon</span>}
+        info={<>An agency-level {name} connection will live here. For now each client's {what} are linked on their card under Clients.</>} />
+      <div className="set-rows">
+        <SetRow label={what[0].toUpperCase() + what.slice(1)} hint="Linked per client for now">
+          {onClients ? <button type="button" className="btn-ghost sm" onClick={onClients}>Open Clients</button> : null}
+        </SetRow>
+      </div>
     </div>
   )
 }
@@ -1581,7 +1603,7 @@ export function CrmAddressCard() {
 const VIS_ITEMS = [
   ...VIS_VIEWS.map((v) => ({ ...v, kind: 'views', group: 'Sidebar' })),
   ...VIS_TABS.map((t) => ({ ...t, kind: 'tabs', group: 'Client workspace tabs' })),
-  ...VIS_SETTINGS.map((t) => ({ ...t, kind: 'settings', group: 'Settings sections' })),
+  ...VIS_SETTINGS.map((t) => ({ ...t, label: visSettingLabel(t), kind: 'settings', group: 'Settings' })),
 ]
 const visRoleOf = (r) => (r === 'viewer' ? 'account_admin' : r)
 const visApplies = (item, role) => (item.kind === 'views' ? viewsForRole(role) : item.kind === 'settings' ? settingsForRole(role) : tabsForRole(role)).some((x) => x.id === item.id)
@@ -1661,7 +1683,7 @@ export function VisibilitySettings({ clients = [] }) {
     const next = normVisibility({ ...vis, users: merged })
     SETTINGS.visibility = { ...(SETTINGS.visibility || {}), users: next.users }
     saveSettingsRemote({ visibility: { users: next.users } }); bumpSettings()
-    // Anyone saved here who still carried the old Team & access tab ticks is
+    // Anyone saved here who still carried the old Access (Team & access) tab ticks is
     // moved off them: Visibility is now the one place their tabs are set.
     for (const key of Object.keys(draftUsers)) { const u = (users || []).find((x) => x.email.toLowerCase() === key); if (u && Array.isArray(u.tabs) && visRoleOf(u.role) === 'account_admin') { authApi('update-user', { method: 'POST', body: JSON.stringify({ email: u.email, tabs: null }) }).catch(() => {}); u.tabs = null } }
     setVis(next); setDraftUsers({}); setSaved('Saved. Each person gets their visibility on their next page load.')
@@ -1686,8 +1708,7 @@ export function VisibilitySettings({ clients = [] }) {
   )
   return (
     <div className="card vis-card">
-      <h3 style={{ marginTop: 0 }}>Visibility</h3>
-      <p className="cap" style={{ marginTop: -4 }}>Every page, client tab and Settings section down the left; who sees it across the top. <b>By role</b> sets the default for everyone of that role. <b>By client</b> shows the Account Admins and Account Users on one client, and <b>Agency</b> everyone at Caalano, as columns: a switch there gives that person their own set (marked <i>custom</i>) and <b>Use default</b> puts them back on the role. Anything new is visible until you switch it off, so this is where a feature waits until launch. That includes you: switch something off for Super Admin and it leaves your own sidebar too, but Settings and this page are always there to switch it back on. Use <b>View as</b> in the sidebar to check what someone else gets.</p>
+      <SetHead title="Visibility" info={<>Every page, client tab and Settings tab down the left; who sees it across the top. <b>By role</b> sets the default for everyone of that role. <b>By client</b> shows the Account Admins and Account Users on one client, and <b>Agency</b> everyone at Caalano, as columns: a switch there gives that person their own set (marked <i>custom</i>) and <b>Use default</b> puts them back on the role. Anything new is visible until you switch it off, so this is where a feature waits until launch. That includes you: switch something off for Super Admin and it leaves your own sidebar too, but Settings and this page are always there to switch it back on. Use <b>View as</b> in the sidebar to check what someone else gets.</>} />
       <div className="chan-toggle sm vis-mode">
         <button className={mode === 'agency' ? 'on' : ''} onClick={() => setMode('agency')}>Agency</button>
         <button className={mode === 'roles' ? 'on' : ''} onClick={() => setMode('roles')}>By role</button>
@@ -1707,7 +1728,7 @@ export function VisibilitySettings({ clients = [] }) {
               {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
           </label>
-          {!clientId ? null : users == null ? <Spinner label="Loading people…" /> : !clientPeople.length ? <p className="cap">No Account Admins or Account Users are allocated to this client yet. Allocate people under Team &amp; access.</p> : (
+          {!clientId ? null : users == null ? <Spinner label="Loading people…" /> : !clientPeople.length ? <p className="cap">No Account Admins or Account Users are allocated to this client yet. Allocate people under Access.</p> : (
             <>
               <p className="cap">{clientPeople.length} account-level {clientPeople.length === 1 ? 'person is' : 'people are'} allocated to this client. Agency people are on their own tab.</p>
               <VisMatrix cols={peopleCols(clientPeople)} onFlip={flipUser} />
@@ -1730,6 +1751,28 @@ export function VisibilitySettings({ clients = [] }) {
     </div>
   )
 }
+// Settings sections and the tabs inside them. Tab ids are the section ids the
+// URL and Visibility use; a section with one tab shows no tab strip.
+const SET_GROUPS = [
+  { id: 'clients', label: 'Clients', tabs: [{ id: 'clients', label: 'Clients' }] },
+  { id: 'integrations', label: 'Integrations', tabs: [{ id: 'crm', label: 'CRM' }, { id: 'meta', label: 'Meta' }, { id: 'google', label: 'Google' }] },
+  { id: 'perf', label: 'Performance & KPIs', tabs: [{ id: 'dailyperf', label: 'Daily Performance' }, { id: 'fatigue', label: 'Creative Fatigue' }, { id: 'socialkpis', label: 'Organic KPIs' }] },
+  { id: 'access', label: 'Access', tabs: [{ id: 'team', label: 'Access' }, { id: 'visibility', label: 'Visibility' }] },
+  { id: 'profile', label: 'My Profile', tabs: [{ id: 'account', label: 'My Account' }, { id: 'appearance', label: 'Appearance' }] },
+  { id: 'terms', label: 'Terms of Use', tabs: [{ id: 'terms', label: 'Terms of Use' }] },
+  { id: 'logs', label: 'Logs', tabs: [{ id: 'logs', label: 'Logs' }] },
+]
+// Appearance › Metric explanations (Super Admin only): the "how this is
+// calculated" notes under each card, for the owner's eyes only.
+function AnnotRow() {
+  useSettingsSync()
+  return (
+    <SetRow label="Metric explanations" hint="Super Admin only"
+      info={<>The paragraphs under each card explaining what a number counts and what it does not. Only you see them, and only while this is on. Nobody else's screen changes.</>}>
+      <Toggle on={loadAnnot()} onChange={(v) => saveAnnot(v)} />
+    </SetRow>
+  )
+}
 export function SettingsPage({ config, enabled, setEnabled, restricted = {}, setRestricted, currency, authUser, authEnabled, theme, setTheme, onPick }) {
   const [filter, setFilter] = useState('active')
   const [q, setQ] = useState('')
@@ -1746,14 +1789,20 @@ export function SettingsPage({ config, enabled, setEnabled, restricted = {}, set
   // never in that list.
   const hid = authEnabled ? userHidden(authUser) : null
   const on = (id) => !isHiddenSetting(hid, id)
-  const allowedSections = [
-    ...(isAdmin ? ['clients', 'crm', 'fatigue', 'socialkpis', 'dailyperf'].filter(on) : []),
-    ...((!authEnabled || isAdmin) && on('team') ? ['team'] : []),
-    ...(authEnabled ? ['account'] : []),
-    'appearance',
-    ...(isSuper && authEnabled ? ['visibility', 'terms'] : []),
-    ...(isSuper ? ['logs'] : []),
-  ]
+  // Settings is sections with tabs. A section shows while at least one of its
+  // tabs is allowed; the URL (?s=) carries the tab id, so ?s=crm deep-links
+  // straight into Integrations › CRM and Back steps between tabs.
+  // Visibility never depends on the 'team' toggle - hiding Access from
+  // yourself must not lock you out of the page that switches it back on.
+  const teamOn = (!authEnabled || isAdmin) && on('team')
+  const visOn = isSuper && authEnabled
+  const can = {
+    clients: isAdmin && on('clients'), crm: isAdmin && on('crm'), meta: isAdmin && on('meta'), google: isAdmin && on('google'),
+    dailyperf: isAdmin && on('dailyperf'), fatigue: isAdmin && on('fatigue'), socialkpis: isAdmin && on('socialkpis'),
+    team: teamOn, visibility: visOn, account: authEnabled, appearance: true, terms: visOn, logs: isSuper,
+  }
+  const groups = SET_GROUPS.map((g) => ({ ...g, tabs: g.tabs.filter((t) => can[t.id]) })).filter((g) => g.tabs.length)
+  const allowedSections = groups.flatMap((g) => g.tabs.map((t) => t.id))
   const defaultSection = allowedSections[0]
   const sectionFromUrl = () => { const want = readNavUrl().s; return want && allowedSections.includes(want) ? want : defaultSection }
   const [section, setSectionRaw] = useState(sectionFromUrl)
@@ -1781,6 +1830,7 @@ export function SettingsPage({ config, enabled, setEnabled, restricted = {}, set
   const activeCount = liveClients.filter(isOn).length
   // Deleted clients (base or UI-added) for the Deleted filter / restore.
   const deletedList = Object.entries(SETTINGS.clients || {}).filter(([, v]) => v && v._deleted).map(([id, v]) => ({ id, name: (config.clients.find((c) => c.id === id) || {}).name || v.name || id, industry: v.industry || null })).sort((a, b) => String(a.name).localeCompare(String(b.name)))
+  const curGroup = groups.find((g) => g.tabs.some((t) => t.id === section))
   const term = q.trim().toLowerCase()
   const list = (filter === 'deleted' ? [] : liveClients).filter((c) => {
     if (filter === 'active' && !isOn(c)) return false
@@ -1791,50 +1841,51 @@ export function SettingsPage({ config, enabled, setEnabled, restricted = {}, set
   return (
     <div className="settings-page">
       <div className="set-sections">
-        {isAdmin && on('clients') && <button className={section === 'clients' ? 'on' : ''} onClick={() => setSection('clients')}>Clients</button>}
-        {isAdmin && on('crm') && <button className={section === 'crm' ? 'on' : ''} onClick={() => setSection('crm')}>CRM connection</button>}
-        {isAdmin && on('fatigue') && <button className={section === 'fatigue' ? 'on' : ''} onClick={() => setSection('fatigue')}>Creative fatigue</button>}
-        {isAdmin && on('socialkpis') && <button className={section === 'socialkpis' ? 'on' : ''} onClick={() => setSection('socialkpis')}>Organic KPIs</button>}
-        {isAdmin && on('dailyperf') && <button className={section === 'dailyperf' ? 'on' : ''} onClick={() => setSection('dailyperf')}>Daily performance</button>}
-        {(!authEnabled || isAdmin) && on('team') && <button className={section === 'team' ? 'on' : ''} onClick={() => setSection('team')}>Team &amp; access</button>}
-        {authEnabled && <button className={section === 'account' ? 'on' : ''} onClick={() => setSection('account')}>My account</button>}
-        <button className={section === 'appearance' ? 'on' : ''} onClick={() => setSection('appearance')}>Appearance</button>
-        {isSuper && authEnabled && <button className={section === 'visibility' ? 'on' : ''} onClick={() => setSection('visibility')}>Visibility</button>}
-        {isSuper && authEnabled && <button className={section === 'terms' ? 'on' : ''} onClick={() => setSection('terms')}>Terms of use</button>}
-        {isSuper && <button className={section === 'logs' ? 'on' : ''} onClick={() => setSection('logs')}>Logs</button>}
+        {groups.map((g) => <button key={g.id} className={curGroup && curGroup.id === g.id ? 'on' : ''} onClick={() => setSection(curGroup && curGroup.id === g.id ? section : g.tabs[0].id)}>{g.label}</button>)}
       </div>
+      {curGroup && curGroup.tabs.length > 1 && (
+        <div className="subtabs set-subtabs">
+          {curGroup.tabs.map((t) => <button key={t.id} className={section === t.id ? 'active' : ''} onClick={() => setSection(t.id)}>{t.label}</button>)}
+        </div>
+      )}
       {/* Super-Admin only: the document itself, and the register of who signed it.
           Both hold the legal record, so neither is shown to Admins. */}
       {isSuper && authEnabled && section === 'terms' && <><TermsRegister /><TermsAdmin authUser={authUser} /></>}
       {isSuper && section === 'logs' && <LogsPanel clients={config.clients} />}
-      {isSuper && authEnabled && section === 'visibility' && <VisibilitySettings clients={liveClients} />}
       {section === 'appearance' && (
         <div className="card">
-          <h3 style={{ marginTop: 0 }}>Appearance</h3>
-          <p className="cap" style={{ marginTop: -4 }}>Choose how Caalano360 looks. Saved to this browser.</p>
-          <div className="theme-choose">
-            <button className={theme === 'light' ? 'on' : ''} onClick={() => setTheme && setTheme('light')}>☀ Light</button>
-            <button className={theme === 'dark' ? 'on' : ''} onClick={() => setTheme && setTheme('dark')}>☾ Dark</button>
+          <SetHead title="Appearance" sub="Saved to this browser." />
+          <div className="set-rows">
+            <SetRow label="Theme">
+              <div className="theme-choose">
+                <button className={theme === 'light' ? 'on' : ''} onClick={() => setTheme && setTheme('light')}>☀ Light</button>
+                <button className={theme === 'dark' ? 'on' : ''} onClick={() => setTheme && setTheme('dark')}>☾ Dark</button>
+              </div>
+            </SetRow>
+            {isSuper ? <AnnotRow /> : null}
           </div>
-          {isSuper ? <AnnotationToggle /> : null}
         </div>
       )}
-      {isAdmin && on('crm') && section === 'crm' && <CrmConnectionSection isSuper={isSuper} clients={liveClients} />}
-      {isAdmin && on('fatigue') && section === 'fatigue' && <FatigueSettings />}
-      {isAdmin && on('socialkpis') && section === 'socialkpis' && <SocialKpiSettings clients={config.clients} />}
-      {isAdmin && on('dailyperf') && section === 'dailyperf' && <DailyPerfSettings clients={config.clients} />}
-      {section === 'team' && (!authEnabled || isAdmin) && on('team') && <UsersAdmin authUser={authUser} authEnabled={authEnabled} clients={(config.clients || []).map((c) => ({ id: c.id, name: c.name, meta: c.meta || null, google: c.google || null, ga4: c.ga4 || null, ghl: c.ghl || null }))} />}
-      {authEnabled && section === 'account' && (
+      {can.crm && section === 'crm' && <CrmConnectionSection isSuper={isSuper} clients={liveClients} />}
+      {can.meta && section === 'meta' && <IntegrationSoon name="Meta" what="ad accounts" onClients={can.clients ? () => setSection('clients') : null} />}
+      {can.google && section === 'google' && <IntegrationSoon name="Google" what="Ads and Analytics accounts" onClients={can.clients ? () => setSection('clients') : null} />}
+      {can.fatigue && section === 'fatigue' && <FatigueSettings />}
+      {can.socialkpis && section === 'socialkpis' && <SocialKpiSettings clients={config.clients} />}
+      {can.dailyperf && section === 'dailyperf' && <DailyPerfSettings clients={config.clients} />}
+      {can.team && section === 'team' && <UsersAdmin authUser={authUser} authEnabled={authEnabled} clients={(config.clients || []).map((c) => ({ id: c.id, name: c.name, meta: c.meta || null, google: c.google || null, ga4: c.ga4 || null, ghl: c.ghl || null }))} />}
+      {can.visibility && section === 'visibility' && <VisibilitySettings clients={liveClients} />}
+      {can.account && section === 'account' && (
         <div className="card">
-          <h3 style={{ marginTop: 0 }}>My account</h3>
-          <p className="cap" style={{ marginTop: -4 }}>Signed in as <b>{authUser ? (authUser.name || authUser.email) : ''}</b>{authUser ? ` · ${roleLabelOf(authUser)}` : ''}. Your name and mobile number are kept for account verification.</p>
-          <YourDetailsCard user={authUser} />
-          <h4 style={{ margin: '16px 0 4px' }}>Password</h4>
-          <ChangePasswordCard />
-          <SignOutEverywhereCard />
+          <SetHead title="My Account" sub={<>Signed in as <b>{authUser ? (authUser.name || authUser.email) : ''}</b>{authUser ? ` · ${roleLabelOf(authUser)}` : ''}</>}
+            info="Your name and mobile number are kept for account verification. The email you sign in with can't be changed here." />
+          <div className="set-rows">
+            <SetRow label="Your details" wide><YourDetailsCard user={authUser} /></SetRow>
+            <SetRow label="Password" wide><ChangePasswordCard /></SetRow>
+            <SetRow label="Devices" hint="Sessions last 14 days." info="If you've signed in somewhere you no longer control - a shared computer, an old phone, a laptop that went missing - end those sessions now rather than waiting for them to expire. You stay signed in here."><SignOutEverywhereCard /></SetRow>
+          </div>
         </div>
       )}
-      {isAdmin && on('clients') && section === 'clients' && (<>
+      {can.clients && section === 'clients' && (<>
       <div className="set-stats">
         <div className="set-stat"><div className="v">{liveClients.length}</div><div className="l">Clients</div></div>
         <div className="set-stat"><div className="v">{activeCount}</div><div className="l">Active</div></div>

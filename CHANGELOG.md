@@ -18,6 +18,18 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.637.0 - 2026-09-14 (commit PENDING)
+
+### Settings: sections with tabs, and the explanations move into hover
+
+**Settings is now seven sections, each with tabs** - Clients; Integrations (CRM, Meta, Google); Performance & KPIs (Daily Performance, Creative Fatigue, Organic KPIs); Access (Access, Visibility); My Profile (My Account, Appearance); Terms of Use; Logs. Team & access is renamed Access and sits beside Visibility; CRM connection is renamed Integrations, with Meta and Google as "coming soon" tabs (ad accounts stay linked per client under Clients for now); Your account is now My Account. The URL still carries the tab id (?s=crm, ?s=visibility), so old deep links land on the right tab.
+
+**Visibility covers every Settings tab** - the chart lists Integrations · CRM, Integrations · Meta, Performance & KPIs · Daily Performance and so on, one switch each; a section shows only while at least one of its tabs is on. Hiding Access from yourself never hides Visibility, so you can always switch it back.
+
+**One look for every panel** - every tab is a card with a title, an "i" that explains it on hover, actions on the right and rows underneath: the setting's name on the left, the control on the right. Connection status is a pill (Connected / Needs attention / Not connected). The paragraphs that used to sit above every control - role definitions, how to connect the CRM, what the webhook is for, what the reliability log means, how signatures are stored - are in the "i" now; only status lines stay on screen. Devices is a row inside My Account instead of a card inside a card.
+
+---
+
 ## v3.636.0 - 2026-09-14 (commit b3d3578)
 
 ### Visibility: Agency first

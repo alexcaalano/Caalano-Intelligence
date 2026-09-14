@@ -15,15 +15,15 @@
 // things their sidebar can hold - published reports and their client
 // workspaces. Settings is never hidden.
 export const VIS_VIEWS = [
-  { id: 'overview', label: 'Agency Overview', roles: ['admin', 'user'] },
-  { id: 'trends', label: 'Daily Performance', roles: ['admin', 'user'] },
-  { id: 'weekly', label: 'Weekly Traffic Light', roles: ['admin', 'user'] },
-  { id: 'forecast', label: 'Funnel Forecaster', roles: ['admin', 'user'] },
-  { id: 'cockpit', label: 'Creative Cockpit', roles: ['admin', 'user'] },
-  { id: 'insights', label: 'Meta Insights', roles: ['admin', 'user'] },
-  { id: 'update', label: 'Client Update', roles: ['admin', 'user'] },
-  { id: 'monthly', label: 'Monthly Report', roles: ['admin', 'user'] },
-  { id: 'social', label: 'Organic Social Media', roles: ['admin', 'user'] },
+  { id: 'overview', label: 'Agency Overview', roles: ['superadmin', 'admin', 'user'] },
+  { id: 'trends', label: 'Daily Performance', roles: ['superadmin', 'admin', 'user'] },
+  { id: 'weekly', label: 'Weekly Traffic Light', roles: ['superadmin', 'admin', 'user'] },
+  { id: 'forecast', label: 'Funnel Forecaster', roles: ['superadmin', 'admin', 'user'] },
+  { id: 'cockpit', label: 'Creative Cockpit', roles: ['superadmin', 'admin', 'user'] },
+  { id: 'insights', label: 'Meta Insights', roles: ['superadmin', 'admin', 'user'] },
+  { id: 'update', label: 'Client Update', roles: ['superadmin', 'admin', 'user'] },
+  { id: 'monthly', label: 'Monthly Report', roles: ['superadmin', 'admin', 'user'] },
+  { id: 'social', label: 'Organic Social Media', roles: ['superadmin', 'admin', 'user'] },
   { id: 'reports', label: 'Monthly Reports', roles: ['account_admin', 'account_user'] },
   { id: 'dashboards', label: 'Client workspaces (My dashboards)', roles: ['account_admin', 'account_user'] },
 ]
@@ -49,8 +49,8 @@ export const VIS_TABS = [
   { id: 'lostreasons', label: 'Lost Reasons' },
   { id: 'optlog', label: 'Change Log' },
 ]
-export const VIS_ROLES = ['admin', 'user', 'account_admin', 'account_user']
-export const VIS_ROLE_LABELS = { admin: 'Agency Admin', user: 'Agency User', account_admin: 'Account Admin', account_user: 'Account User' }
+export const VIS_ROLES = ['superadmin', 'admin', 'user', 'account_admin', 'account_user']
+export const VIS_ROLE_LABELS = { superadmin: 'Super Admin', admin: 'Agency Admin', user: 'Agency User', account_admin: 'Account Admin', account_user: 'Account User' }
 const normRole = (r) => (r === 'viewer' ? 'account_admin' : r)
 export const viewsForRole = (role) => VIS_VIEWS.filter((v) => v.roles.includes(normRole(role)))
 export const tabsForRole = (role) => (normRole(role) === 'account_user' ? VIS_TABS.filter((t) => t.id === 'actions') : VIS_TABS)
@@ -67,9 +67,9 @@ export function normVisibility(v) {
 }
 export const hasOverride = (v, email) => !!normVisibility(v).users[String(email || '').trim().toLowerCase()]
 // The entry that applies to a person: their own override if one exists, else
-// their role's default. Null for a Super Admin (nothing applies).
+// their role's default.
 export function entryFor(user, v) {
-  if (!user || !user.role || user.role === 'superadmin') return null
+  if (!user || !user.role) return null
   const vis = normVisibility(v)
   const own = vis.users[String(user.email || '').trim().toLowerCase()]
   return own || vis.roles[normRole(user.role)] || null

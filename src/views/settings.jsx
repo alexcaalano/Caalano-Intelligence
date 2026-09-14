@@ -1605,7 +1605,6 @@ function VisMatrix({ cols, onFlip, locked }) {
                 <tr>
                   <td className="vis-td-item">{item.label}</td>
                   {cols.map((c) => {
-                    if (c.fixed) return <td key={c.key} className="vis-td fixed" title="Super Admins always see everything">✓</td>
                     if (!visApplies(item, c.role)) return <td key={c.key} className="vis-td na" title="Does not apply to this role">–</td>
                     const on = visOn(c.entry, item)
                     return <td key={c.key} className={`vis-td${on ? '' : ' off'}`}><Toggle sm on={on} disabled={locked} onChange={() => onFlip(c, item)} /></td>
@@ -1632,10 +1631,7 @@ export function VisibilitySettings({ clients = [] }) {
   const rolesDirty = JSON.stringify(normVisibility({ roles: draftRoles }).roles) !== JSON.stringify(vis.roles)
   const usersDirty = Object.keys(draftUsers).length > 0
   // ---- role defaults ----
-  const roleCols = [
-    { key: 'superadmin', role: 'superadmin', label: 'Super Admin', sub: 'sees everything', fixed: true },
-    ...VIS_ROLES.map((r) => ({ key: r, role: r, label: VIS_ROLE_LABELS[r], sub: 'default', entry: draftRoles[r] })),
-  ]
+  const roleCols = VIS_ROLES.map((r) => ({ key: r, role: r, label: VIS_ROLE_LABELS[r], sub: 'default', entry: draftRoles[r] }))
   const flipRole = (c, item) => { setDraftRoles((d) => ({ ...d, [c.role]: visFlip(d[c.role], item) })); setSaved(null) }
   const saveRoles = () => {
     const next = normVisibility({ ...vis, roles: draftRoles })
@@ -1668,7 +1664,6 @@ export function VisibilitySettings({ clients = [] }) {
   }
   const peopleCols = (list) => list.map((u) => {
     const r = visRoleOf(u.role), custom = isCustom(u)
-    if (r === 'superadmin') return { key: u.email, role: 'superadmin', user: u, label: u.name || u.email, sub: 'Super Admin', fixed: true }
     return { key: u.email, role: r, user: u, entry: effective(u), custom, label: u.name || u.email, sub: `${VIS_ROLE_LABELS[r] || r}${custom ? ' · custom' : ' · default'}`, action: { label: 'Use default', onClick: () => resetUser(u), disabled: !custom, title: custom ? 'Drop this person\'s custom set and use the role default' : 'Already on the role default' } }
   })
   const byName = (a, b) => String(a.name || a.email).localeCompare(String(b.name || b.email), undefined, { sensitivity: 'base' })
@@ -1684,7 +1679,7 @@ export function VisibilitySettings({ clients = [] }) {
   return (
     <div className="card vis-card">
       <h3 style={{ marginTop: 0 }}>Visibility</h3>
-      <p className="cap" style={{ marginTop: -4 }}>Every page and client tab down the left; who sees it across the top. <b>By role</b> sets the default for everyone of that role. <b>By client</b> and <b>People in a role</b> show real people as columns, where a switch gives that person their own set (marked <i>custom</i>) and <b>Use default</b> puts them back on the role. Anything new is visible until you switch it off, so this is where a feature waits until launch. Super Admins always see everything; use <b>View as</b> in the sidebar to check what someone else gets.</p>
+      <p className="cap" style={{ marginTop: -4 }}>Every page and client tab down the left; who sees it across the top. <b>By role</b> sets the default for everyone of that role. <b>By client</b> and <b>People in a role</b> show real people as columns, where a switch gives that person their own set (marked <i>custom</i>) and <b>Use default</b> puts them back on the role. Anything new is visible until you switch it off, so this is where a feature waits until launch. That includes you: switch something off for Super Admin and it leaves your own sidebar too, but Settings and this page are always there to switch it back on. Use <b>View as</b> in the sidebar to check what someone else gets.</p>
       <div className="chan-toggle sm vis-mode">
         <button className={mode === 'roles' ? 'on' : ''} onClick={() => setMode('roles')}>By role</button>
         <button className={mode === 'client' ? 'on' : ''} onClick={() => setMode('client')}>By client</button>

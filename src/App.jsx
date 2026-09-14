@@ -36,7 +36,7 @@ const lazyView = (load, name) => {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-export const APP_VERSION = '3.630.0'
+export const APP_VERSION = '3.631.0'
 // The business clock. Every server window is cut on the client's local day
 // (Caalano Systems location timezone), so any day the app derives on its own -
 // preset ranges, "today", CSV dates - must use the same clock rather than the
@@ -16501,8 +16501,10 @@ function canSeeClientFE(user, id) {
 export const isClientRoleFE = (r) => r === 'account_admin' || r === 'account_user' || r === 'viewer'
 export function userHidden(u) {
   if (!u) return { views: [], tabs: [] }
-  if (u.hidden && !u.viewAs) return u.hidden
-  return hiddenFor(u, SETTINGS.visibility)
+  const v = SETTINGS.visibility
+  const haveSection = !!(v && (v.roles || v.users))
+  if (u.hidden && !u.viewAs && !haveSection) return u.hidden
+  return hiddenFor(u, v)
 }
 function allowedTabsFE(user, offered) {
   if (!user) return offered
@@ -18977,6 +18979,7 @@ function rangeFromUrl(u) {
 const wbPatch = (wb) => ({ wb: wb === 'created' ? 'created' : null })
 
 function Dashboard({ authUser, authEnabled, onLogout, realUser, onViewAs }) {
+  useSettingsSync() // visibility saved in Settings reaches the sidebar at once
   const [data, setData] = useState(null)
   const [config, setConfig] = useState(null)
   const [err, setErr] = useState(null)

@@ -18,6 +18,16 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.631.0 - 2026-09-14 (commit PENDING)
+
+### Visibility: Super Admin has switches too
+
+- The Super Admin column in Settings → Visibility is now a set of switches like every other role, with a role default and per-person custom sets. Switch something off for Super Admin and it leaves your own sidebar or tab strip immediately (no reload), and it stays out of View as previews the same way.
+- Settings, and the Visibility page inside it, are never in the list, so there is always a way back to switch something on.
+- A Super Admin's own change is applied from the settings they hold as soon as it is saved; client roles keep what their session says until their next load.
+
+---
+
 ## v3.630.0 - 2026-09-14 (commit c941d1a)
 
 ### Settings → Visibility as a feature chart

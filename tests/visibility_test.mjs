@@ -13,14 +13,16 @@ const vis = {
   users: { 'Sam@Example.com': { views: {}, tabs: { cohorts: false } } },
 }
 const n = V.normVisibility(vis)
-assert.deepEqual(Object.keys(n.roles).sort(), ['account_admin', 'account_user', 'admin', 'user'])
+assert.deepEqual(Object.keys(n.roles).sort(), ['account_admin', 'account_user', 'admin', 'superadmin', 'user'])
 assert.deepEqual(Object.keys(n.users), ['sam@example.com'], 'users keyed by lower-cased email')
 assert.deepEqual(V.hiddenFor({ email: 'a@x', role: 'admin' }, vis), { views: ['forecast'], tabs: ['saleshub'] }, 'only ids that apply to the role')
 assert.deepEqual(V.hiddenFor({ email: 'a@x', role: 'user' }, vis), { views: ['social'], tabs: [] })
 assert.deepEqual(V.hiddenFor({ email: 'a@x', role: 'viewer' }, vis), { views: ['reports'], tabs: ['optlog'] }, 'viewer reads as account_admin')
 assert.deepEqual(V.hiddenFor({ email: 'a@x', role: 'account_user' }, vis), { views: [], tabs: ['actions'] }, 'an account user only has the one tab to hide')
 assert.deepEqual(V.hiddenFor({ email: 'SAM@example.com', role: 'admin' }, vis), { views: [], tabs: ['cohorts'] }, 'a person\'s entry replaces the role default')
-assert.deepEqual(V.hiddenFor({ email: 'a@x', role: 'superadmin' }, vis), { views: [], tabs: [] })
+assert.deepEqual(V.hiddenFor({ email: 'a@x', role: 'superadmin' }, vis), { views: [], tabs: [] }, 'no Super Admin entry: nothing hidden')
+assert.deepEqual(V.hiddenFor({ email: 'a@x', role: 'superadmin' }, { roles: { superadmin: { views: { forecast: false }, tabs: { clinic: false } } } }), { views: ['forecast'], tabs: ['clinic'] }, 'a Super Admin can hide things from themselves')
+assert.ok(!V.VIS_VIEWS.some((x) => x.id === 'settings'), 'Settings is never in the list')
 assert.deepEqual(V.hiddenFor({ email: 'a@x', role: 'admin' }, null), { views: [], tabs: [] }, 'nothing set: nothing hidden')
 assert.ok(V.hasOverride(vis, 'sam@example.com') && !V.hasOverride(vis, 'a@x'))
 // Return to default = the entry is gone.

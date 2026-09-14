@@ -20,7 +20,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ## v3.619.0 - 2026-09-14
 
-**A release that changes what a number means shows on the next load.** (commit PENDING)
+**A release that changes what a number means shows on the next load.** (commit 722059e)
 
 - The server's result cache key now carries a schema version
   (`RESULT_CACHE_SCHEMA` in `cacheKeyFrom`), bumped to 2 for the v3.618.0

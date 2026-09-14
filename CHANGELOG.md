@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.639.0 - 2026-09-14 (commit PENDING)
+## v3.639.0 - 2026-09-14 (commit 0417c34)
 
 ### Agency Overview leaderboard fix; Daily Performance on a phone; less text
 

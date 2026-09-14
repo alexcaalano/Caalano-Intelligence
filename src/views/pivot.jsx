@@ -82,6 +82,8 @@ const mergeBuckets = (into, part) => {
     }
   }
 }
+// A touch screen scrolls the table sideways; draggable rows would fight that.
+const coarse = typeof window !== 'undefined' && !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches)
 const dmy = (ds) => { const [y, m, d] = String(ds || '').split('-'); return d ? `${d}/${m}/${y}` : ds }
 const BY = [['day', 'Day'], ['week', 'Week'], ['month', 'Month'], ['quarter', 'Quarter'], ['year', 'Year']]
 
@@ -639,7 +641,7 @@ export function PivotReport({ clients, currency }) {
                           return (
                             <React.Fragment key={m.id}>
                               {head}
-                              <tr draggable onDragStart={() => { dragFrom.current = ids.indexOf(m.id) }} onDragOver={(e) => e.preventDefault()} onDrop={() => { reorder(dragFrom.current, ids.indexOf(m.id)); dragFrom.current = null }}>
+                              <tr draggable={!coarse} onDragStart={() => { dragFrom.current = ids.indexOf(m.id) }} onDragOver={(e) => e.preventDefault()} onDrop={() => { reorder(dragFrom.current, ids.indexOf(m.id)); dragFrom.current = null }}>
                                 <td className="lft pv-first">
                                   <span className="pv-handle" title="Drag to reorder">⋮⋮</span>
                                   <span className="pv-lab">{labelOf(m, ctx)}<SrcTag src={m.src} /></span>

@@ -5780,9 +5780,19 @@ body.hub-tv-on { overflow: hidden; }
 @media (max-width: 700px) {
   .pv-bar { gap: 8px; }
   .pv-bar .act-sel { flex: 1 1 100%; }
-  .pv-tbl .pv-first { min-width: 160px; }
+  /* On a phone the metric column stays narrow and wraps, the row tools leave
+     (the picker adds, removes and orders), and the Total / Average columns
+     scroll with the periods rather than pinning to the right - two pinned
+     columns on a small screen leave no room for the periods to show. */
+  .pv-tbl .pv-first { min-width: 0; width: 34vw; max-width: 150px; white-space: normal; line-height: 1.2; }
   .pv-tbl th, .pv-tbl td { padding: 6px 8px; font-size: 11.5px; }
-  .pv-row-tools { opacity: 1; }
+  .pv-handle, .pv-row-tools { display: none; }
+  .pv-lab { font-weight: 650; }
+  .pv-tbl .pv-total { position: static; }
+  .pv-tbl .pv-ent-row .pv-first { padding-left: 14px; }
+  .pv-tbl .pv-ent-head .pv-first { width: auto; max-width: none; white-space: nowrap; }
+  .pv-ent-name { max-width: 60vw; }
+  .pv-ent-sub { max-width: 60vw; }
 }
 
 /* Trend Report: source tags and the key-event picker matrix */

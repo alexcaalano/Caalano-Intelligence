@@ -1619,14 +1619,13 @@ function VisMatrix({ cols, onFlip, locked }) {
   )
 }
 export function VisibilitySettings({ clients = [] }) {
-  const [mode, setMode] = useState('roles') // 'roles' | 'client' | 'role'
+  const [mode, setMode] = useState('roles') // 'roles' | 'client' | 'agency'
   const [vis, setVis] = useState(() => normVisibility(SETTINGS.visibility))
   const [draftRoles, setDraftRoles] = useState(() => normVisibility(SETTINGS.visibility).roles)
   const [draftUsers, setDraftUsers] = useState({}) // email -> entry, or null = return to default
   const [saved, setSaved] = useState(null)
   const [users, setUsers] = useState(null)
   const [clientId, setClientId] = useState('')
-  const [roleId, setRoleId] = useState('admin')
   useEffect(() => { let alive = true; authApi('users').then((r) => { if (alive) setUsers(r && r.ok ? (r.users || []).filter((u) => u.status !== 'disabled') : []) }); return () => { alive = false } }, [])
   const rolesDirty = JSON.stringify(normVisibility({ roles: draftRoles }).roles) !== JSON.stringify(vis.roles)
   const usersDirty = Object.keys(draftUsers).length > 0
@@ -1664,11 +1663,14 @@ export function VisibilitySettings({ clients = [] }) {
   }
   const peopleCols = (list) => list.map((u) => {
     const r = visRoleOf(u.role), custom = isCustom(u)
-    return { key: u.email, role: r, user: u, entry: effective(u), custom, label: u.name || u.email, sub: `${VIS_ROLE_LABELS[r] || r}${custom ? ' · custom' : ' · default'}`, action: { label: 'Use default', onClick: () => resetUser(u), disabled: !custom, title: custom ? 'Drop this person\'s custom set and use the role default' : 'Already on the role default' } }
+    return { key: u.email, role: r, user: u, entry: effective(u), custom, label: u.name || u.email, sub: <>{VIS_ROLE_LABELS[r] || r}<br />{custom ? 'custom' : 'default'}</>, action: { label: 'Use default', onClick: () => resetUser(u), disabled: !custom, title: custom ? 'Drop this person\'s custom set and use the role default' : 'Already on the role default' } }
   })
   const byName = (a, b) => String(a.name || a.email).localeCompare(String(b.name || b.email), undefined, { sensitivity: 'base' })
-  const clientPeople = clientId && users ? users.filter((u) => { const r = visRoleOf(u.role); if (r === 'superadmin' || r === 'admin') return true; if (r === 'user') return u.allClients !== false || (u.clients || []).includes(clientId); return (u.clients || []).includes(clientId) }).sort(byName) : []
-  const rolePeople = users ? users.filter((u) => visRoleOf(u.role) === roleId).sort(byName) : []
+  // By client: the account-level people allocated to it. Agency people are on
+  // their own tab - they see every client, so listing them per client says nothing.
+  const AGENCY = ['superadmin', 'admin', 'user']
+  const clientPeople = clientId && users ? users.filter((u) => !AGENCY.includes(visRoleOf(u.role)) && (u.clients || []).includes(clientId)).sort((a, b) => (visRoleOf(a.role) === visRoleOf(b.role) ? byName(a, b) : visRoleOf(a.role) === 'account_admin' ? -1 : 1)) : []
+  const agencyPeople = users ? users.filter((u) => AGENCY.includes(visRoleOf(u.role))).sort((a, b) => (AGENCY.indexOf(visRoleOf(a.role)) - AGENCY.indexOf(visRoleOf(b.role))) || byName(a, b)) : []
   const foot = (dirty, onSave, extra) => (
     <div className="vis-foot">
       <button type="button" className="btn-primary" onClick={onSave} disabled={!dirty}>Save</button>
@@ -1679,11 +1681,11 @@ export function VisibilitySettings({ clients = [] }) {
   return (
     <div className="card vis-card">
       <h3 style={{ marginTop: 0 }}>Visibility</h3>
-      <p className="cap" style={{ marginTop: -4 }}>Every page and client tab down the left; who sees it across the top. <b>By role</b> sets the default for everyone of that role. <b>By client</b> and <b>People in a role</b> show real people as columns, where a switch gives that person their own set (marked <i>custom</i>) and <b>Use default</b> puts them back on the role. Anything new is visible until you switch it off, so this is where a feature waits until launch. That includes you: switch something off for Super Admin and it leaves your own sidebar too, but Settings and this page are always there to switch it back on. Use <b>View as</b> in the sidebar to check what someone else gets.</p>
+      <p className="cap" style={{ marginTop: -4 }}>Every page and client tab down the left; who sees it across the top. <b>By role</b> sets the default for everyone of that role. <b>By client</b> shows the Account Admins and Account Users on one client, and <b>Agency people</b> everyone at Caalano, as columns: a switch there gives that person their own set (marked <i>custom</i>) and <b>Use default</b> puts them back on the role. Anything new is visible until you switch it off, so this is where a feature waits until launch. That includes you: switch something off for Super Admin and it leaves your own sidebar too, but Settings and this page are always there to switch it back on. Use <b>View as</b> in the sidebar to check what someone else gets.</p>
       <div className="chan-toggle sm vis-mode">
         <button className={mode === 'roles' ? 'on' : ''} onClick={() => setMode('roles')}>By role</button>
         <button className={mode === 'client' ? 'on' : ''} onClick={() => setMode('client')}>By client</button>
-        <button className={mode === 'role' ? 'on' : ''} onClick={() => setMode('role')}>People in a role</button>
+        <button className={mode === 'agency' ? 'on' : ''} onClick={() => setMode('agency')}>Agency people</button>
       </div>
       {mode === 'roles' ? (
         <>
@@ -1699,21 +1701,21 @@ export function VisibilitySettings({ clients = [] }) {
               {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
           </label>
-          {!clientId ? null : users == null ? <Spinner label="Loading people…" /> : !clientPeople.length ? <p className="cap">Nobody has access to this client yet.</p> : (
+          {!clientId ? null : users == null ? <Spinner label="Loading people…" /> : !clientPeople.length ? <p className="cap">No Account Admins or Account Users are allocated to this client yet. Allocate people under Team &amp; access.</p> : (
             <>
-              <p className="cap">{clientPeople.length} {clientPeople.length === 1 ? 'person can' : 'people can'} open this client. Agency roles see every client, so they always appear here.</p>
+              <p className="cap">{clientPeople.length} account-level {clientPeople.length === 1 ? 'person is' : 'people are'} allocated to this client. Agency people are on their own tab.</p>
               <VisMatrix cols={peopleCols(clientPeople)} onFlip={flipUser} />
               {foot(usersDirty, saveUsers)}
             </>
           )}
         </>
       ) : null}
-      {mode === 'role' ? (
+      {mode === 'agency' ? (
         <>
-          <div className="chan-toggle sm vis-roles">{VIS_ROLES.map((r) => <button key={r} className={roleId === r ? 'on' : ''} onClick={() => { setRoleId(r); setSaved(null) }}>{VIS_ROLE_LABELS[r]}</button>)}</div>
-          {users == null ? <Spinner label="Loading people…" /> : !rolePeople.length ? <p className="cap">Nobody has the {VIS_ROLE_LABELS[roleId]} role yet.</p> : (
+          {users == null ? <Spinner label="Loading people…" /> : !agencyPeople.length ? <p className="cap">Nobody holds an agency role yet.</p> : (
             <>
-              <VisMatrix cols={peopleCols(rolePeople)} onFlip={flipUser} />
+              <p className="cap">{agencyPeople.length} {agencyPeople.length === 1 ? 'person' : 'people'} at the agency: Super Admins, then Agency Admins, then Agency Users.</p>
+              <VisMatrix cols={peopleCols(agencyPeople)} onFlip={flipUser} />
               {foot(usersDirty, saveUsers)}
             </>
           )}

@@ -5623,12 +5623,12 @@ body.hub-tv-on { overflow: hidden; }
 .vis-mode { margin-bottom: 12px; flex-wrap: wrap; }
 .vis-roles { margin: 0 0 12px; flex-wrap: wrap; }
 .vis-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
-.vis-tbl { border-collapse: separate; border-spacing: 0; width: 100%; min-width: 520px; font-size: 12.5px; }
-.vis-tbl th, .vis-tbl td { padding: 6px 10px; border-bottom: 1px solid var(--border); text-align: center; vertical-align: middle; }
+.vis-tbl { border-collapse: separate; border-spacing: 0; width: auto; font-size: 12.5px; }
+.vis-tbl th, .vis-tbl td { padding: 6px 10px; border-bottom: 1px solid var(--border); text-align: center; vertical-align: middle; white-space: normal; cursor: default; user-select: text; }
 .vis-tbl thead th { position: sticky; top: 0; background: var(--panel); z-index: 2; border-bottom: 2px solid var(--border-2); }
-.vis-th-item, .vis-td-item { text-align: left !important; position: sticky; left: 0; background: var(--panel); z-index: 1; min-width: 180px; }
+.vis-th-item, .vis-td-item { text-align: left !important; position: sticky; left: 0; background: var(--panel); z-index: 1; min-width: 200px; max-width: 260px; }
 .vis-tbl thead .vis-th-item { z-index: 3; }
-.vis-th-col { min-width: 118px; max-width: 170px; }
+.vis-th-col { min-width: 110px; max-width: 150px; }
 .vis-th-col.custom { background: color-mix(in srgb, var(--brand) 6%, var(--panel)); }
 .vis-th-name { font-weight: 800; font-size: 12px; line-height: 1.25; overflow-wrap: anywhere; }
 .vis-th-sub { font-size: 10.5px; font-weight: 600; color: var(--faint); margin-top: 2px; }

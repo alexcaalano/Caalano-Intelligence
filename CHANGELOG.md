@@ -18,6 +18,17 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.632.0 - 2026-09-14 (commit PENDING)
+
+### Visibility: a narrow chart, account people by client, agency people on their own tab
+
+- The chart no longer stretches to the card width: it stays as narrow as its columns and widens only as people are added (scrolling sideways past the screen, first column and header staying put).
+- **By client** lists only the Account Admins and Account Users allocated to that client.
+- **Agency people** replaces "People in a role": every Super Admin, Agency Admin and Agency User as a column, in that order.
+- Column headers show the role and default / custom on two lines instead of clipping.
+
+---
+
 ## v3.631.0 - 2026-09-14 (commit 7967c65)
 
 ### Visibility: Super Admin has switches too

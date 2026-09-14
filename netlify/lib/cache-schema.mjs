@@ -5,4 +5,4 @@
 // server and in the browser, and shows the new meaning on the next load.
 // A release that leaves the numbers alone keeps the constant, so remembered
 // payloads still paint instantly.
-export const RESULT_CACHE_SCHEMA = 4
+export const RESULT_CACHE_SCHEMA = 5

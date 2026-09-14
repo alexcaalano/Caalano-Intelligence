@@ -13,7 +13,7 @@ const liftFrom = (src) => (name) => {
 const la = liftFrom(app), lw = liftFrom(win)
 const gs = app.indexOf('const V2_TAB_GROUPS = ['); const grpSrc = app.slice(gs, app.indexOf('\n]\n', gs) + 3)
 // The sub-channel key / label constants ride along with the split, which uses them.
-const ss = app.indexOf('const SUB_CHANNEL_KEYS = ['); const subSrc = app.slice(ss, app.indexOf('\n', app.indexOf('const SUB_CHANNEL_LABELS', ss)) + 1)
+const ss = app.indexOf('const SUB_CHANNEL_KEYS = ['); const subSrc = app.slice(ss, app.indexOf('\n', app.indexOf('const SUB_LAST', ss)) + 1)
 const { v2StoryPick, v2ReachSplit, v2SubRows, v2SecOpen, v2TabGroups } = new Function(grpSrc + subSrc + ['v2StoryPick', 'v2ReachSplit', 'v2SubRows', 'v2SecOpen', 'v2TabGroups'].map(la).join('\n') + '\nreturn { v2StoryPick, v2ReachSplit, v2SubRows, v2SecOpen, v2TabGroups }')()
 const { spendByDay } = new Function("const num = (v) => { const n = parseFloat(v); return Number.isFinite(n) ? n : 0 }\n" + lw('spendByDay') + '\nreturn { spendByDay }')()
 let n = 0, bad = 0

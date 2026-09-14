@@ -18,6 +18,18 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.624.0 - 2026-09-14 (commit PENDING)
+
+### Key event reach: every booked person attributed; calendar rows measured on this period's leads
+
+- **Why**: a calendar key event (e.g. 15 Minute Call) counts everyone who booked in the period as well as everyone whose lead reached its stage. Bookings by leads from an earlier period had no channel on the row, so they all sat in "Organic, referral, direct" (shown as Not tagged since v3.623.0), and inflated the row's "% of leads".
+- **Attribution**: for each calendar and stage key the drill now attributes booked people outside the stage split through their most recent opportunity in the 120-day window (`bookingByCalendar[].attr`: meta, google, sub-channel, or no lead record) and reports how many of the row are new leads this period (`bookingByCalendar[].cohort`). Meta and Google on calendar rows go up accordingly; the organic sub-split now covers the whole row. Someone with no lead record at all shows as "Booked, no lead record".
+- **Rates**: a calendar row's share of leads, the step to the next row and the biggest-leak sentence are measured on this period's new leads only. The bookings by older leads stay on the row ("+ N booked on older leads · T in all"), in the hover ("N new leads this period · M booked on a lead from an earlier period") and in the table view.
+- **Result cache schema 4 -> 5**.
+- Tests: `tests/calextra_test.mjs` (row extras, cohort rate and step, per-channel counts with a channel that has nobody at the stage, no remainder in the split).
+
+---
+
 ## v3.623.0 - 2026-09-14 (commit 480ea66)
 
 ### Key event reach: the organic segment broken down on hover

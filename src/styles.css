@@ -5544,3 +5544,6 @@ body.hub-tv-on { overflow: hidden; }
 .v2-pop-sub .v2-pop-r.sub i.o.sub { width: var(--w, 6px); max-width: 28px; height: 6px; border-radius: 2px; background: #c98500; opacity: .8; }
 .v2-pop-sub .v2-pop-r.sub.muted i.o.sub { opacity: .35; }
 .v2-leg small { color: var(--faint); font-weight: 500; }
+.v2-funnel .rate small.v2-older { color: var(--faint); font-weight: 500; }
+.v2-pop-n { color: var(--muted); }
+.ir-sub .ir-older { color: var(--faint); }

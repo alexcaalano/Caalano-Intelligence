@@ -4538,6 +4538,13 @@ export async function buildCcDrill(locationId, from, to, channel, basis = 'creat
   // lead booked this period whose opp was created earlier still resolves.
   const apptNames = appts && appts.nameByContact instanceof Map ? appts.nameByContact : new Map()
   const oppNameById = new Map(); for (const o of wideOpps) { const cid = contactIdOf(o); if (cid) { const nm = contactNameOf(o); if (nm && nm !== '-' && !oppNameById.has(cid)) oppNameById.set(cid, nm) } }
+  // Each booked contact's most recent opportunity in the wide window, so a
+  // booking by a lead from an earlier period is still attributed to the channel
+  // that lead came from, and the set of contacts with a lead created this
+  // period (the cohort), so the funnel can say which bookings are new leads.
+  const oppByContact = new Map()
+  for (const o of wideOpps) { const cid = contactIdOf(o); if (!cid) continue; const prev = oppByContact.get(cid); if (!prev || Date.parse(o.createdAt) > Date.parse(prev.createdAt)) oppByContact.set(cid, o) }
+  const cohortContacts = new Set(); for (const o of wideOpps) { const cid = contactIdOf(o); if (cid && ccDrillClassify(o, fromMs, toMs, basis).inCohort) cohortContacts.add(cid) }
   // Friendly source label + kind from the first-touch UTMs. Paid channels map to
   // Paid Social / Paid Search; everything else reads from the utm source.
   const capFirst = (s) => { const t = String(s || '').trim(); return t ? t.charAt(0).toUpperCase() + t.slice(1) : t }
@@ -4748,8 +4755,26 @@ export async function buildCcDrill(locationId, from, to, channel, basis = 'creat
       if (people.length < 100) people.push({ name: apptNames.get(cid) || oppNameById.get(cid) || 'Lead', occurred: isOcc, shown: isShown, noShow: isNoShow, cancelled: isCancelled })
     }
     const union = {}; for (const [key, set] of reachSet) { let n = bookedSet.size; for (const c of set) if (!bookedSet.has(c)) n++; union[key] = n }
+    // Booked people the stage split does not know about (not in the reach set
+    // for that stage key), attributed through their most recent opportunity:
+    // meta / google / organic sub-channel, or no lead record at all. And how
+    // many of the union are this period's new leads (cohort) - the rest booked
+    // this period on an older lead. Per stage key, like union.
+    const attr = {}, cohortN = {}
+    for (const [key, set] of reachSet) {
+      const a = { meta: 0, google: 0, sub: {}, noLead: 0 }; let coh = set.size
+      for (const c of bookedSet) {
+        if (set.has(c)) continue
+        if (cohortContacts.has(c)) coh++
+        const o = oppByContact.get(c)
+        if (!o) { a.noLead++; continue }
+        const u2 = utmOf(o); const c2 = channelOf(u2)
+        if (c2 === 'meta') a.meta++; else if (c2 === 'google') a.google++; else { const k2 = subChannelOf(u2); a.sub[k2] = (a.sub[k2] || 0) + 1 }
+      }
+      attr[key] = a; cohortN[key] = coh
+    }
     const resulted = shown + noShow
-    return { id: rec.id || null, calendar: rec.name || 'Calendar', booked, occurred, upcoming, shown, noShow, cancelled, resulted, unresulted: Math.max(0, occurred - resulted), people, union }
+    return { id: rec.id || null, calendar: rec.name || 'Calendar', booked, occurred, upcoming, shown, noShow, cancelled, resulted, unresulted: Math.max(0, occurred - resulted), people, union, attr, cohort: cohortN }
   }).filter((c) => c.booked).sort((a, b) => b.booked - a.booked)
   const closeArr = [...closeByChannel.values()].map((c) => { const closed = c.won + c.lost; return { channel: c.channel, won: c.won, closed, leads: c.leads, revenue: Math.round(c.revenue), cash: Math.round(c.cash || 0), closeRate: closed ? Math.round((c.won / closed) * 100) : null, deals: c.deals.slice(0, 100) } }).sort((a, b) => b.won - a.won)
   openDeals.sort((a, b) => b.value - a.value)

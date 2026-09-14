@@ -35,7 +35,7 @@ const lazyView = (load, name) => {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-export const APP_VERSION = '3.623.0'
+export const APP_VERSION = '3.624.0'
 // The business clock. Every server window is cut on the client's local day
 // (Caalano Systems location timezone), so any day the app derives on its own -
 // preset ranges, "today", CSV dates - must use the same clock rather than the
@@ -5176,15 +5176,30 @@ export function keyEventRows(keyEvents, rmap, calMap, stagePos, wonTotal) {
       const stageReached = k.stage ? stageReachOf(rmap, k.pipeline, k.stage) : 0
       // Exact booked-or-reached when the feed carries it (one count per calendar
       // and stage, de-duplicated by contact); otherwise the older approximation.
-      let union = -1
+      let union = -1, cohort = null, extra = null
       if (k.stage) {
         const keys = k.pipeline ? [k.pipeline + '::' + k.stage, k.stage] : [k.stage]
-        for (const r of (k.refs || [k.ref])) { const c = calMap && calMap.get(r); if (!c || !c.union) continue; for (const key of keys) { if (c.union[key] != null) { union = Math.max(union, c.union[key]); break } } }
+        for (const r of (k.refs || [k.ref])) {
+          const c = calMap && calMap.get(r); if (!c || !c.union) continue
+          for (const key of keys) {
+            if (c.union[key] == null) continue
+            if (c.union[key] >= union) {
+              union = c.union[key]
+              // The booked people the stage split cannot see, attributed through
+              // their own lead, and how many of the count are new leads this
+              // period. From the same calendar and key as the union.
+              const a = c.attr && c.attr[key]
+              extra = a ? { meta: a.meta || 0, google: a.google || 0, sub: { ...(a.sub || {}), ...(a.noLead ? { nolead: a.noLead } : {}) } } : null
+              cohort = c.cohort && c.cohort[key] != null ? c.cohort[key] : null
+            }
+            break
+          }
+        }
       }
       const count = union >= 0 ? Math.max(union, cal) : cal + Math.max(0, stageReached - cal)
       const fromStage = Math.max(0, count - cal)
       if (!any && !fromStage) continue
-      rows.push({ label: k.label, count, fromCal: cal, fromStage, stageReached, exact: union >= 0, occurred, upcoming, shown, noShow, cancelled, perCal, refs: (k.refs || [k.ref]).filter(Boolean), stage: k.stage || null, kind: 'calendar', pipeline: k.pipeline || null })
+      rows.push({ label: k.label, count, fromCal: cal, fromStage, stageReached, exact: union >= 0, occurred, upcoming, shown, noShow, cancelled, perCal, refs: (k.refs || [k.ref]).filter(Boolean), stage: k.stage || null, kind: 'calendar', pipeline: k.pipeline || null, cohort, extra })
     } else if (WON_RE.test(k.label)) {
       // Won event counts on the won STATUS (not the pipeline stage).
       const n = wonTotal != null ? wonTotal : stageReachOf(rmap, k.pipeline, k.ref)
@@ -6673,7 +6688,7 @@ function ccKeyEventFunnel(cc, clientId, wonTotal, leadsFallback) {
   const keList = ccKeyEventsOf(cc, clientId)
   const rmap = reachedByStage(pipes)
   const stagePos = stagePosMap(pipes)
-  const calMap = new Map(((cc && cc.bookingByCalendar) || []).map((c) => [c.id, { name: c.calendar, count: c.booked, occurred: c.occurred || 0, upcoming: c.upcoming || 0, shown: c.shown, noShow: c.noShow || 0, cancelled: c.cancelled || 0, union: c.union || null }]))
+  const calMap = new Map(((cc && cc.bookingByCalendar) || []).map((c) => [c.id, { name: c.calendar, count: c.booked, occurred: c.occurred || 0, upcoming: c.upcoming || 0, shown: c.shown, noShow: c.noShow || 0, cancelled: c.cancelled || 0, union: c.union || null, attr: c.attr || null, cohort: c.cohort || null }]))
   const rows = (keList && keList.length && pipes.length) ? keyEventRows(keList, rmap, calMap, stagePos, wonTotal) : []
   const leadTotal = leadsFallback || rmap.total || 0
   // Per-pipeline lead totals so a pipeline-scoped key event (multi-pipeline client)
@@ -6698,9 +6713,10 @@ function channelKeyEvents(cc, clientId) {
   if (!keList.length || !pipes.length) return null
   const wonByCh = {}; for (const c of (cc.closeByChannel || [])) wonByCh[c.channel] = c.won || 0
   for (const p of (cc.pipeContribution || [])) { const sb = (p.chan && p.chan.other && p.chan.other.sub) || {}; for (const k of Object.keys(sb)) wonByCh['sub:' + k] = (wonByCh['sub:' + k] || 0) + (sb[k].won || 0) }
+  const extraOf = calExtraByLabel(cc, keList, pipes)
   const rowsFor = (chanKey) => {
     const cp = pipes.map((p) => ({ ...p, stages: (p.stages || []).map((s) => ({ ...s, count: stageChanCount(s, chanKey) })) }))
-    return keyEventRows(keList, reachedByStage(cp), new Map(), stagePosMap(cp), chanKey === 'all' ? undefined : (wonByCh[chanKey] || 0))
+    return addCalExtra(keyEventRows(keList, reachedByStage(cp), new Map(), stagePosMap(cp), chanKey === 'all' ? undefined : (wonByCh[chanKey] || 0)), chanKey, extraOf)
   }
   const allRows = rowsFor('all')
   if (!allRows.length) return null
@@ -6708,12 +6724,41 @@ function channelKeyEvents(cc, clientId) {
   const countsFor = (chanKey) => { const bl = new Map(rowsFor(chanKey).map((r) => [r.label, r.count])); return labels.map((l) => bl.get(l.label) || 0) }
   return { labels, meta: countsFor('meta'), google: countsFor('google'), sub: subCountsFor(pipes, (ck) => rowsFor(ck), labels) }
 }
+// A calendar key event counts people who booked as well as people who reached
+// its stage; the per-channel stage counts only know the second group. These
+// two helpers add the first group, attributed through each person's own lead
+// (server: bookingByCalendar[].attr), to the channel or sub-channel being
+// counted, so a calendar row's split covers everyone on it.
+function calExtraByLabel(cc, keList, pipes) {
+  const calMap = new Map(((cc && cc.bookingByCalendar) || []).map((c) => [c.id, { name: c.calendar, count: c.booked, shown: c.shown, union: c.union || null, attr: c.attr || null, cohort: c.cohort || null }]))
+  if (!calMap.size) return new Map()
+  const out = new Map()
+  for (const r of keyEventRows(keList, reachedByStage(pipes), calMap, stagePosMap(pipes))) if (r.kind === 'calendar' && r.extra) out.set(r.label, r.extra)
+  return out
+}
+function addCalExtra(rows, chanKey, extraOf) {
+  if (chanKey === 'all' || !extraOf.size) return rows
+  const addOf = (e) => (chanKey.startsWith('sub:') ? ((e.sub && e.sub[chanKey.slice(4)]) || 0) : (e[chanKey] || 0))
+  const seen = new Set()
+  const out = rows.map((r) => {
+    if (r.kind !== 'calendar') return r
+    seen.add(r.label)
+    const e = extraOf.get(r.label); if (!e) return r
+    const add = addOf(e)
+    return add ? { ...r, count: (r.count || 0) + add } : r
+  })
+  // A channel with nobody at the linked stage has no calendar row to add to
+  // (keyEventRows drops it), yet people on that channel may still have booked.
+  for (const [label, e] of extraOf) { if (seen.has(label)) continue; const add = addOf(e); if (add) out.push({ label, kind: 'calendar', count: add }) }
+  return out
+}
 // The organic sub-channels (organic search, referral, direct...) counted the
 // same way as meta / google: each stage's count replaced by that sub-channel's
 // own, then the key events resolved over it. `rowsFor` takes a stage-count
 // key; here the key is 'sub:<name>', which the remap below understands.
-const SUB_CHANNEL_KEYS = ['organic', 'social', 'referral', 'direct', 'email', 'crm', 'unknown']
-const SUB_CHANNEL_LABELS = { organic: 'Organic search', social: 'Organic social', referral: 'Referral', direct: 'Direct', email: 'Email & SMS', crm: 'Added in CRM / integrations', unknown: 'Not tagged' }
+const SUB_CHANNEL_KEYS = ['organic', 'social', 'referral', 'direct', 'email', 'crm', 'unknown', 'nolead']
+const SUB_CHANNEL_LABELS = { organic: 'Organic search', social: 'Organic social', referral: 'Referral', direct: 'Direct', email: 'Email & SMS', crm: 'Added in CRM / integrations', unknown: 'Not tagged', nolead: 'Booked, no lead record' }
+const SUB_LAST = { unknown: 1, nolead: 2 }
 const stageChanCount = (s, chanKey) => chanKey === 'all' ? (s.count || 0) : chanKey.startsWith('sub:') ? ((s.sub && s.sub[chanKey.slice(4)]) || 0) : (s[chanKey] || 0)
 function subCountsFor(pipes, rowsFor, labels) {
   const has = pipes.some((p) => (p.stages || []).some((st) => st.sub))
@@ -6741,9 +6786,10 @@ function channelKeyEventsByPipe(cc, clientId) {
     const wonByCh = { meta: (pc && pc.chan && pc.chan.meta.won) || 0, google: (pc && pc.chan && pc.chan.google.won) || 0 }
     { const sb = (pc && pc.chan && pc.chan.other && pc.chan.other.sub) || {}; for (const k of Object.keys(sb)) wonByCh['sub:' + k] = sb[k].won || 0 }
     const kev = keyEventsForPipe(keList, p.id)
+    const extraOf = calExtraByLabel(cc, kev, [p])
     const rowsFor = (chanKey) => {
       const cp = [{ ...p, stages: (p.stages || []).map((s) => ({ ...s, count: stageChanCount(s, chanKey) })) }]
-      return keyEventRows(kev, reachedByStage(cp), new Map(), stagePosMap(cp), chanKey === 'all' ? undefined : (wonByCh[chanKey] || 0))
+      return addCalExtra(keyEventRows(kev, reachedByStage(cp), new Map(), stagePosMap(cp), chanKey === 'all' ? undefined : (wonByCh[chanKey] || 0)), chanKey, extraOf)
     }
     const allRows = rowsFor('all')
     const labels = allRows.map((r) => ({ label: r.label, kind: r.kind }))
@@ -7379,7 +7425,7 @@ function PipelinePerformance({ cc, pcc, clientId, currency, spend }) {
   const money = (v) => fmtCurrency(v, currency)
   const stagePos = stagePosMap(funnels)
   const keList = loadKeyEvents(clientId)
-  const mkCalMap = (d) => new Map(((d && d.bookingByCalendar) || []).map((c) => [c.id, { name: c.calendar, count: c.booked, occurred: c.occurred, upcoming: c.upcoming || 0, shown: c.shown, noShow: c.noShow || 0, cancelled: c.cancelled || 0, union: c.union || null }]))
+  const mkCalMap = (d) => new Map(((d && d.bookingByCalendar) || []).map((c) => [c.id, { name: c.calendar, count: c.booked, occurred: c.occurred, upcoming: c.upcoming || 0, shown: c.shown, noShow: c.noShow || 0, cancelled: c.cancelled || 0, union: c.union || null, attr: c.attr || null, cohort: c.cohort || null }]))
   const rmap = reachedByStage(funnels), calMap = mkCalMap(cc)
   const pRmap = reachedByStage((pcc && pcc.pipelinesFunnel) || []), pCalMap = mkCalMap(pcc)
   const pPipes = {}; for (const p of ((pcc && pcc.pipeContribution) || [])) pPipes[p.id] = p
@@ -7490,11 +7536,16 @@ function intelReach(rows, leadTotal, prevRows, prevLeadTotal, multi = true) {
     // chosen on the same numbers the bars show. Judged on raw counts, a calendar
     // step with few bookings but many deals further down read as the leak while
     // its bar, drawn on the implied count, plainly was not.
-    const effOf = (list) => list.map((r, i) => { const own = (r && r.count) || 0; if (!r || r.kind !== 'calendar') return own; let later = 0; for (let j = i + 1; j < list.length; j++) later = Math.max(later, (list[j] && list[j].count) || 0); return Math.max(own, later) })
+    // A calendar row's own count is the people who are this period's new leads
+    // (cohort) when the feed says so; bookings made this period by older leads
+    // are kept as `older` and shown, but are not a rate of these leads.
+    const ownOf = (r) => (r && r.kind === 'calendar' && r.cohort != null ? Math.min(r.count || 0, r.cohort) : (r && r.count) || 0)
+    const effOf = (list) => list.map((r, i) => { const own = ownOf(r); if (!r || r.kind !== 'calendar') return own; let later = 0; for (let j = i + 1; j < list.length; j++) later = Math.max(later, ownOf(list[j])); return Math.max(own, later) })
     const eff = effOf(rs), prevEff = effOf(rs.map((r) => prevBy.get(keyOf(r)) || null))
     const mine = rs.map((r0, i) => {
       const pr0 = prevBy.get(keyOf(r0))
-      const r = { ...r0, count: eff[i] }
+      const older = r0.kind === 'calendar' && r0.cohort != null ? Math.max(0, (r0.count || 0) - eff[i]) : 0
+      const r = { ...r0, count: eff[i], older, total: eff[i] + older }
       const pr = pr0 ? { ...pr0, count: prevEff[i] } : undefined
       // On the Closed won basis, wins are counted by close date while leads are
       // counted by arrival, and every won deal is assumed to have passed every
@@ -8050,7 +8101,7 @@ function IntelReach({ reach, multi, leadTotal, chanLabel, money, spend }) {
             <div key={i} className={`card kpi ir-card${r.bottleneck ? ' ir-bn' : ''}`} title={r.bottleneck ? 'The lowest step conversion in this funnel - the biggest leak' : undefined}>
               <div className="top"><span className="label">{r.label}</span>{r.bottleneck ? <span className="ir-flag">Bottleneck</span> : null}</div>
               <div className="value">{r.rate != null ? pc(r.rate) : '-'}</div>
-              <div className="ir-sub">{fmtNumber(r.count)} of {fmtNumber(r.base)}{r.over ? <span className="ir-over" title="More deals resulted at this stage than arrived as leads in the period. On the Closed won basis wins are counted by close date, so this is not a rate of these leads - switch Won basis to Created for a true cohort read.">more than arrived</span> : dPts != null ? <span className={`ir-delta ${dPts > 0 ? 'up' : dPts < 0 ? 'down' : 'flat'}`}>{dPts > 0 ? '▲' : dPts < 0 ? '▼' : '·'} {Math.abs(dPts)} pts</span> : null}</div>
+              <div className="ir-sub">{fmtNumber(r.count)} of {fmtNumber(r.base)}{r.older ? <span className="ir-older" title="Booked this period on a lead from an earlier period - counted on the row, not in the share of these leads"> · +{fmtNumber(r.older)} older leads booked</span> : null}{r.over ? <span className="ir-over" title="More deals resulted at this stage than arrived as leads in the period. On the Closed won basis wins are counted by close date, so this is not a rate of these leads - switch Won basis to Created for a true cohort read.">more than arrived</span> : dPts != null ? <span className={`ir-delta ${dPts > 0 ? 'up' : dPts < 0 ? 'down' : 'flat'}`}>{dPts > 0 ? '▲' : dPts < 0 ? '▼' : '·'} {Math.abs(dPts)} pts</span> : null}</div>
               <div className="ir-step">{i === 0 ? 'first key event' : r.step != null ? <>{pc(r.step)} of the {fmtNumber(r.stepBase)} before{r.prevStep != null ? <span className="ir-was"> · was {pc(r.prevStep)}</span> : null}</> : '-'}</div>
               {spendOf(g.pid) && r.count ? <div className="ir-cost">{money(Math.round(spendOf(g.pid) / r.count))} each</div> : null}
             </div>
@@ -8268,13 +8319,13 @@ function v2SubRows(other, sub) {
   const rest = Math.max(0, other - known)
   const unk = rows.find((r) => r.key === 'unknown')
   if (rest) { if (unk) unk.value += rest; else rows.push({ key: 'unknown', label: SUB_CHANNEL_LABELS.unknown, value: rest }) }
-  rows.sort((a, b) => (a.key === 'unknown' ? 1 : b.key === 'unknown' ? -1 : b.value - a.value))
+  rows.sort((a, b) => ((SUB_LAST[a.key] || 0) - (SUB_LAST[b.key] || 0)) || (b.value - a.value))
   return rows.filter((r) => r.value > 0)
 }
 // One reach bar: the share of leads as width, split by channel, the previous
 // period as a tick. Hovering shows the split as a small card rather than the
 // browser's own tooltip.
-function V2ReachBar({ label, count, split, width, prevAt, leak, detail }) {
+function V2ReachBar({ label, count, split, width, prevAt, leak, detail, note }) {
   const [hov, setHov] = useState(null)
   const ref = React.useRef(null)
   const tot = split.meta + split.google + split.other || 1
@@ -8305,8 +8356,9 @@ function V2ReachBar({ label, count, split, width, prevAt, leak, detail }) {
         <div className="v2-pop-r"><i className="m" />Meta<b>{fmtNumber(split.meta)}</b><span>{pc(split.meta)}</span></div>
         <div className="v2-pop-r"><i className="g" />Google<b>{fmtNumber(split.google)}</b><span>{pc(split.google)}</span></div>
         <div className="v2-pop-r"><i className="o" />Organic, referral, direct<b>{fmtNumber(split.other)}</b><span>{pc(split.other)}</span></div>
-        {split.sub && split.sub.length ? <div className="v2-pop-sub">{split.sub.map((r) => <div key={r.key} className={`v2-pop-r sub${r.key === 'unknown' ? ' muted' : ''}`}><i className="o sub" style={{ '--w': `${Math.max(6, Math.round((r.value / (split.other || 1)) * 100))}%` }} />{r.label}<b>{fmtNumber(r.value)}</b><span>{split.other ? `${Math.round((r.value / split.other) * 100)}%` : ''}</span></div>)}</div> : null}
+        {split.sub && split.sub.length ? <div className="v2-pop-sub">{split.sub.map((r) => <div key={r.key} className={`v2-pop-r sub${SUB_LAST[r.key] ? ' muted' : ''}`}><i className="o sub" style={{ '--w': `${Math.max(6, Math.round((r.value / (split.other || 1)) * 100))}%` }} />{r.label}<b>{fmtNumber(r.value)}</b><span>{split.other ? `${Math.round((r.value / split.other) * 100)}%` : ''}</span></div>)}</div> : null}
         {detail && detail.length ? <div className="v2-pop-d">{detail.map((d, i) => <div key={i} className={`v2-pop-r${d.muted ? ' muted' : ''}${d.head ? ' head' : ''}`}><i className={d.head ? 'none' : 'dot'} />{d.label}<b>{d.value != null ? fmtNumber(d.value) : ''}</b><span>{d.sub || ''}</span></div>)}</div> : null}
+        {note ? <div className="v2-pop-p v2-pop-n">{note}</div> : null}
         {prevAt != null ? <div className="v2-pop-p">Previous period {Math.round(prevAt * 100)}% of leads</div> : null}
       </div> : null}
     </div>
@@ -8410,8 +8462,11 @@ function ExecReach({ reach, multi, kef, cc, pcc, clientId, money, spend, chanLab
                 const effs = g.rows.map((r, i) => { let later = 0; for (let j = i + 1; j < g.rows.length; j++) later = Math.max(later, g.rows[j].count || 0); return r.kind === 'calendar' ? Math.max(r.count || 0, later) : (r.count || 0) })
                 return g.rows.map((r, i) => {
                   const eff = effs[i], prevEff = i === 0 ? g.base : effs[i - 1]
+                  // Bookings this period by leads from an earlier period: on the
+                  // row's total and in the hover split, not in the share of leads.
+                  const older = r.older || 0, total = eff + older
                   const ch = chanOf(g.pid, r.label)
-                  const split = ch ? v2ReachSplit(eff, ch.meta, ch.google, ch.sub) : { meta: 0, google: 0, other: eff, sub: null }
+                  const split = ch ? v2ReachSplit(total, ch.meta, ch.google, ch.sub) : { meta: 0, google: 0, other: total, sub: null }
                   const isBn = r === bn
                   const isCal = r.kind === 'calendar'
                   const byStage = isCal ? Math.max(r.stageReached || 0, eff > (r.fromCal || 0) ? eff : 0) : 0
@@ -8425,8 +8480,8 @@ function ExecReach({ reach, multi, kef, cc, pcc, clientId, money, spend, chanLab
                   return (
                     <React.Fragment key={i}>
                       <div className={`st${isBn ? ' bn' : ''}`}>{r.label.replace(/^📅 /, '')}<small>{isCal ? 'booked or reached the stage' : r.kind === 'won' ? 'won status' : 'stage reached'}{r.over ? ' · more than arrived' : ''}</small></div>
-                      <V2ReachBar label={r.label.replace(/^📅 /, '')} count={eff} split={split} width={rateV} prevAt={r.prevRate} leak={isBn} detail={detail} />
-                      <div className={`rate${isBn ? ' bn' : ''}`}>{fmtNumber(eff)}{isCal ? <small className="v2-split">{two ? `${fmtNumber(r.fromCal || 0)} booked${byStage ? ` · ${fmtNumber(byStage)} reached` : ''}` : `${fmtNumber(r.fromCal || 0)} by booking${byStage ? ` (${fmtNumber(byStage)} reached the stage)` : ''}`}</small> : null}<small>{i === 0 ? `${pc(rateV)} of leads` : stepV != null ? (two ? `${pc(Math.min(1, stepV))} of ${fmtNumber(prevEff)}` : `${pc(Math.min(1, stepV))} of the ${fmtNumber(prevEff)} before`) : '-'}{gSpend && eff ? ` · ${money(Math.round(gSpend / eff))}${two ? '' : ' each'}` : ''}</small></div>
+                      <V2ReachBar label={r.label.replace(/^📅 /, '')} count={total} split={split} width={rateV} prevAt={r.prevRate} leak={isBn} detail={detail} note={older ? `${fmtNumber(eff)} new leads this period · ${fmtNumber(older)} booked on a lead from an earlier period` : null} />
+                      <div className={`rate${isBn ? ' bn' : ''}`}>{fmtNumber(eff)}{older ? <small className="v2-split v2-older">{two ? `+ ${fmtNumber(older)} older leads booked` : `+ ${fmtNumber(older)} booked on older leads · ${fmtNumber(total)} in all`}</small> : null}{isCal ? <small className="v2-split">{two ? `${fmtNumber(r.fromCal || 0)} booked${byStage ? ` · ${fmtNumber(byStage)} reached` : ''}` : `${fmtNumber(r.fromCal || 0)} by booking${byStage ? ` (${fmtNumber(byStage)} reached the stage)` : ''}`}</small> : null}<small>{i === 0 ? `${pc(rateV)} of leads` : stepV != null ? (two ? `${pc(Math.min(1, stepV))} of ${fmtNumber(prevEff)}` : `${pc(Math.min(1, stepV))} of the ${fmtNumber(prevEff)} before`) : '-'}{gSpend && eff ? ` · ${money(Math.round(gSpend / eff))}${two ? '' : ' each'}` : ''}</small></div>
                     </React.Fragment>
                   )
                 })

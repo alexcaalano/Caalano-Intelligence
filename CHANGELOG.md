@@ -20,7 +20,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ## v3.648.0 - 2026-09-14
 
-**Trend Report on a phone** (commit PENDING)
+**Trend Report on a phone** (commit 2ea69f4)
 
 - The period columns were hidden on a phone: the metric column (widened by the row tools) and the pinned Total column together filled the screen, so the months scrolled underneath them and nothing seemed to scroll. On a phone the metric column now stays narrow and wraps, the drag handle and row tools leave (the Metrics picker adds, removes and orders), and Total and Average scroll with the periods instead of pinning to the right. Rows are no longer draggable on a touch screen, so a sideways swipe scrolls the table.
 

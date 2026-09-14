@@ -18,6 +18,17 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.627.0 - 2026-09-14 (commit PENDING)
+
+### Daily performance: phone-width walk-through and polish
+
+- Rendered the whole page at 360, 393 and 768 px with the demo client and walked every interaction (movers, window tiles, Meta and Google drills, campaign → ad set / ad group, key-event source pills, source-table drills). No element pokes past the viewport at any step; the page never scrolls sideways.
+- Key events by source pills wrap onto a second line on a phone instead of clipping the last one; the last pill no longer loses its final letter at any width.
+- Empty-state lines in the drills ("No Google conversion actions…", "No campaign spend…") are captions, not body text; the "No key events reached" line is left-aligned.
+- Five window tiles at two per row: the fifth spans the row instead of sitting alone.
+
+---
+
 ## v3.626.0 - 2026-09-14 (commit ca5e4e6)
 
 ### Daily performance on a phone

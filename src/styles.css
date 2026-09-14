@@ -5595,3 +5595,15 @@ body.hub-tv-on { overflow: hidden; }
   .mov-panel .mov-head .cap { flex-basis: 100%; }
   .mov-swipe { display: inline; color: var(--brand); font-weight: 700; }
 }
+/* Drill and breakdown polish (from the phone-width walk) */
+.tr-brk-tbl td[colspan], .tr-src td[colspan] { text-align: left; }
+.tr-src-drillbox .tr-brk-note { margin-top: 6px; }
+@media (max-width: 640px) {
+  /* The source pills wrap onto a second line rather than clipping the last one. */
+  .chan-toggle.tr-brk-src { display: flex; flex-wrap: wrap; width: 100%; box-sizing: border-box; }
+  .chan-toggle.tr-brk-src button { flex: 1 1 auto; min-width: max-content; padding: 6px 8px; font-size: 12px; }
+  /* Five window tiles at two per row: the last one spans the row. */
+  .tr-grid .tr-sc:nth-child(5):last-child { grid-column: 1 / -1; }
+}
+/* The last source pill was losing its final letter at the toggle's edge. */
+.chan-toggle.tr-brk-src button { min-width: max-content; }

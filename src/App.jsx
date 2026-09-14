@@ -35,7 +35,7 @@ const lazyView = (load, name) => {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-export const APP_VERSION = '3.626.0'
+export const APP_VERSION = '3.627.0'
 // The business clock. Every server window is cut on the client's local day
 // (Caalano Systems location timezone), so any day the app derives on its own -
 // preset ranges, "today", CSV dates - must use the same clock rather than the
@@ -1377,7 +1377,7 @@ function useChannelFeed(clientId, channel, days) {
 // Google). One open campaign at a time; the child rows sit indented under it.
 function DrillCampaigns({ rows, kidsOf, cols, kidLabel, money, empty }) {
   const [open, setOpen] = useState(null)
-  if (!rows.length) return <span className="cap">{empty}</span>
+  if (!rows.length) return <p className="tr-brk-note cap">{empty}</p>
   // On a phone the secondary columns leave the table and sit under the name.
   const subs = cols.filter((c) => c.sub)
   const caption = (r) => (subs.length ? <small className="tr-camp-caption">{subs.map((c) => <span key={c.key}>{c.label}: {c.render(r, money)}</span>)}</small> : null)
@@ -1461,7 +1461,7 @@ function GoogleDrill({ clientId, days, money, showActions = true }) {
             {rows.map((r) => { const primary = r.conv > 0; return <tr key={r.name}><td className="lft">{primary ? <span title="Primary - counts toward the Results number">⭐ </span> : ''}{r.name}{r.category ? <span className="cap"> · {r.category}</span> : null}</td><td>{fmtNumber(Math.round(r.conv * 10) / 10)}</td><td>{fmtNumber(Math.round(r.all * 10) / 10)}</td><td>{totConv ? fmtPct((r.conv / totConv) * 100, 0) : '-'}</td></tr> })}
             <tr className="tr-src-tot"><td className="lft">Total</td><td>{fmtNumber(Math.round(totConv * 10) / 10)}</td><td>{fmtNumber(Math.round(rows.reduce((s, r) => s + r.all, 0) * 10) / 10)}</td><td>100%</td></tr>
           </tbody>
-        </table> : <span className="cap">No Google conversion actions recorded in the last {days} days.</span>}
+        </table> : <p className="tr-brk-note cap">No Google conversion actions recorded in the last {days} days.</p>}
         <p className="tr-brk-note cap"><b>⭐ = primary conversion</b> - these make up the Conversions number (Google’s primary/optimised “Conversions” count). Un-starred rows are secondary actions, counted only in “All conv.”. Click a campaign for its ad groups. Account-wide over the last {days} days to yesterday.</p>
       </> : null}
     </div>

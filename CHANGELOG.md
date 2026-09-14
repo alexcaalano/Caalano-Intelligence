@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.637.0 - 2026-09-14 (commit PENDING)
+## v3.637.0 - 2026-09-14 (commit 9f8a24d)
 
 ### Settings: sections with tabs, and the explanations move into hover
 

@@ -13,7 +13,7 @@
 import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 
-const DEFAULT_FILES = ['src/App.jsx', 'src/views/sales-hub.jsx', 'src/views/settings.jsx', 'src/views/creative.jsx', 'src/views/monthly-report.jsx', 'netlify/functions/windsor.mjs', 'netlify/lib/ghl.mjs', 'netlify/lib/cred.mjs', 'netlify/lib/providers/index.mjs', 'netlify/lib/providers/windsor.mjs', 'netlify/lib/entitle.mjs', 'netlify/lib/db.mjs', 'netlify/lib/mirror.mjs', 'netlify/lib/clients.mjs', 'netlify/lib/contact.mjs', 'netlify/lib/cache-schema.mjs']
+const DEFAULT_FILES = ['src/App.jsx', 'src/views/sales-hub.jsx', 'src/views/settings.jsx', 'src/views/creative.jsx', 'src/views/monthly-report.jsx', 'netlify/functions/windsor.mjs', 'netlify/lib/ghl.mjs', 'netlify/lib/cred.mjs', 'netlify/lib/providers/index.mjs', 'netlify/lib/providers/windsor.mjs', 'netlify/lib/entitle.mjs', 'netlify/lib/db.mjs', 'netlify/lib/mirror.mjs', 'netlify/lib/clients.mjs', 'netlify/lib/contact.mjs', 'netlify/lib/cache-schema.mjs', 'netlify/lib/visibility.mjs']
 // A file list on the command line checks just those (used while carving views out of App.jsx).
 const FILES = process.argv.length > 2 ? process.argv.slice(2) : DEFAULT_FILES
 const require = createRequire(import.meta.url)

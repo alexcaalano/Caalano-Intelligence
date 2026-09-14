@@ -3,6 +3,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { APP_VERSION, AnnotationToggle, Avatar, BIZ_TYPES, CC_CHANS, Caveat, ChangePasswordCard, ClinicSettings, DASH_AUD, DASH_MODULES, DASH_PRESETS, DEFAULT_HOURS, DOW_LABELS, FATIGUE_DEFAULTS, FAVICON, FormsSettingsTab, GeoSettings, HelpNote, OptLogSettings, PROFILE_FIELDS, ROLE_LABEL, SEED_KEYEVENTS, SETTINGS, SignOutEverywhereCard, YourDetailsCard, Spinner, TAB_OPTIONS, TermsAdmin, TermsRegister, UsersAdmin, acolor, apiJson, applyAliases, clientLogoSrc, dashAudience, dashModuleFits, dedupeFetch, deleteClient, domainOf, dpClientOn, dpPipeOn, fetchDiscover, fmtDMY, fmtHours, formKeyEvents, formsDoneCount, hhmm, initials, isAdminishFE, isClientDeleted, iso, loadAliases, loadBizType, loadCampMap, loadCashOn, loadCloseOverride, loadDashboard, loadFatigueCfg, loadHours, loadKeep, loadKeyEvents, loadKeyEventsRaw, loadKpis, loadLogo, loadMetaConv, loadProfile, loadQualStage, loadSocialKpis, mkOutcomeMap, normId, presetRange, rangeLabel, rangeMaturity, rangeQuery, readNavUrl, removeCustomClient, restoreClient, roleLabelOf, saveBizType, saveCampMap, saveCashOn, saveCloseOverride, saveCustomClient, saveDashboard, saveFatigueCfg, saveHours, saveKeyEvents, saveKpis, saveLogo, saveMetaConv, saveProfile, saveQualStage, saveSocialKpis, setAlias, setDpClient, setDpPipe, setKeep, syncLogos, unorm, useDiscoverNames, useSettingsSync, writeNavUrl, normCrmUrl, saveCrmUrl, CRM_DEFAULT_URL } from '../App.jsx'
 import { fmtCurrency, fmtNumber } from '../lib/format.js'
+import { VIS_ROLES, VIS_ROLE_LABELS, viewsForRole, tabsForRole, normVisibility, hasOverride } from '../lib/visibility.js'
+import { authApi, saveSettingsRemote, bumpSettings } from '../App.jsx'
 import { GoalsEditor } from './sales-hub.jsx'
 
 /* ============ Settings ============ */
@@ -1569,6 +1571,102 @@ export function CrmAddressCard() {
     </div>
   )
 }
+/* ============ Visibility: who sees which views and tabs ============ */
+// Super Admin only. A default per role (what everyone of that role gets) and,
+// per person, a custom set that replaces the default. Only what is switched
+// off is stored, so anything new is visible until it is deliberately hidden -
+// which is how a feature stays out of sight until launch.
+function VisPanel({ role, entry, onChange }) {
+  const views = viewsForRole(role), tabs = tabsForRole(role)
+  const on = (kind, id) => !(entry && entry[kind] && entry[kind][id] === false)
+  const flip = (kind, id) => { const cur = { ...((entry && entry[kind]) || {}) }; if (cur[id] === false) delete cur[id]; else cur[id] = false; onChange({ ...entry, [kind]: cur }) }
+  const grp = (title, hint, list, kind) => (
+    <div className="vis-grp">
+      <div className="vis-grp-h"><b>{title}</b><span className="cap">{hint}</span></div>
+      {list.length ? <div className="vis-grid">{list.map((it) => <label key={it.id} className={`vis-row${on(kind, it.id) ? '' : ' off'}`}><span>{it.label}</span><Toggle sm on={on(kind, it.id)} onChange={() => flip(kind, it.id)} /></label>)}</div> : <p className="cap">Nothing to set for this role.</p>}
+    </div>
+  )
+  return (
+    <>
+      {grp('Sidebar', 'Pages down the left-hand side. Settings is always available.', views, 'views')}
+      {grp('Client workspace tabs', role === 'account_user' ? 'An Account User holds Deals & Actions and nothing else.' : 'Tabs across the top of a client. A tab the client has no data for never shows anyway.', tabs, 'tabs')}
+    </>
+  )
+}
+export function VisibilitySettings() {
+  const [mode, setMode] = useState('roles') // 'roles' | 'people'
+  const [role, setRole] = useState('admin')
+  const [vis, setVis] = useState(() => normVisibility(SETTINGS.visibility))
+  const [dirty, setDirty] = useState(false)
+  const [saved, setSaved] = useState(null)
+  const [users, setUsers] = useState(null)
+  const [who, setWho] = useState('')
+  const [draft, setDraft] = useState(null) // the person's custom entry being edited
+  useEffect(() => { let alive = true; authApi('users').then((r) => { if (alive) setUsers(r && r.ok ? (r.users || []).filter((u) => u.role !== 'superadmin' && u.status !== 'disabled') : []) }); return () => { alive = false } }, [])
+  // Roles: edit the default for the picked role, save all defaults together.
+  const setRoleEntry = (e) => { setVis((v) => ({ ...v, roles: { ...v.roles, [role]: e } })); setDirty(true); setSaved(null) }
+  const saveRoles = () => {
+    const next = normVisibility(vis)
+    SETTINGS.visibility = { ...(SETTINGS.visibility || {}), roles: next.roles }
+    saveSettingsRemote({ visibility: { roles: next.roles } }); bumpSettings()
+    setVis(next); setDirty(false); setSaved('Role defaults saved. People sign in with the new defaults on their next load.')
+  }
+  const resetRole = () => { setVis((v) => ({ ...v, roles: { ...v.roles, [role]: { views: {}, tabs: {} } } })); setDirty(true); setSaved(null) }
+  // People: a custom set replaces the role default; returning to default deletes it.
+  const person = users && users.find((u) => u.email === who)
+  const pickPerson = (email) => { setWho(email); setSaved(null); const u = users && users.find((x) => x.email === email); if (!u) { setDraft(null); return } const key = u.email.toLowerCase(); setDraft(vis.users[key] ? { ...vis.users[key] } : { ...vis.roles[u.role === 'viewer' ? 'account_admin' : u.role] }) }
+  const writeUsers = (nextUsers, msg) => {
+    const next = normVisibility({ ...vis, users: nextUsers })
+    SETTINGS.visibility = { ...(SETTINGS.visibility || {}), users: next.users }
+    saveSettingsRemote({ visibility: { users: next.users } }); bumpSettings()
+    setVis(next); setSaved(msg)
+  }
+  const savePerson = () => { if (!person || !draft) return; writeUsers({ ...vis.users, [person.email.toLowerCase()]: draft }, `Custom visibility saved for ${person.name || person.email}.`) }
+  const resetPerson = () => { if (!person) return; const u = { ...vis.users }; delete u[person.email.toLowerCase()]; writeUsers(u, `${person.name || person.email} is back on the ${VIS_ROLE_LABELS[person.role] || person.role} default.`); setDraft({ ...vis.roles[person.role === 'viewer' ? 'account_admin' : person.role] }) }
+  const customCount = Object.keys(vis.users).length
+  return (
+    <div className="card vis-card">
+      <h3 style={{ marginTop: 0 }}>Visibility</h3>
+      <p className="cap" style={{ marginTop: -4 }}>Choose which pages and client tabs each role sees, and override it for one person. Anything new is visible until you switch it off here, so this is where a feature waits until it is ready to launch. Super Admins always see everything; use <b>View as</b> at the bottom of the sidebar to check what someone else gets.</p>
+      <div className="chan-toggle sm vis-mode"><button className={mode === 'roles' ? 'on' : ''} onClick={() => setMode('roles')}>Role defaults</button><button className={mode === 'people' ? 'on' : ''} onClick={() => setMode('people')}>People{customCount ? ` · ${customCount} custom` : ''}</button></div>
+      {mode === 'roles' ? (
+        <>
+          <div className="chan-toggle sm vis-roles">{VIS_ROLES.map((r) => <button key={r} className={role === r ? 'on' : ''} onClick={() => setRole(r)}>{VIS_ROLE_LABELS[r]}</button>)}</div>
+          <VisPanel role={role} entry={vis.roles[role]} onChange={setRoleEntry} />
+          <div className="vis-foot">
+            <button type="button" className="btn-primary" onClick={saveRoles} disabled={!dirty}>Save role defaults</button>
+            <button type="button" className="btn-ghost" onClick={resetRole}>Show everything to {VIS_ROLE_LABELS[role]}s</button>
+            {saved ? <span className="cap vis-saved">{saved}</span> : dirty ? <span className="cap">Unsaved changes.</span> : null}
+          </div>
+        </>
+      ) : (
+        <>
+          {users == null ? <Spinner label="Loading people…" /> : (
+            <div className="vis-people">
+              <label className="vis-pick">Person
+                <select value={who} onChange={(e) => pickPerson(e.target.value)}>
+                  <option value="">Choose someone…</option>
+                  {users.map((u) => <option key={u.email} value={u.email}>{u.name || u.email} · {VIS_ROLE_LABELS[u.role === 'viewer' ? 'account_admin' : u.role] || u.role}{hasOverride(vis, u.email) ? ' · custom' : ''}</option>)}
+                </select>
+              </label>
+              {person && draft ? (
+                <>
+                  <p className="cap">{hasOverride(vis, person.email) ? <><span className="vis-pill custom">Custom</span> {person.name || person.email} has their own settings, replacing the {VIS_ROLE_LABELS[person.role] || person.role} default.</> : <><span className="vis-pill">Default</span> {person.name || person.email} gets the {VIS_ROLE_LABELS[person.role] || person.role} default. Change anything below and save to give them their own.</>}</p>
+                  <VisPanel role={person.role === 'viewer' ? 'account_admin' : person.role} entry={draft} onChange={(e) => { setDraft(e); setSaved(null) }} />
+                  <div className="vis-foot">
+                    <button type="button" className="btn-primary" onClick={savePerson}>Save custom visibility</button>
+                    <button type="button" className="btn-ghost" onClick={resetPerson} disabled={!hasOverride(vis, person.email)}>Return to role default</button>
+                    {saved ? <span className="cap vis-saved">{saved}</span> : null}
+                  </div>
+                </>
+              ) : null}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  )
+}
 export function SettingsPage({ config, enabled, setEnabled, restricted = {}, setRestricted, currency, authUser, authEnabled, theme, setTheme, onPick }) {
   const [filter, setFilter] = useState('active')
   const [q, setQ] = useState('')
@@ -1585,7 +1683,7 @@ export function SettingsPage({ config, enabled, setEnabled, restricted = {}, set
     ...((!authEnabled || isAdmin) ? ['team'] : []),
     ...(authEnabled ? ['account'] : []),
     'appearance',
-    ...(isSuper && authEnabled ? ['terms'] : []),
+    ...(isSuper && authEnabled ? ['visibility', 'terms'] : []),
     ...(isSuper ? ['logs'] : []),
   ]
   const defaultSection = isAdmin ? 'clients' : 'account'
@@ -1633,6 +1731,7 @@ export function SettingsPage({ config, enabled, setEnabled, restricted = {}, set
         {(!authEnabled || isAdmin) && <button className={section === 'team' ? 'on' : ''} onClick={() => setSection('team')}>Team &amp; access</button>}
         {authEnabled && <button className={section === 'account' ? 'on' : ''} onClick={() => setSection('account')}>Your account</button>}
         <button className={section === 'appearance' ? 'on' : ''} onClick={() => setSection('appearance')}>Appearance</button>
+        {isSuper && authEnabled && <button className={section === 'visibility' ? 'on' : ''} onClick={() => setSection('visibility')}>Visibility</button>}
         {isSuper && authEnabled && <button className={section === 'terms' ? 'on' : ''} onClick={() => setSection('terms')}>Terms of use</button>}
         {isSuper && <button className={section === 'logs' ? 'on' : ''} onClick={() => setSection('logs')}>Logs</button>}
       </div>
@@ -1640,6 +1739,7 @@ export function SettingsPage({ config, enabled, setEnabled, restricted = {}, set
           Both hold the legal record, so neither is shown to Admins. */}
       {isSuper && authEnabled && section === 'terms' && <><TermsRegister /><TermsAdmin authUser={authUser} /></>}
       {isSuper && section === 'logs' && <LogsPanel clients={config.clients} />}
+      {isSuper && authEnabled && section === 'visibility' && <VisibilitySettings />}
       {section === 'appearance' && (
         <div className="card">
           <h3 style={{ marginTop: 0 }}>Appearance</h3>

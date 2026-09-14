@@ -1,0 +1,42 @@
+// @needs-fake-blobs
+// Who sees what: a role default hides views and tabs for everyone of that
+// role; a person's own entry replaces the default and deleting it returns
+// them to it; only ids that apply to the role count; Super Admins are never
+// hidden anything; the session (auth?action=me) carries the result.
+process.env.AUTH_SECRET = 'test-secret'
+import assert from 'node:assert/strict'
+const V = await import('../netlify/lib/visibility.mjs')
+const { getStore } = await import('@netlify/blobs')
+
+const vis = {
+  roles: { admin: { views: { forecast: false, reports: false }, tabs: { saleshub: false, nonsense: false } }, user: { views: { social: false } }, account_admin: { views: { reports: false }, tabs: { optlog: false } }, account_user: { tabs: { actions: false, meta: false } } },
+  users: { 'Sam@Example.com': { views: {}, tabs: { cohorts: false } } },
+}
+const n = V.normVisibility(vis)
+assert.deepEqual(Object.keys(n.roles).sort(), ['account_admin', 'account_user', 'admin', 'user'])
+assert.deepEqual(Object.keys(n.users), ['sam@example.com'], 'users keyed by lower-cased email')
+assert.deepEqual(V.hiddenFor({ email: 'a@x', role: 'admin' }, vis), { views: ['forecast'], tabs: ['saleshub'] }, 'only ids that apply to the role')
+assert.deepEqual(V.hiddenFor({ email: 'a@x', role: 'user' }, vis), { views: ['social'], tabs: [] })
+assert.deepEqual(V.hiddenFor({ email: 'a@x', role: 'viewer' }, vis), { views: ['reports'], tabs: ['optlog'] }, 'viewer reads as account_admin')
+assert.deepEqual(V.hiddenFor({ email: 'a@x', role: 'account_user' }, vis), { views: [], tabs: ['actions'] }, 'an account user only has the one tab to hide')
+assert.deepEqual(V.hiddenFor({ email: 'SAM@example.com', role: 'admin' }, vis), { views: [], tabs: ['cohorts'] }, 'a person\'s entry replaces the role default')
+assert.deepEqual(V.hiddenFor({ email: 'a@x', role: 'superadmin' }, vis), { views: [], tabs: [] })
+assert.deepEqual(V.hiddenFor({ email: 'a@x', role: 'admin' }, null), { views: [], tabs: [] }, 'nothing set: nothing hidden')
+assert.ok(V.hasOverride(vis, 'sam@example.com') && !V.hasOverride(vis, 'a@x'))
+// Return to default = the entry is gone.
+const back = V.normVisibility({ ...vis, users: {} })
+assert.deepEqual(V.hiddenFor({ email: 'sam@example.com', role: 'admin' }, back), { views: ['forecast'], tabs: ['saleshub'] })
+assert.ok(V.isHiddenView({ views: ['forecast'], tabs: [] }, 'forecast') && !V.isHiddenTab({ views: ['forecast'], tabs: [] }, 'forecast'))
+assert.equal(V.tabsForRole('account_user').length, 1)
+assert.ok(V.viewsForRole('account_admin').every((v) => v.roles.includes('account_admin')))
+
+// The session carries it: an admin signs in after the Super Admin hid Forecaster.
+await getStore({ name: 'caalano-settings' }).setJSON('all', { visibility: vis })
+await getStore({ name: 'caalano-auth' }).setJSON('user:adm@example.com', { email: 'adm@example.com', role: 'admin', status: 'active', firstName: 'Ad', lastName: 'Min', phone: '+61400000001', termsVersion: 99 })
+const { signSession } = await import('../netlify/lib/auth.mjs')
+const { default: auth } = await import('../netlify/functions/auth.mjs')
+const tok = await signSession({ e: 'adm@example.com', exp: Date.now() + 60000, v: 0 }, 'test-secret')
+const me = await auth(new Request('https://x/.netlify/functions/auth?action=me', { headers: { cookie: 'c360_session=' + tok } })).then((r) => r.json())
+assert.ok(me.ok && me.user, JSON.stringify(me).slice(0, 200))
+assert.deepEqual(me.user.hidden, { views: ['forecast'], tabs: ['saleshub'] }, 'me carries hidden')
+console.log('visibility_test ok')

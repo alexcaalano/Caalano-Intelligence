@@ -18,6 +18,17 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.629.0 - 2026-09-14 (commit PENDING)
+
+### Settings → Visibility: who sees which pages and client tabs (Super Admin)
+
+- **Role defaults**: for Agency Admin, Agency User, Account Admin and Account User, switch off any sidebar page (Agency Overview, Daily Performance, Weekly Traffic Light, Funnel Forecaster, Creative Cockpit, Meta Insights, Client Update, Monthly Report, Organic Social Media; for client roles Monthly Reports and the client workspaces) and any client-workspace tab (Caalano360, Custom dashboard, Clinic, Meta Ads, Google Ads, Analytics, Sales Hub, Deals & Actions, Cohorts, Users, Call Reporting, Forms, Location, Appointments, Calendars, Timing, Lost Reasons, Change Log). "Show everything to …" clears a role in one click.
+- **People**: pick a person and give them their own set, which replaces their role default; "Return to role default" removes it. People with a custom set are marked in the picker.
+- **Rules**: only what is switched off is stored, so anything new is visible until it is deliberately hidden, which is how a feature stays out of sight until launch. Super Admins always see everything; View as shows what anyone else gets. Settings is never hidden. A hidden page is not reachable by deep link either: the person lands on the first page they can see.
+- **Plumbing**: `netlify/lib/visibility.mjs` (shared with the app via `src/lib/visibility.js`); the `visibility` settings section is Super Admin write-only and mirrors to Postgres as an organisation row; the session (`auth?action=me`) carries `hidden` so the app applies it before any settings load. Test: `tests/visibility_test.mjs`.
+
+---
+
 ## v3.628.0 - 2026-09-14 (commit 5b8938c)
 
 ### Movers carousel on a phone: a clear peek, not a clipped edge

@@ -10,6 +10,7 @@ import {
 } from './lib/format.js'
 import { PHONE_COUNTRIES, DEFAULT_PHONE_COUNTRY, countryByIso, countryByDial, parsePhone, formatNational, isEmail as isEmailAddr } from './lib/contact.js'
 import { RESULT_CACHE_SCHEMA } from './lib/cache-schema.js'
+import { hiddenFor, isHiddenView, isHiddenTab } from './lib/visibility.js'
 import { GOAL_METRICS, goalMetric, SPLITS, normGoals, newGoalId, goalShares, validateGoal, goalLevel, repValue, goalActual, repTargetsFromGoals, migrateRepKpis, goalWindow, goalTargetFor, monthKeysFrom, quarterKeysFrom, RATE_METRICS } from './lib/goals.js'
 // Views carved out of this file load on first open (React.lazy), so the first
 // paint carries the shell and the tabs people land on, not every screen.
@@ -35,7 +36,7 @@ const lazyView = (load, name) => {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-export const APP_VERSION = '3.628.0'
+export const APP_VERSION = '3.629.0'
 // The business clock. Every server window is cut on the client's local day
 // (Caalano Systems location timezone), so any day the app derives on its own -
 // preset ranges, "today", CSV dates - must use the same clock rather than the
@@ -4370,7 +4371,7 @@ const UI_LAYOUT_KEY = 'caalano_ui_layout'      // 'v1' | 'v2' - this browser's o
 const PDFDL_KEY = 'caalano_pdfdl'                // { clientId: bool } - per-client "clients may download the report PDF" (admin-toggled)
 const readLS = (k) => { try { return JSON.parse(localStorage.getItem(k) || '{}') } catch { return {} } }
 export const writeLS = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)) } catch {} }
-export const SETTINGS = { campmap: readLS(CMAP_KEY), kpis: readLS(KPI_KEY), keyevents: readLS(KEV_KEY), annotations: readLS(ANNOT_KEY), enabled: readLS(ENABLED_KEY), restricted: readLS(RESTRICTED_KEY), insights: readLS(AI_KEY), clients: readLS(CLIENTS_KEY), formmeta: readLS(FORMMETA_KEY), metaconv: readLS(METACONV_KEY), creativemeta: readLS(CREATIVEMETA_KEY), creativetax: readLS(CREATIVETAX_KEY), clientctx: readLS(CLIENTCTX_KEY), fatigue: readLS(FATIGUE_KEY), competitors: readLS(COMPETITORS_KEY), socialkpis: readLS(SOCIALKPIS_KEY), optlog: readLS(OPTLOG_KEY), qualstage: readLS(QUALSTAGE_KEY), aliases: readLS(ALIASES_KEY), logos: readLS(LOGOS_KEY), curator: readLS(CURATOR_KEY), profile: readLS(PROFILE_KEY), dailyperf: readLS(DAILYPERF_KEY), adnames: readLS(ADNAMES_KEY), pdfdl: readLS(PDFDL_KEY), clinic: readLS(CLINIC_CFG_KEY), geo: readLS(GEO_KEY), forecasts: readLS(FORECAST_KEY), ui: readLS(UI_KEY), dashboards: readLS(DASH_KEY), repkpis: readLS(REPKPI_KEY), goals: readLS(GOALS_KEY), loaded: false }
+export const SETTINGS = { visibility: {}, campmap: readLS(CMAP_KEY), kpis: readLS(KPI_KEY), keyevents: readLS(KEV_KEY), annotations: readLS(ANNOT_KEY), enabled: readLS(ENABLED_KEY), restricted: readLS(RESTRICTED_KEY), insights: readLS(AI_KEY), clients: readLS(CLIENTS_KEY), formmeta: readLS(FORMMETA_KEY), metaconv: readLS(METACONV_KEY), creativemeta: readLS(CREATIVEMETA_KEY), creativetax: readLS(CREATIVETAX_KEY), clientctx: readLS(CLIENTCTX_KEY), fatigue: readLS(FATIGUE_KEY), competitors: readLS(COMPETITORS_KEY), socialkpis: readLS(SOCIALKPIS_KEY), optlog: readLS(OPTLOG_KEY), qualstage: readLS(QUALSTAGE_KEY), aliases: readLS(ALIASES_KEY), logos: readLS(LOGOS_KEY), curator: readLS(CURATOR_KEY), profile: readLS(PROFILE_KEY), dailyperf: readLS(DAILYPERF_KEY), adnames: readLS(ADNAMES_KEY), pdfdl: readLS(PDFDL_KEY), clinic: readLS(CLINIC_CFG_KEY), geo: readLS(GEO_KEY), forecasts: readLS(FORECAST_KEY), ui: readLS(UI_KEY), dashboards: readLS(DASH_KEY), repkpis: readLS(REPKPI_KEY), goals: readLS(GOALS_KEY), loaded: false }
 const settingsSubs = new Set()
 export const bumpSettings = () => { for (const fn of settingsSubs) fn() }
 function onSettings(fn) { settingsSubs.add(fn); return () => settingsSubs.delete(fn) }
@@ -4400,7 +4401,7 @@ async function hydrateSettings() {
       // First run: migrate whatever this browser holds up to the server.
       saveSettingsRemote({ campmap: SETTINGS.campmap, kpis: SETTINGS.kpis, keyevents: SETTINGS.keyevents, enabled: SETTINGS.enabled, restricted: SETTINGS.restricted, insights: SETTINGS.insights, clients: SETTINGS.clients, formmeta: SETTINGS.formmeta, metaconv: SETTINGS.metaconv, creativemeta: SETTINGS.creativemeta, creativetax: SETTINGS.creativetax, clientctx: SETTINGS.clientctx, fatigue: SETTINGS.fatigue })
     } else {
-      for (const s of ['campmap', 'kpis', 'keyevents', 'enabled', 'restricted', 'insights', 'clients', 'formmeta', 'metaconv', 'creativemeta', 'creativetax', 'clientctx', 'fatigue', 'competitors', 'socialkpis', 'optlog', 'qualstage', 'aliases', 'logos', 'curator', 'profile', 'dailyperf', 'adnames', 'pdfdl', 'geo', 'annotations', 'forecasts', 'ui', 'dashboards', 'repkpis', 'goals']) SETTINGS[s] = { ...SETTINGS[s], ...(d[s] || {}) }
+      for (const s of ['campmap', 'kpis', 'keyevents', 'enabled', 'restricted', 'insights', 'clients', 'formmeta', 'metaconv', 'creativemeta', 'creativetax', 'clientctx', 'fatigue', 'competitors', 'socialkpis', 'optlog', 'qualstage', 'aliases', 'logos', 'curator', 'profile', 'dailyperf', 'adnames', 'pdfdl', 'geo', 'annotations', 'forecasts', 'ui', 'dashboards', 'repkpis', 'goals', 'visibility']) SETTINGS[s] = { ...SETTINGS[s], ...(d[s] || {}) }
       writeLS(CMAP_KEY, SETTINGS.campmap); writeLS(KPI_KEY, SETTINGS.kpis); writeLS(KEV_KEY, SETTINGS.keyevents); writeLS(ENABLED_KEY, SETTINGS.enabled); writeLS(RESTRICTED_KEY, SETTINGS.restricted); writeLS(AI_KEY, SETTINGS.insights); writeLS(CLIENTS_KEY, SETTINGS.clients); writeLS(FORMMETA_KEY, SETTINGS.formmeta); writeLS(METACONV_KEY, SETTINGS.metaconv); writeLS(CREATIVEMETA_KEY, SETTINGS.creativemeta); writeLS(CREATIVETAX_KEY, SETTINGS.creativetax); writeLS(CLIENTCTX_KEY, SETTINGS.clientctx); writeLS(FATIGUE_KEY, SETTINGS.fatigue); writeLS(COMPETITORS_KEY, SETTINGS.competitors); writeLS(SOCIALKPIS_KEY, SETTINGS.socialkpis); writeLS(OPTLOG_KEY, SETTINGS.optlog); writeLS(QUALSTAGE_KEY, SETTINGS.qualstage); writeLS(ALIASES_KEY, SETTINGS.aliases); writeLS(LOGOS_KEY, SETTINGS.logos); writeLS(CURATOR_KEY, SETTINGS.curator); writeLS(PROFILE_KEY, SETTINGS.profile); writeLS(DAILYPERF_KEY, SETTINGS.dailyperf); writeLS(ADNAMES_KEY, SETTINGS.adnames); writeLS(PDFDL_KEY, SETTINGS.pdfdl); writeLS(FORECAST_KEY, SETTINGS.forecasts); writeLS(UI_KEY, SETTINGS.ui); writeLS(DASH_KEY, SETTINGS.dashboards); writeLS(GEO_KEY, SETTINGS.geo); writeLS(REPKPI_KEY, SETTINGS.repkpis); writeLS(ANNOT_KEY, SETTINGS.annotations)
       writeLS(GOALS_KEY, SETTINGS.goals)
     }
@@ -16410,7 +16411,7 @@ class ErrorBoundary extends React.Component {
 }
 
 /* ============ Auth ============ */
-function authApi(action, opts = {}) {
+export function authApi(action, opts = {}) {
   return fetch(`/.netlify/functions/auth?action=${action}`, { headers: { 'content-type': 'application/json' }, ...opts })
     .then((r) => r.json().catch(() => ({ ok: false, error: 'server ' + r.status })))
     .catch((e) => ({ ok: false, error: String((e && e.message) || e) }))
@@ -16498,8 +16499,14 @@ function canSeeClientFE(user, id) {
 // ("account_*") are where the old code said "viewer"; that name is still
 // accepted from older records and means Account Admin.
 export const isClientRoleFE = (r) => r === 'account_admin' || r === 'account_user' || r === 'viewer'
+export function userHidden(u) {
+  if (!u) return { views: [], tabs: [] }
+  if (u.hidden && !u.viewAs) return u.hidden
+  return hiddenFor(u, SETTINGS.visibility)
+}
 function allowedTabsFE(user, offered) {
   if (!user) return offered
+  { const hid = userHidden(user); if (hid.tabs.length) { const keep = offered.filter((t) => !isHiddenTab(hid, t.id)); if (keep.length) offered = keep } }
   if (user.role === 'account_user') { const only = offered.filter((t) => t.id === 'actions'); return only.length ? only : offered.slice(0, 1) }
   if (isClientRoleFE(user.role) && !Array.isArray(user.tabs)) return offered.filter((t) => t.id !== 'saleshub')
   if (!isClientRoleFE(user.role) || !Array.isArray(user.tabs)) return offered
@@ -19099,12 +19106,17 @@ function Dashboard({ authUser, authEnabled, onLogout, realUser, onViewAs }) {
   const myClients = visibleClients
   // Monthly Reports capability (client-facing published reports). Viewers get it
   // only when granted; a viewer can be reports-only (no dashboard tabs).
-  const canReports = isViewer ? !!(authUser && authUser.reports) : false
-  const hasDashTabs = !isViewer || authUser.tabs == null || (Array.isArray(authUser.tabs) && authUser.tabs.length > 0)
+  const hid = userHidden(authUser)
+  const showView = (id) => !isHiddenView(hid, id)
+  const canReports = isViewer ? !!(authUser && authUser.reports) && showView('reports') : false
+  const hasDashTabs = (!isViewer || authUser.tabs == null || (Array.isArray(authUser.tabs) && authUser.tabs.length > 0)) && (!isViewer || showView('dashboards'))
   const viewerView = view === 'settings' ? 'settings'
     : (view === 'reports' && canReports) ? 'reports'
       : (hasDashTabs ? 'clients' : (canReports ? 'reports' : 'clients'))
-  const curView = isViewer ? viewerView : view
+  // A hidden agency view is never shown, even by deep link: fall to the first
+  // one this person can see.
+  const AGENCY_VIEWS = ['overview', 'trends', 'weekly', 'forecast', 'cockpit', 'insights', 'update', 'monthly', 'social']
+  const curView = isViewer ? viewerView : ((AGENCY_VIEWS.includes(view) && !showView(view)) ? (AGENCY_VIEWS.find(showView) || 'settings') : view)
   // Resolve a deep-linked ?c= client synchronously here too (not just in the async
   // effect) so a refresh straight onto a client URL doesn't flash the empty state.
   const urlClientId = readNavUrl().c
@@ -19129,15 +19141,15 @@ function Dashboard({ authUser, authEnabled, onLogout, realUser, onViewAs }) {
         )}
         <nav className="nav">
           {!isViewer && <>
-            <button className={curView === 'overview' ? 'active' : ''} onClick={() => go('overview')}><span className="ic"><NavIcon name="overview" /></span>Agency Overview</button>
-            <button className={curView === 'trends' ? 'active' : ''} onClick={() => go('trends')}><span className="ic"><NavIcon name="trends" /></span>Daily Performance</button>
-            <button className={curView === 'weekly' ? 'active' : ''} onClick={() => go('weekly')}><span className="ic"><NavIcon name="weekly" /></span>Weekly Traffic Light</button>
-            {!isViewer && <button className={curView === 'forecast' ? 'active' : ''} onClick={() => go('forecast')}><span className="ic"><NavIcon name="forecast" /></span>Funnel Forecaster</button>}
-            <button className={curView === 'cockpit' ? 'active' : ''} onClick={() => go('cockpit')}><span className="ic"><NavIcon name="cockpit" /></span>Creative Cockpit</button>
-            <button className={curView === 'insights' ? 'active' : ''} onClick={() => go('insights')}><span className="ic"><NavIcon name="insights" /></span>Meta Insights</button>
-            <button className={curView === 'update' ? 'active' : ''} onClick={() => go('update')}><span className="ic"><NavIcon name="update" /></span>Client Update</button>
-            <button className={curView === 'monthly' ? 'active' : ''} onClick={() => go('monthly')}><span className="ic"><NavIcon name="monthly" /></span>Monthly Report</button>
-            <button className={curView === 'social' ? 'active' : ''} onClick={() => go('social')}><span className="ic"><NavIcon name="social" /></span>Organic Social Media</button>
+            {showView('overview') && <button className={curView === 'overview' ? 'active' : ''} onClick={() => go('overview')}><span className="ic"><NavIcon name="overview" /></span>Agency Overview</button>}
+            {showView('trends') && <button className={curView === 'trends' ? 'active' : ''} onClick={() => go('trends')}><span className="ic"><NavIcon name="trends" /></span>Daily Performance</button>}
+            {showView('weekly') && <button className={curView === 'weekly' ? 'active' : ''} onClick={() => go('weekly')}><span className="ic"><NavIcon name="weekly" /></span>Weekly Traffic Light</button>}
+            {showView('forecast') && <button className={curView === 'forecast' ? 'active' : ''} onClick={() => go('forecast')}><span className="ic"><NavIcon name="forecast" /></span>Funnel Forecaster</button>}
+            {showView('cockpit') && <button className={curView === 'cockpit' ? 'active' : ''} onClick={() => go('cockpit')}><span className="ic"><NavIcon name="cockpit" /></span>Creative Cockpit</button>}
+            {showView('insights') && <button className={curView === 'insights' ? 'active' : ''} onClick={() => go('insights')}><span className="ic"><NavIcon name="insights" /></span>Meta Insights</button>}
+            {showView('update') && <button className={curView === 'update' ? 'active' : ''} onClick={() => go('update')}><span className="ic"><NavIcon name="update" /></span>Client Update</button>}
+            {showView('monthly') && <button className={curView === 'monthly' ? 'active' : ''} onClick={() => go('monthly')}><span className="ic"><NavIcon name="monthly" /></span>Monthly Report</button>}
+            {showView('social') && <button className={curView === 'social' ? 'active' : ''} onClick={() => go('social')}><span className="ic"><NavIcon name="social" /></span>Organic Social Media</button>}
           </>}
           {isViewer && <>
             {canReports && <button className={curView === 'reports' ? 'active' : ''} onClick={() => go('reports')}><span className="ic"><NavIcon name="monthly" /></span>Monthly Reports</button>}

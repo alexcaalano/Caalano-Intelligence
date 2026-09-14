@@ -11,6 +11,8 @@ import {
 } from '../lib/auth.mjs'
 import { PHONE_COUNTRIES, DEFAULT_PHONE_COUNTRY } from '../lib/contact.mjs'
 import { loadTerms, saveTerms, resetTerms, termsHash, termsAcceptanceValid, DEFAULT_TERMS, DEFAULT_MIN_VERSION } from '../lib/terms.mjs'
+import { hiddenFor } from '../lib/visibility.mjs'
+import { getStore } from '@netlify/blobs'
 
 const SESSION_MS = 14 * 86400 * 1000
 const secret = () => process.env.AUTH_SECRET || ''
@@ -26,10 +28,17 @@ const mint = async (user) => signSession({ e: user.email, r: user.role, n: user.
 // Whether this person still has to sign. Decided here rather than in the app so
 // publishing a new version doesn't re-prompt everyone by accident - a signature
 // stands until the minimum accepted version is deliberately raised past it.
+// Which sidebar views and client tabs a Super Admin has hidden from this person
+// (Settings -> Visibility), so the app can apply it before it has any settings.
+const withHidden = async (user) => {
+  if (!user) return user
+  const vis = await getStore({ name: 'caalano-settings', consistency: 'strong' }).get('all', { type: 'json' }).then((s) => (s && s.visibility) || null).catch(() => null)
+  return { ...user, hidden: hiddenFor(user, vis) }
+}
 const withTerms = async (user) => {
   if (!user) return user
   const { terms, minVersion } = await loadTerms()
-  return { ...user, needsTerms: !termsAcceptanceValid(user.termsVersion, minVersion), termsMinVersion: minVersion, termsCurrentVersion: terms.version }
+  return withHidden({ ...user, needsTerms: !termsAcceptanceValid(user.termsVersion, minVersion), termsMinVersion: minVersion, termsCurrentVersion: terms.version })
 }
 
 export default async (req) => {

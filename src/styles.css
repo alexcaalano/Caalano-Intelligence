@@ -5619,3 +5619,18 @@ body.hub-tv-on { overflow: hidden; }
   .mov-panel .mov-head .chan-toggle.sm button { min-width: max-content; padding: 5px 9px; }
   .agy-mov-head .chan-toggle.sm + .chan-toggle.sm { margin-left: 0; }
 }
+/* ===== Settings → Visibility ===== */
+.vis-mode { margin-bottom: 12px; }
+.vis-roles { margin-bottom: 12px; flex-wrap: wrap; }
+.vis-grp { margin-top: 14px; }
+.vis-grp-h { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 6px; }
+.vis-grp-h b { font-size: 13px; }
+.vis-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 0 18px; }
+.vis-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--border); font-size: 13px; cursor: pointer; }
+.vis-row.off span { color: var(--faint); text-decoration: line-through; }
+.vis-foot { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
+.vis-saved { color: var(--pos); }
+.vis-pick { display: flex; flex-direction: column; gap: 5px; font-size: 12px; font-weight: 700; color: var(--muted); max-width: 420px; }
+.vis-pick select { font: inherit; font-weight: 500; color: var(--text); background: var(--panel-2); border: 1px solid var(--border); border-radius: 9px; padding: 8px 10px; }
+.vis-pill { display: inline-block; font-size: 10px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; padding: 1px 7px; border-radius: 999px; background: var(--panel-2); border: 1px solid var(--border-2); color: var(--muted); margin-right: 4px; }
+.vis-pill.custom { background: color-mix(in srgb, var(--brand) 14%, transparent); color: var(--brand); border-color: transparent; }

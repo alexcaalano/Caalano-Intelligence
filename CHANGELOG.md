@@ -20,7 +20,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ## v3.644.0 - 2026-09-14
 
-**Trend Report: campaign, ad set, creative and ad group rows** (commit PENDING)
+**Trend Report: campaign, ad set, creative and ad group rows** (commit 8ede938)
 
 - **Break down by** in the metric picker: under Meta pick Campaigns, Ad sets and Creatives; under Google pick Campaigns and Ad groups. Each entity appears as a block under the platform sections with its own metric rows (Meta: spend, results, cost per result, impressions, clicks, link CTR; Google: cost, conversions, cost per conversion, clicks, impressions, conversion rate), chosen with chips beside each entity type.
 - The top 10 by spend over the period show first; **Show all** on the group heading reveals the rest. Ad sets and ad groups carry their campaign name; creatives show a thumbnail, and hovering the thumbnail previews it. A play button on video creatives opens the video in a modal, with links to the ad preview or the Instagram post where the video itself is not available.

@@ -35,7 +35,7 @@ const lazyView = (load, name) => {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-export const APP_VERSION = '3.627.0'
+export const APP_VERSION = '3.628.0'
 // The business clock. Every server window is cut on the client's local day
 // (Caalano Systems location timezone), so any day the app derives on its own -
 // preset ranges, "today", CSV dates - must use the same clock rather than the
@@ -2124,7 +2124,7 @@ function AgencyMovers({ rows, currency, nonce, onPick }) {
       <div className="chan-toggle sm">{AGY_MOVER_WINS.map((n) => <button key={n} className={win === n ? 'on' : ''} onClick={() => setWinSafe(n)}>{n}d</button>)}</div>
       <div className="chan-toggle sm">{AGY_LENSES.map(([k, l]) => <button key={k} className={lens === k ? 'on' : ''} onClick={() => setLensSafe(k)}>{l}</button>)}</div>
       <div className="chan-toggle sm" title="Closed: a deal counts on the day it was won. Created: it counts against the window its lead arrived in.">{AGY_BASES.map(([k, l]) => <button key={k} className={basis === k ? 'on' : ''} onClick={() => setBasisSafe(k)}>{l}</button>)}</div>
-      <span className="cap">last {win} days vs the prior {win} · deals counted on the day they {basis === 'closed' ? 'closed' : 'came in as a lead'} · ranked by how much moved, not just the percentage · click one for the funnel behind it</span>
+      <span className="cap">last {win} days vs the prior {win} · deals counted on the day they {basis === 'closed' ? 'closed' : 'came in as a lead'} · ranked by how much moved, not just the percentage · click one for the funnel behind it<span className="mov-swipe"> · swipe for more →</span></span>
     </div>
   )
   if (tr.status === 'loading') return <div className="card mov-panel">{head}<Spinner label="Loading movers…" /></div>

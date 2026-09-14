@@ -18,6 +18,15 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.628.0 - 2026-09-14 (commit PENDING)
+
+### Movers carousel on a phone: a clear peek, not a clipped edge
+
+- The next mover card now peeks in by a clear margin (cards are ~78% of the screen) so the strip reads as something to swipe. Previously only a sliver showed at the right edge and looked like a rendering fault. Applies to the Daily performance and Agency Overview movers panels.
+- The Agency Overview movers header wraps its three toggles (window, All / Paid / CRM, Closed / Created) onto as many lines as needed instead of running off the panel; it also carries the "swipe for more" hint.
+
+---
+
 ## v3.627.0 - 2026-09-14 (commit 8ca1227)
 
 ### Daily performance: phone-width walk-through and polish

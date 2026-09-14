@@ -18,6 +18,16 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.642.0 - 2026-09-14 (commit PENDING)
+
+### Forms: route a form to a pipeline by one of its answers
+
+**Route by answer** - in a client's Settings → Forms, a form's settings now offer "Route by answer": pick the question that decides the pipeline (Service type, say), and the pipeline for each answer the form has been given. A lead whose answer has a rule goes to that pipeline; a lead who skipped the question, or gave an answer with no rule, goes to the form's own pipeline, which the settings now call "Pipeline for every other lead". Answers match whole and case-insensitively, and a multi-select answer matches on any of its parts.
+
+**Where it shows** - the Settings → Forms list marks a routed form "by answer" and explains the rules on hover; the Forms tab's read-only panel lists them; and the Forms tab's "linked to this pipeline" filter re-cuts a routed form to the leads that route there (leads, booked, shown, won, revenue and the people behind them), so a form that feeds two pipelines reads correctly under each.
+
+---
+
 ## v3.641.0 - 2026-09-14 (commit 5c8f8ae)
 
 ### Trend Report: key events by source, client defaults, long ranges that finish

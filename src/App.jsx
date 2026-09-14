@@ -36,7 +36,7 @@ const lazyView = (load, name) => {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-export const APP_VERSION = '3.641.0'
+export const APP_VERSION = '3.642.0'
 // The business clock. Every server window is cut on the client's local day
 // (Caalano Systems location timezone), so any day the app derives on its own -
 // preset ranges, "today", CSV dates - must use the same clock rather than the
@@ -4827,6 +4827,46 @@ function saveFormMeta(clientId, formLabel, meta) {
   const next = { ...cur, [formLabel]: { ...(cur[formLabel] || {}), ...meta } }
   SETTINGS.formmeta = { ...(SETTINGS.formmeta || {}), [clientId]: next }
   writeLS(FORMMETA_KEY, SETTINGS.formmeta); saveSettingsRemote({ formmeta: { [clientId]: next } }); bumpSettings()
+}
+// A form can route to a pipeline by one of its answers: meta.route =
+// { question, rules: { [answer]: pipelineId } }. A lead whose answer has a rule
+// goes to that pipeline; anyone else (no answer, no rule) goes to the form's
+// own pipeline. Answers match whole, case-insensitively, and a multi-select
+// answer ("SIL, Allied Health") matches on any of its parts.
+export function formRouteOf(meta, answers) {
+  const r = meta && meta.route
+  if (!r || !r.question || !r.rules) return (meta && meta.pipeline) || null
+  const raw = answers ? answers[r.question] : null
+  if (raw == null || raw === '') return meta.pipeline || null
+  const norm = (v) => String(v).trim().toLowerCase()
+  const want = new Map(Object.entries(r.rules).map(([k, v]) => [norm(k), v]))
+  const hit = want.get(norm(raw))
+  if (hit) return hit
+  for (const part of String(raw).split(/\s*,\s*/)) { const h = want.get(norm(part)); if (h) return h }
+  return meta.pipeline || null
+}
+export function formIsRouted(meta) { return !!(meta && meta.route && meta.route.question && meta.route.rules && Object.keys(meta.route.rules).length) }
+// Every pipeline a form can send a lead to: its own, plus each rule's.
+export function formPipelines(meta) { return [...new Set([meta && meta.pipeline, ...(formIsRouted(meta) ? Object.values(meta.route.rules) : [])].filter(Boolean))] }
+// The slice of a form whose leads route to one pipeline: counts, people and
+// lead rows re-cut to those leads, so a routed form reads correctly under a
+// pipeline's "linked forms" filter.
+export function projectFormToPipe(f, meta, pid) {
+  if (!formIsRouted(meta)) return (meta && meta.pipeline) === pid ? f : null
+  const leads = formLeadsOf(f) || []
+  const keep = new Set(leads.filter((p) => formRouteOf(meta, p.answers) === pid).map((p) => p.contactId))
+  if (!keep.size) return null
+  const kept = leads.filter((p) => keep.has(p.contactId))
+  const lr = f.leadRows
+  const ci = (lr.keys || []).indexOf('contactId')
+  return {
+    ...f,
+    leads: kept.length, booked: kept.filter((p) => p.booked).length, shown: kept.filter((p) => p.shown).length,
+    won: kept.filter((p) => p.status === 'won').length, revenue: kept.reduce((n, p) => n + (p.status === 'won' ? (p.value || 0) : 0), 0),
+    people: (f.people || []).filter((p) => keep.has(p.contactId)),
+    leadRows: { ...lr, rows: (lr.rows || []).filter((r) => keep.has(r[ci])) },
+    _routed: true,
+  }
 }
 // How many of a client's forms have been reviewed (saved, even if left blank),
 // for the Settings card health icon. Only counts real per-form entries.
@@ -12129,6 +12169,7 @@ function FormMetaPanel({ clientId, form, pipes, onEdit }) {
       </div>
       <div className="fm-meta-read">
         <div><span className="fm-lab">Pipeline</span><span className="fm-val">{pipeName || <span className="cap">not set</span>}</span></div>
+        {formIsRouted(meta) && <div><span className="fm-lab">Routed by "{meta.route.question}"</span><span className="fm-val fm-route-read">{Object.entries(meta.route.rules).map(([a, pid]) => <span key={a}>{a} → {(pipes.find((p) => p.id === pid) || {}).name || pid}</span>)}</span></div>}
         <div><span className="fm-lab">Notes</span><span className="fm-val">{meta.notes || <span className="cap">none</span>}</span></div>
         <button className="fm-edit-btn" onClick={() => onEdit(form)} title="Edit this form's pipeline & notes">✎ Edit</button>
       </div>
@@ -12142,7 +12183,15 @@ function FormSettingsModal({ clientId, form, pipes, onClose }) {
   const [notes, setNotes] = useState(cur.notes || '')
   const [pipe, setPipe] = useState(cur.pipeline || '')
   const questions = form.questions || []
-  const save = () => { saveFormMeta(clientId, form.form, { pipeline: pipe || null, notes: notes.trim() || null, done: true }); onClose() }
+  // Route by answer: one question, and a pipeline per answer it has been given.
+  const [rq, setRq] = useState((cur.route && cur.route.question) || '')
+  const [rules, setRules] = useState((cur.route && cur.route.rules) || {})
+  const segQ = (form.segments || []).find((q) => q.question === rq)
+  const observed = segQ ? segQ.answers.map((a) => a.value) : []
+  const ruleKeys = [...new Set([...observed, ...Object.keys(rules)])]
+  const setRule = (v, pid) => setRules((r) => { const n = { ...r }; if (pid) n[v] = pid; else delete n[v]; return n })
+  const nameOf = (id) => (pipes.find((p) => p.id === id) || {}).name || id
+  const save = () => { saveFormMeta(clientId, form.form, { pipeline: pipe || null, notes: notes.trim() || null, route: rq && Object.keys(rules).length ? { question: rq, rules } : null, done: true }); onClose() }
   return (
     <div className="modal-bg" onClick={onClose}>
       <div className="modal set-modal" onClick={(e) => e.stopPropagation()}>
@@ -12152,7 +12201,33 @@ function FormSettingsModal({ clientId, form, pipes, onClose }) {
             <span className="fm-lab">What this form asks</span>
             {questions.length ? <span className="fm-qs">{questions.map((q, i) => <span className="fm-q" key={q + i}>{q}</span>)}</span> : <span className="cap">Contact details only - no qualification questions captured.</span>}
           </div>
-          {pipes.length > 0 && <div className="set-field" style={{ marginBottom: 14 }}><span className="fm-lab">Pipeline</span><select value={pipe} onChange={(e) => setPipe(e.target.value)}><option value="">- not set -</option>{pipes.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select></div>}
+          {pipes.length > 1 && questions.length > 0 && (
+            <div className="fm-route">
+              <span className="fm-lab">Route by answer <InfoTip>Pick the question that decides the pipeline, then the pipeline for each answer. A lead whose answer has no pipeline here, or who skipped the question, goes to the form's pipeline above. Answers match whole; a multi-select answer matches on any of its parts.</InfoTip></span>
+              <select className="fmset-sel" value={rq} onChange={(e) => { setRq(e.target.value); setRules({}) }}>
+                <option value="">- same pipeline for every lead -</option>
+                {questions.map((q) => <option key={q} value={q}>{q}</option>)}
+              </select>
+              {rq ? (
+                <div className="fm-route-rules">
+                  {ruleKeys.length ? ruleKeys.map((v) => {
+                    const seen = segQ ? (segQ.answers.find((a) => a.value === v) || {}).leads : null
+                    return (
+                      <div className="fm-route-row" key={v}>
+                        <span className="fm-route-ans" title={v}>{v}{seen ? <small> · {seen} lead{seen === 1 ? '' : 's'}</small> : null}</span>
+                        <span className="fm-route-arrow">→</span>
+                        <select className="fmset-sel" value={rules[v] || ''} onChange={(e) => setRule(v, e.target.value)}>
+                          <option value="">{pipe ? `Form pipeline (${nameOf(pipe)})` : '- form pipeline -'}</option>
+                          {pipes.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                        </select>
+                      </div>
+                    )
+                  }) : <p className="cap" style={{ margin: '6px 0 0' }}>No answers to this question in the last 30 days yet.</p>}
+                </div>
+              ) : null}
+            </div>
+          )}
+          {pipes.length > 0 && <div className="set-field" style={{ marginBottom: 14 }}><span className="fm-lab">{rq ? 'Pipeline for every other lead' : 'Pipeline'}</span><select value={pipe} onChange={(e) => setPipe(e.target.value)}><option value="">- not set -</option>{pipes.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select></div>}
           <div className="set-field"><span className="fm-lab">Notes</span><textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="e.g. Testing higher qualification to lift show rate…" style={{ minHeight: 72, resize: 'vertical', width: '100%' }} /></div>
           <div style={{ marginTop: 16, display: 'flex', justifyContent: 'flex-end', gap: 10 }}><button className="set-details-save" onClick={save}>Save</button></div>
         </div>
@@ -12202,8 +12277,9 @@ export function FormsSettingsTab({ clientId }) {
               <span className="form-kind">{f.kind === 'facebook' ? '📱' : f.kind === 'website' ? '🌐' : '📄'}</span>
               <span className="fmset-nm" title={f.form}>{f.form}</span>
               {suggested && <span className="fmset-sug" title="Auto-suggested from the naming - pick to confirm">suggested</span>}
+              {formIsRouted(m) && <span className="fmset-sug fmset-route" title={`Routed by "${m.route.question}": ${Object.entries(m.route.rules).map(([a, pid]) => `${a} → ${(pipes.find((p) => p.id === pid) || {}).name || pid}`).join(' · ')}. Other leads go to the pipeline shown.`}>by answer</span>}
               {pipes.length > 0 && (
-                <select className="fmset-sel" value={eff || ''} onChange={(e) => setPipe(f, e.target.value)}>
+                <select className="fmset-sel" value={eff || ''} onChange={(e) => setPipe(f, e.target.value)} title={formIsRouted(m) ? 'The pipeline for leads no rule catches' : undefined}>
                   <option value="">- no pipeline -</option>
                   {pipes.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
                 </select>
@@ -13406,7 +13482,7 @@ function FormsView({ clientId, currency, range, nonce, pipe: pipeProp, onPipe, a
   // 'link:<id>' to show only forms manually linked to that pipeline in Settings.
   const projected = allForms.map((f) => {
     if (pipeFilter === 'all') return f
-    if (pipeFilter.startsWith('link:')) { const pid = pipeFilter.slice(5); return (fmeta[f.form] && fmeta[f.form].pipeline === pid) ? f : null }
+    if (pipeFilter.startsWith('link:')) { const pid = pipeFilter.slice(5); return projectFormToPipe(f, fmeta[f.form], pid) }
     const bp = (f.byPipeline || []).find((p) => p.id === pipeFilter)
     return bp ? { ...f, leads: bp.leads, booked: bp.booked, shown: bp.shown, won: bp.won, revenue: bp.revenue } : null
   }).filter(Boolean)

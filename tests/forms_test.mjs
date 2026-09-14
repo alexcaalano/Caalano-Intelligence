@@ -9,6 +9,7 @@ const lift = (name) => {
   for (; i < src.length; i++) { const c = src[i]; if (c === '{') depth++; else if (c === '}') { depth--; if (!depth) break } }
   return src.slice(a, i + 1)
 }
+const { formRouteOf, formIsRouted, projectFormToPipe } = new Function(['formLeadsOf', 'formRouteOf', 'formIsRouted', 'projectFormToPipe'].map(lift).join('\n').replace(/export (const|function) /g, '$1 ') + '\nreturn { formRouteOf, formIsRouted, projectFormToPipe }')()
 const { formLeadsOf, formQualMatch, formFilterMatch, formSegmentsFrom, formsCsv } = new Function("const fmtDMY = (v) => String(v).split('-').reverse().join('/')\nconst tzDateStr = (ms) => new Date(ms).toLocaleDateString('en-CA', { timeZone: 'Australia/Sydney', year: 'numeric', month: '2-digit', day: '2-digit' })\n" + ['formLeadsOf', 'formQualMatch', 'formFilterMatch', 'formSegmentsFrom', 'formsCsv'].map(lift).join('\n') + '\nreturn { formLeadsOf, formQualMatch, formFilterMatch, formSegmentsFrom, formsCsv }')()
 let n = 0, bad = 0
 const ok = (name, c, x) => { n++; if (!c) { bad++; console.log('FAIL', name, JSON.stringify(x)) } }
@@ -24,6 +25,21 @@ const leads = formLeadsOf(form)
 ok('decodes every lead', leads.length === 4 && leads[0].name === 'Ann' && leads[0].status === 'won' && leads[2].status === 'lost' && leads[1].booked === true && leads[2].booked === false)
 ok('answers by question', leads[0].answers['NDIS participant?'] === 'Yes' && leads[1].answers['Age group'] === 'Child' && leads[2].answers.Notes === undefined && leads[3].answers['Age group'] === 'Adult')
 ok('no rows → null', formLeadsOf({}) === null)
+
+// Route by answer: a rule sends the lead to its pipeline; no answer or no rule
+// falls back to the form's own; multi-select answers match on any part.
+const routed = { pipeline: 'p1', route: { question: 'Age group', rules: { child: 'kids', Adult: 'adults' } } }
+ok('routed flag', formIsRouted(routed) && !formIsRouted({ pipeline: 'p1' }) && !formIsRouted({ pipeline: 'p1', route: { question: 'x', rules: {} } }))
+ok('rule, case-insensitive', formRouteOf(routed, { 'Age group': 'Child' }) === 'kids' && formRouteOf(routed, { 'Age group': 'ADULT' }) === 'adults')
+ok('no answer → form pipeline', formRouteOf(routed, {}) === 'p1' && formRouteOf(routed, { 'Age group': 'Senior' }) === 'p1')
+ok('multi-select part', formRouteOf(routed, { 'Age group': 'Senior, Child' }) === 'kids')
+ok('unrouted form → its pipeline', formRouteOf({ pipeline: 'p9' }, { 'Age group': 'Child' }) === 'p9')
+const kids = projectFormToPipe(form, routed, 'kids'), adults = projectFormToPipe(form, routed, 'adults'), rest = projectFormToPipe(form, routed, 'p1')
+ok('kids slice', kids && kids.leads === 2 && kids.booked === 2 && kids.won === 1 && kids.revenue === 3200 && kids.leadRows.rows.map((r) => r[0]).join() === 'c1,c2')
+ok('adults slice', adults && adults.leads === 2 && adults.booked === 1 && adults.shown === 1 && adults.won === 0 && adults.leadRows.rows.map((r) => r[0]).join() === 'c3,c4')
+ok('every lead routed → nothing left for the form pipeline', rest === null)
+ok('no leads for a pipeline → null', projectFormToPipe(form, routed, 'nothing') === null)
+ok('unrouted form keeps the whole form', projectFormToPipe(form, { pipeline: 'p1' }, 'p1') === form && projectFormToPipe(form, { pipeline: 'p1' }, 'p2') === null)
 
 // Criteria: AND across questions, OR within; empty = not set.
 const qual = { 'NDIS participant?': ['Yes'], 'Age group': ['Child', 'Adult'] }

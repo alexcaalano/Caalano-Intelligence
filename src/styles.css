@@ -5800,3 +5800,15 @@ body.hub-tv-on { overflow: hidden; }
 .pv-chip-x { margin-left: 4px; padding: 0 3px; border-radius: 4px; color: var(--faint); }
 .pv-chip-x:hover { color: var(--neg); background: color-mix(in srgb, var(--neg) 12%, transparent); }
 .pv-hint { color: var(--faint); font-weight: 500; }
+
+/* Forms: route by answer */
+.fm-route { margin-bottom: 14px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel-2); }
+.fm-route .fm-lab { display: flex; align-items: center; gap: 6px; }
+.fm-route-rules { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+.fm-route-row { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(180px, 260px); gap: 10px; align-items: center; }
+.fm-route-ans { font-size: 12.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fm-route-ans small { color: var(--faint); font-weight: 500; }
+.fm-route-arrow { color: var(--faint); }
+.fmset-route { color: var(--brand); background: color-mix(in srgb, var(--brand) 13%, transparent); }
+.fm-route-read { display: flex; flex-direction: column; gap: 2px; font-size: 12px; }
+@media (max-width: 640px) { .fm-route-row { grid-template-columns: 1fr; gap: 4px; } .fm-route-arrow { display: none; } }

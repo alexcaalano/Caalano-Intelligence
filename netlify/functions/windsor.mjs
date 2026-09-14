@@ -20,6 +20,7 @@ import { RESULT_CACHE_SCHEMA } from '../lib/cache-schema.mjs'
 const DEMO_KEY = 'demo::windsor'
 import { getStore } from '@netlify/blobs'
 import { currentUser, canSeeClient, isAdminish, canSeeReports , isClientRole } from '../lib/auth.mjs'
+import { effectiveTabs } from '../lib/visibility.mjs'
 import { isWarmRequest, triggerWarm, claimRevalidate } from '../lib/warm.mjs'
 import { readLiveEvents, liveToken } from '../lib/live.mjs'
 import { registerAdapter, providerFetch, adaptersOn } from '../lib/providers/index.mjs'
@@ -3282,7 +3283,7 @@ export default async (req) => {
   const AUTH_SECRET = process.env.AUTH_SECRET
   // Data requests are the truest signal of someone actually working in the app,
   // so they drive the activity stamp (throttled inside currentUser).
-  const me = AUTH_SECRET ? await currentUser(req, AUTH_SECRET, { track: true }).catch(() => null) : null
+  let me = AUTH_SECRET ? await currentUser(req, AUTH_SECRET, { track: true }).catch(() => null) : null
   // The background warmer presents a token instead of a session. It is trusted
   // like the owner path - unrestricted, so what it writes to the cache is what
   // an unrestricted caller would be served - and named in the log as itself.
@@ -3311,6 +3312,11 @@ export default async (req) => {
     try {
       const s = await getStore({ name: 'caalano-settings', consistency: 'strong' }).get('all', { type: 'json' })
       if (s && s.restricted) for (const id in s.restricted) if (s.restricted[id]) restrictedSet.add(id)
+      // An Account role's tabs are whatever Settings -> Visibility leaves on
+      // for them (role default, or their own set, or their old Team & access
+      // ticks until they are saved there). Resolved here, once per request,
+      // so every check below and every read sees the same list.
+      if (isClientRole(me.role)) me = { ...me, tabs: effectiveTabs(me, (s && s.visibility) || null) }
     } catch { /* fail open to the OTHER checks below; a restricted client still needs canSeeClient */ }
   }
   // A null caller used to mean "the trusted owner on the shared-password path",

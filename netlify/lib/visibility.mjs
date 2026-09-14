@@ -68,23 +68,43 @@ export const tabsForRole = (role) => (normRole(role) === 'account_user' ? VIS_TA
 export const settingsForRole = (role) => VIS_SETTINGS.filter((v) => v.roles.includes(normRole(role)))
 
 const offMap = (m) => { const o = {}; for (const k in (m || {})) if (m[k] === false) o[k] = false; return o }
+// What a role gets before a Super Admin has ever touched its column: an
+// Account Admin starts without Sales Hub (the manager view), as the old tab
+// ticks defaulted. Applies only while the role has no stored entry at all -
+// once saved, the stored entry (even an empty one) is the whole truth.
+export const DEFAULT_ROLE_OFF = { account_admin: { tabs: { saleshub: false } } }
 const normEntry = (e) => ({ views: offMap(e && e.views), tabs: offMap(e && e.tabs), settings: offMap(e && e.settings) })
 // A tidy copy of the section: only known roles, only "off" entries, users keyed
 // by lower-cased email.
 export function normVisibility(v) {
   const roles = {}, users = {}
-  for (const r of VIS_ROLES) roles[r] = normEntry(v && v.roles && v.roles[r])
+  for (const r of VIS_ROLES) roles[r] = normEntry(v && v.roles && (r in v.roles) ? v.roles[r] : DEFAULT_ROLE_OFF[r])
   for (const [email, e] of Object.entries((v && v.users) || {})) { const k = String(email || '').trim().toLowerCase(); if (k && e && typeof e === 'object') users[k] = normEntry(e) }
   return { roles, users }
 }
 export const hasOverride = (v, email) => !!normVisibility(v).users[String(email || '').trim().toLowerCase()]
+// Team & access used to carry a per-person list of ticked tabs for Account
+// Admins. Until that person is saved in Visibility (which clears the ticks),
+// the ticks still decide their tabs, so nobody gains or loses a tab on the day
+// the switches moved.
+export const hasLegacyTicks = (user, v) => !!(user && normRole(user.role) === 'account_admin' && Array.isArray(user.tabs) && !hasOverride(v, user.email))
 // The entry that applies to a person: their own override if one exists, else
-// their role's default.
+// their old tab ticks (tabs only, the role default for the rest), else their
+// role's default.
 export function entryFor(user, v) {
   if (!user || !user.role) return null
   const vis = normVisibility(v)
   const own = vis.users[String(user.email || '').trim().toLowerCase()]
-  return own || vis.roles[normRole(user.role)] || null
+  if (own) return own
+  const role = vis.roles[normRole(user.role)] || { views: {}, tabs: {}, settings: {} }
+  if (hasLegacyTicks(user, v)) { const tabs = {}; for (const t of tabsForRole(user.role)) if (!user.tabs.includes(t.id)) tabs[t.id] = false; return { ...role, tabs } }
+  return role
+}
+// The client-workspace tabs a person may open, as ids - what the server checks
+// every read against for Account roles.
+export function effectiveTabs(user, v) {
+  const hidden = new Set(hiddenFor(user, v).tabs)
+  return tabsForRole(user ? user.role : null).map((t) => t.id).filter((id) => !hidden.has(id))
 }
 // What is hidden from this person: { views: [ids], tabs: [ids], settings: [ids] }.
 // Only ids that can apply to their role count, so a stale entry cannot hide

@@ -18,6 +18,19 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.635.0 - 2026-09-14 (commit PENDING)
+
+### Visibility owns the client tabs; Team & access keeps entitlement; "My account"
+
+- **One place for tabs.** The per-person tab ticks are gone from Settings → Team & access. Which client-workspace tabs an Account Admin sees is now set only in Settings → Visibility: the Account Admin role default, or the person's own set under By client. Team & access keeps who they are, their role, which clients they may open, the Monthly Reports and CRM updates grants, and the CRM user link.
+- **Server-enforced for Account roles.** On every request the server resolves an Account role's tabs from Visibility (role default, or their own set) and checks the read against that list, exactly as it checked the ticks before. Nothing is app-only for Account roles.
+- **Nobody loses a tab today.** A person who still carries old ticks keeps exactly those tabs until they are saved in Visibility, where their column reads "custom · from old tab ticks"; saving them (or Use default) moves them off the ticks for good.
+- **Default for a new Account Admin** stays as before: every tab except Sales Hub, until the Super Admin saves the Account Admin column for the first time; from then on the saved column is the whole truth.
+- The invite preview ("What this person will see") follows the same rules. The access summary in the team list reads "tabs per Visibility".
+- Settings → **Your account** is now **My account**.
+
+---
+
 ## v3.634.0 - 2026-09-14 (commit d4644cb)
 
 ### Visibility: Settings sections in the chart; "Agency" tab

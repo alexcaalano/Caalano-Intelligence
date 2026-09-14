@@ -10,7 +10,7 @@ import {
 } from './lib/format.js'
 import { PHONE_COUNTRIES, DEFAULT_PHONE_COUNTRY, countryByIso, countryByDial, parsePhone, formatNational, isEmail as isEmailAddr } from './lib/contact.js'
 import { RESULT_CACHE_SCHEMA } from './lib/cache-schema.js'
-import { hiddenFor, isHiddenView, isHiddenTab } from './lib/visibility.js'
+import { hiddenFor, isHiddenView, isHiddenTab, tabsForRole } from './lib/visibility.js'
 import { GOAL_METRICS, goalMetric, SPLITS, normGoals, newGoalId, goalShares, validateGoal, goalLevel, repValue, goalActual, repTargetsFromGoals, migrateRepKpis, goalWindow, goalTargetFor, monthKeysFrom, quarterKeysFrom, RATE_METRICS } from './lib/goals.js'
 // Views carved out of this file load on first open (React.lazy), so the first
 // paint carries the shell and the tabs people land on, not every screen.
@@ -36,7 +36,7 @@ const lazyView = (load, name) => {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-export const APP_VERSION = '3.634.0'
+export const APP_VERSION = '3.635.0'
 // The business clock. Every server window is cut on the client's local day
 // (Caalano Systems location timezone), so any day the app derives on its own -
 // preset ranges, "today", CSV dates - must use the same clock rather than the
@@ -8683,7 +8683,7 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
   // always; a client-side user only when they hold a custom dashboard, since
   // that is the one place those modules can reach them (the server checks the
   // same thing).
-  const feedsOn = !isViewer || !!(authUser && Array.isArray(authUser.tabs) && authUser.tabs.includes('custom'))
+  const feedsOn = !isViewer || !isHiddenTab(userHidden(authUser), 'custom')
   // Daily ad spend for the V2 headline sparklines - its own light read, only
   // when V2 is drawing, so V1 never pays for it.
   const spendDaily = useSwrJson(feedsOn ? spendDailyUrl(clientId, range, nx('ads')) : null)
@@ -16510,10 +16510,7 @@ function allowedTabsFE(user, offered) {
   if (!user) return offered
   { const hid = userHidden(user); if (hid.tabs.length) { const keep = offered.filter((t) => !isHiddenTab(hid, t.id)); if (keep.length) offered = keep } }
   if (user.role === 'account_user') { const only = offered.filter((t) => t.id === 'actions'); return only.length ? only : offered.slice(0, 1) }
-  if (isClientRoleFE(user.role) && !Array.isArray(user.tabs)) return offered.filter((t) => t.id !== 'saleshub')
-  if (!isClientRoleFE(user.role) || !Array.isArray(user.tabs)) return offered
-  const keep = offered.filter((t) => user.tabs.includes(t.id))
-  return keep.length ? keep : offered.slice(0, 1)
+  return offered
 }
 export const ROLE_LABEL = { superadmin: 'Super Admin', admin: 'Agency Admin', user: 'Agency User', account_admin: 'Account Admin', viewer: 'Account Admin', account_user: 'Account User' }
 const isAccountUser = (u) => !!(u && u.role === 'account_user')
@@ -16725,18 +16722,9 @@ function ClientPicker({ clients, selected, onToggle }) {
   if (!clients || !clients.length) return <div className="cap">No clients available.</div>
   return <div className="alloc-chips">{clients.map((c) => <button type="button" key={c.id} className={`chip ${selected.includes(c.id) ? 'on' : ''}`} onClick={() => onToggle(c.id)}>{c.name}</button>)}</div>
 }
-/* What this person will actually see, before you send the invite.
-   Once the server-side leaks are closed, the realistic way a client sees
-   something they shouldn't is a mis-ticked box - and until now there was no way
-   to check one except by sending the invite and hoping. This runs the draft
-   allocation through `allowedTabsFE`, the same function the client workspace
-   uses to build its tab strip, so what's listed here is what renders. */
-const SENSITIVE_TABS = {
-  custom: 'The custom dashboard built for this client. Every module on it is shown to whoever has been given the tab, Account Admins and Account Users included; modules marked as showing spend and cost include the agency\'s cost figures.',
-  timing: 'Grades their own sales team’s response times.',
-  users: 'Per-rep performance inside their business.',
-  optlog: 'Our change log for the account.',
-}
+/* What this person will actually see, before you send the invite: the draft
+   allocation run through allowedTabsFE, the same function the client workspace
+   uses, with the tabs decided by Settings -> Visibility. */
 // The tabs a client workspace offers, from the sources that client has wired up.
 // Mirrors the list built in ClientWorkspace.
 function offeredTabsFor(c) {
@@ -16757,16 +16745,15 @@ function offeredTabsFor(c) {
 }
 function AccessPreview({ draft, clients, email, onClose }) {
   const mine = (clients || []).filter((c) => (draft.clients || []).includes(c.id))
-  const asUser = { role: draft.role, tabs: Array.isArray(draft.tabs) ? draft.tabs : null }
+  // Tabs come from Settings -> Visibility (role default, or this person's own
+  // set, or their old ticks until saved there) - the same rule the workspace uses.
+  const asUser = { role: draft.role, email: email || '', tabs: Array.isArray(draft.tabs) ? draft.tabs : null }
   const rows = mine.map((c) => {
     const offered = offeredTabsFor(c)
     const shown = allowedTabsFE(asUser, offered)
-    // allowedTabsFE falls back to the first offered tab when none of the ticked
-    // tabs exist for that client - so a tick can silently become a different tab.
-    const fellBack = Array.isArray(asUser.tabs) && !offered.some((t) => asUser.tabs.includes(t.id))
-    return { c, offered, shown, fellBack }
+    return { c, offered, shown, fellBack: false }
   })
-  const flagged = (draft.tabs || []).filter((t) => SENSITIVE_TABS[t])
+
   return (
     <Overlay>
       <div className="mr-drill-overlay no-print" onClick={onClose}>
@@ -16788,12 +16775,7 @@ function AccessPreview({ draft, clients, email, onClose }) {
               <p className="prev-note"><b>No accounts picked yet.</b> They would sign in and see nothing.</p>
             ) : (
               <>
-                {flagged.length ? (
-                  <div className="prev-warn">
-                    <b>Worth a second look</b>
-                    <ul>{flagged.map((t) => <li key={t}><b>{(TAB_OPTIONS.find((o) => o.id === t) || {}).label || t}</b> - {SENSITIVE_TABS[t]}</li>)}</ul>
-                  </div>
-                ) : null}
+                <p className="prev-note">Tabs follow <b>Settings → Visibility</b>: the {ROLE_LABEL[draft.role] || draft.role} default, or this person's own set.</p>
                 {rows.map(({ c, offered, shown, fellBack }) => (
                   <div className="prev-client" key={c.id}>
                     <div className="prev-client-h"><b>{c.name}</b><span className="cap">{shown.length} of {offered.length} tabs</span></div>
@@ -16830,14 +16812,10 @@ function AccessPreview({ draft, clients, email, onClose }) {
 function AllocationEditor({ value, clients, onChange, actorRole }) {
   const v = value
   const toggleClient = (id) => { const s = new Set(v.clients || []); s.has(id) ? s.delete(id) : s.add(id); onChange({ ...v, clients: [...s] }) }
-  const toggleTab = (id) => { const cur = v.tabs == null ? TAB_OPTIONS.map((t) => t.id) : v.tabs; const s = new Set(cur); s.has(id) ? s.delete(id) : s.add(id); onChange({ ...v, tabs: [...s] }) }
-  // Custom dashboards among the ticked clients: built at all, and opened to viewers.
-  const dashBuilt = (clients || []).filter((c) => (v.clients || []).includes(c.id)).map((c) => ({ c, d: loadDashboard(c.id) })).filter((x) => x.d)
-  const dashOpen = dashBuilt.filter((x) => dashOpenToViewers(x.d))
   const isSuper = actorRole === 'superadmin'
   // Only a Super Admin can grant Admin / Super Admin. Keep the current value as a
   // (disabled) option so an existing role still shows even if you can't set it.
-  const opts = [['user', 'Agency User - agency staff, dashboards for allowed accounts'], ['account_admin', 'Account Admin - the client: ticked accounts and tabs'], ['account_user', 'Account User - the client\'s rep: Deals & Actions only, updates their own deals']]
+  const opts = [['user', 'Agency User - agency staff, dashboards for allowed accounts'], ['account_admin', 'Account Admin - the client: ticked accounts; tabs set under Visibility'], ['account_user', 'Account User - the client\'s rep: Deals & Actions only, updates their own deals']]
   if (isSuper) opts.unshift(['superadmin', 'Super Admin - owner control'], ['admin', 'Agency Admin - full control'])
   else if (isAdminishFE(v.role)) opts.unshift([v.role, ROLE_LABEL[v.role] + ' - (only a Super Admin can change this)'])
   return (
@@ -16859,21 +16837,11 @@ function AllocationEditor({ value, clients, onChange, actorRole }) {
         <ClientPicker clients={clients} selected={v.clients || []} onToggle={toggleClient} />
         <CrmUserLinks v={v} clients={clients} onChange={onChange} />
         {v.role === 'account_user' ? <p className="alloc-note"><b>Account User</b> - an employee of the Account Admin. Holds <b>Deals &amp; Actions</b> only: their own deals, action list and results, and can update their own deals and appointments. Their login e-mail must match their user in the CRM.</p> : <>
-        <div className="alloc-lab">Which tabs can they see?</div>
-        <div className="alloc-chips">{TAB_OPTIONS.map((t) => {
-          const on = v.tabs == null || v.tabs.includes(t.id)
-          if (t.id !== 'custom') return <button type="button" key={t.id} className={`chip ${on ? 'on' : ''}`} onClick={() => toggleTab(t.id)}>{t.label}</button>
-          // The custom-dashboard grant only does something for a ticked client whose
-          // dashboard a Super Admin has opened to viewers, so the chip says which.
-          const lbl = dashOpen.length ? `Custom dashboard · ${dashOpen.map((x) => x.d.name || x.c.name).join(', ')}` : 'Custom dashboard'
-          const tip = dashOpen.length ? 'The custom dashboards opened to viewers for the ticked clients' : dashBuilt.length ? 'A ticked client has a custom dashboard, but its audience is not set to Viewer yet. Set “Who can see it” to Viewer under that client’s settings → Custom dashboard.' : 'No ticked client has a custom dashboard yet. Build one under the client’s settings → Custom dashboard and open it to viewers.'
-          return <button type="button" key={t.id} className={`chip ${on ? 'on' : ''}${dashOpen.length ? '' : ' chip-dim'}`} title={tip} onClick={() => toggleTab(t.id)}>{lbl}</button>
-        })}</div>
-        {(v.tabs == null || v.tabs.includes('custom')) && !dashOpen.length ? <p className="alloc-note alloc-warn">Custom dashboard is ticked, but {dashBuilt.length ? `${dashBuilt.map((x) => x.c.name).join(', ')} ${dashBuilt.length === 1 ? 'has a dashboard that is' : 'have dashboards that are'} not open to viewers (audience is ${dashBuilt.map((x) => DASH_AUD_LABEL[dashAudience(x.d)]).filter((x, i, a) => a.indexOf(x) === i).join(' / ')})` : 'none of the ticked clients has a custom dashboard yet'}. Nothing will show for this person until a dashboard’s “Who can see it” is set to Viewer under the client’s settings → Custom dashboard.</p> : null}
+        <p className="alloc-note">Which tabs they see is set under <b>Settings → Visibility → By client</b> (the Account Admin default, or their own set).</p>
         <div className="alloc-lab" style={{ marginTop: 10 }}>Extra access</div>
         <label className="alloc-check"><input type="checkbox" checked={v.crm === true} onChange={(e) => onChange({ ...v, crm: e.target.checked })} /> <b>CRM updates</b> - can fix things from the <b>Deals &amp; Actions</b> tab (result appointments, set deal values and lost reasons, move stages, add notes)</label>
         <label className="alloc-check"><input type="checkbox" checked={v.reports === true} onChange={(e) => onChange({ ...v, reports: e.target.checked })} /> <b>Monthly Reports</b> - can view the <b>published</b> monthly reports for the clients above</label>
-        <p className="alloc-note"><b>Account Admin</b> - the client. Only the ticked clients and tabs, and no agency-wide views. Monthly Reports shows only reports you've <b>published</b> (frozen snapshots), and can be granted on its own.</p>
+        <p className="alloc-note"><b>Account Admin</b> - the client. Only the ticked clients, the tabs Visibility leaves on, and no agency-wide views. Monthly Reports shows only reports you've <b>published</b> (frozen snapshots), and can be granted on its own.</p>
         </>}
       </>)}
     </div>
@@ -16964,7 +16932,7 @@ function UserAccessModal({ user, clients, authUser, onClose, onChanged }) {
     if (!isInvite && who && who.phone.trim() && !parsePhone(who.phone, who.country)) return setErr('That phone number is not valid for the country picked.')
     if (isClientRoleFE(draft.role) && !(draft.clients || []).length) return setErr(`Pick at least one client for an ${ROLE_LABEL[draft.role] || 'Account Admin'}.`)
     setBusy(true)
-    const payload = { role: draft.role, clients: draft.clients, allClients: draft.allClients, tabs: draft.tabs, reports: draft.reports === true, crm: draft.crm === true, crmUsers: draft.crmUsers || {} }
+    const payload = { role: draft.role, clients: draft.clients, allClients: draft.allClients, reports: draft.reports === true, crm: draft.crm === true, crmUsers: draft.crmUsers || {} }
     if (isInvite) {
       const r = await authApi('invite', { method: 'POST', body: JSON.stringify({ name, email, ...payload }) })
       setBusy(false)
@@ -17050,7 +17018,7 @@ export function UsersAdmin({ authUser, authEnabled, clients }) {
   const load = () => authApi('users').then((r) => setState(r && r.ok ? { status: 'ok', users: r.users || [] } : { status: r && r.enabled === false ? 'off' : 'err', error: r && r.error, users: [] }))
   useEffect(() => { if (authEnabled) load(); else setState({ status: 'off', users: [] }) }, [authEnabled])
   const rejectPending = async (u) => { if (!window.confirm(`Reject ${u.name || u.email}’s request?`)) return; await authApi('delete-user', { method: 'POST', body: JSON.stringify({ email: u.email }) }); load() }
-  const approve = async (u, draft) => { const r = await authApi('approve', { method: 'POST', body: JSON.stringify({ email: u.email, role: draft.role, clients: draft.clients, allClients: draft.allClients, tabs: draft.tabs, reports: draft.reports === true, crm: draft.crm === true, crmUsers: draft.crmUsers || {} }) }); if (r.ok) load() }
+  const approve = async (u, draft) => { const r = await authApi('approve', { method: 'POST', body: JSON.stringify({ email: u.email, role: draft.role, clients: draft.clients, allClients: draft.allClients, reports: draft.reports === true, crm: draft.crm === true, crmUsers: draft.crmUsers || {} }) }); if (r.ok) load() }
 
   if (state.status === 'off') return (
     <div className="card set-users-off">
@@ -17064,7 +17032,7 @@ export function UsersAdmin({ authUser, authEnabled, clients }) {
   const badge = (u) => u.status === 'invited' ? <span className="u-badge inv">Invited</span> : u.status === 'disabled' ? <span className="u-badge dis">Disabled</span> : u.status === 'pending' ? <span className="u-badge pend">Pending</span> : <span className="u-badge act">Active</span>
   const accessSummary = (u) => isAdminishFE(u.role) ? 'All clients · all tabs'
     : u.role === 'user' ? (u.allClients !== false ? 'All accounts' : `${(u.clients || []).length} account${(u.clients || []).length === 1 ? '' : 's'}`)
-    : `${(u.clients || []).length} client${(u.clients || []).length === 1 ? '' : 's'}${Array.isArray(u.tabs) ? ` · ${u.tabs.length} tab${u.tabs.length === 1 ? '' : 's'}` : ' · all tabs'}`
+    : `${(u.clients || []).length} client${(u.clients || []).length === 1 ? '' : 's'} · tabs per Visibility`
   // "3 min ago" / "yesterday" reads faster than a timestamp when you're scanning
   // a team list for who's actually using the thing.
   const ago = (iso) => {
@@ -17908,7 +17876,7 @@ export function phoneParts(e164) {
   return { country: p.iso || DEFAULT_PHONE_COUNTRY, phone: c ? formatNational(c.trunk + p.national, c.iso) : '+' + p.national }
 }
 // The three fields every account must carry. Used as a gate for accounts that
-// predate the requirement, and as the card in Settings -> Your account.
+// predate the requirement, and as the card in Settings -> My account.
 export function YourDetailsCard({ user, onSaved, gate = false }) {
   const parts = String((user && user.name) || '').trim().split(/\s+/).filter(Boolean)
   const [f, setF] = useState({ firstName: (user && user.firstName) || parts[0] || '', lastName: (user && user.lastName) || parts.slice(1).join(' ') || '', ...phoneParts(user && user.phone) })
@@ -19112,7 +19080,7 @@ function Dashboard({ authUser, authEnabled, onLogout, realUser, onViewAs }) {
   const hid = userHidden(authUser)
   const showView = (id) => !isHiddenView(hid, id)
   const canReports = isViewer ? !!(authUser && authUser.reports) && showView('reports') : false
-  const hasDashTabs = (!isViewer || authUser.tabs == null || (Array.isArray(authUser.tabs) && authUser.tabs.length > 0)) && (!isViewer || showView('dashboards'))
+  const hasDashTabs = (!isViewer || hid.tabs.length < tabsForRole(role).length) && (!isViewer || showView('dashboards'))
   const viewerView = view === 'settings' ? 'settings'
     : (view === 'reports' && canReports) ? 'reports'
       : (hasDashTabs ? 'clients' : (canReports ? 'reports' : 'clients'))

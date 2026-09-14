@@ -25,6 +25,19 @@ assert.deepEqual(V.hiddenFor({ email: 'SAM@example.com', role: 'admin' }, vis), 
 assert.deepEqual(V.hiddenFor({ email: 'a@x', role: 'superadmin' }, vis), { views: [], tabs: [], settings: [] }, 'no Super Admin entry: nothing hidden')
 assert.deepEqual(V.hiddenFor({ email: 'a@x', role: 'superadmin' }, { roles: { superadmin: { views: { forecast: false }, tabs: { clinic: false } } } }), { views: ['forecast'], tabs: ['clinic'], settings: [] }, 'a Super Admin can hide things from themselves')
 assert.ok(!V.VIS_VIEWS.some((x) => x.id === 'settings'), 'Settings is never in the list')
+// Tabs moved from Team & access to Visibility. Old ticks still apply until the
+// person is saved in Visibility; an Account Admin starts without Sales Hub only
+// while the role has never been saved; the server reads tabs as a plain list.
+const legacy = { email: 'kim@x', role: 'account_admin', tabs: ['overall', 'meta'] }
+assert.deepEqual(V.hiddenFor(legacy, {}).tabs.sort(), V.tabsForRole('account_admin').map((t) => t.id).filter((id) => id !== 'overall' && id !== 'meta').sort(), 'old ticks: everything not ticked is hidden')
+assert.deepEqual(V.effectiveTabs(legacy, {}).sort(), ['meta', 'overall'], 'effective tabs from old ticks')
+assert.deepEqual(V.effectiveTabs(legacy, { users: { 'kim@x': { tabs: { cohorts: false } } } }).includes('cohorts'), false, 'a saved set replaces the ticks')
+assert.ok(V.effectiveTabs(legacy, { users: { 'kim@x': { tabs: { cohorts: false } } } }).includes('users'), 'and un-hides what the ticks left off')
+assert.ok(V.hasLegacyTicks(legacy, {}) && !V.hasLegacyTicks(legacy, { users: { 'kim@x': {} } }) && !V.hasLegacyTicks({ email: 'a@x', role: 'admin', tabs: ['meta'] }, {}))
+assert.deepEqual(V.hiddenFor({ email: 'n@x', role: 'account_admin' }, {}).tabs, ['saleshub'], 'a never-saved Account Admin default leaves Sales Hub off')
+assert.deepEqual(V.hiddenFor({ email: 'n@x', role: 'account_admin' }, { roles: { account_admin: {} } }).tabs, [], 'once saved, the stored entry is the truth')
+assert.deepEqual(V.effectiveTabs({ email: 'r@x', role: 'account_user' }, {}), ['actions'])
+assert.deepEqual(V.effectiveTabs({ email: 'r@x', role: 'account_user' }, { roles: { account_user: { tabs: { actions: false } } } }), [])
 assert.deepEqual(V.hiddenFor({ email: 'a@x', role: 'admin' }, null), { views: [], tabs: [], settings: [] }, 'nothing set: nothing hidden')
 assert.ok(V.hasOverride(vis, 'sam@example.com') && !V.hasOverride(vis, 'a@x'))
 // Return to default = the entry is gone.

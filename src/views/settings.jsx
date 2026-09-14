@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { APP_VERSION, AnnotationToggle, Avatar, BIZ_TYPES, CC_CHANS, Caveat, ChangePasswordCard, ClinicSettings, DASH_AUD, DASH_MODULES, DASH_PRESETS, DEFAULT_HOURS, DOW_LABELS, FATIGUE_DEFAULTS, FAVICON, FormsSettingsTab, GeoSettings, HelpNote, OptLogSettings, PROFILE_FIELDS, ROLE_LABEL, SEED_KEYEVENTS, SETTINGS, SignOutEverywhereCard, YourDetailsCard, Spinner, TAB_OPTIONS, TermsAdmin, TermsRegister, UsersAdmin, acolor, apiJson, applyAliases, clientLogoSrc, dashAudience, dashModuleFits, dedupeFetch, deleteClient, domainOf, dpClientOn, dpPipeOn, fetchDiscover, fmtDMY, fmtHours, formKeyEvents, formsDoneCount, hhmm, initials, isAdminishFE, isClientDeleted, iso, loadAliases, loadBizType, loadCampMap, loadCashOn, loadCloseOverride, loadDashboard, loadFatigueCfg, loadHours, loadKeep, loadKeyEvents, loadKeyEventsRaw, loadKpis, loadLogo, loadMetaConv, loadProfile, loadQualStage, loadSocialKpis, mkOutcomeMap, normId, presetRange, rangeLabel, rangeMaturity, rangeQuery, readNavUrl, removeCustomClient, restoreClient, roleLabelOf, saveBizType, saveCampMap, saveCashOn, saveCloseOverride, saveCustomClient, saveDashboard, saveFatigueCfg, saveHours, saveKeyEvents, saveKpis, saveLogo, saveMetaConv, saveProfile, saveQualStage, saveSocialKpis, setAlias, setDpClient, setDpPipe, setKeep, syncLogos, unorm, useDiscoverNames, useSettingsSync, writeNavUrl, normCrmUrl, saveCrmUrl, CRM_DEFAULT_URL } from '../App.jsx'
 import { fmtCurrency, fmtNumber } from '../lib/format.js'
-import { VIS_VIEWS, VIS_TABS, VIS_SETTINGS, VIS_ROLES, VIS_ROLE_LABELS, viewsForRole, tabsForRole, settingsForRole, normVisibility, isHiddenSetting } from '../lib/visibility.js'
+import { VIS_VIEWS, VIS_TABS, VIS_SETTINGS, VIS_ROLES, VIS_ROLE_LABELS, viewsForRole, tabsForRole, settingsForRole, normVisibility, isHiddenSetting, entryFor, hasLegacyTicks } from '../lib/visibility.js'
 import { authApi, saveSettingsRemote, bumpSettings, userHidden } from '../App.jsx'
 import { GoalsEditor } from './sales-hub.jsx'
 
@@ -1641,8 +1641,9 @@ export function VisibilitySettings({ clients = [] }) {
   }
   const showAllRoles = () => { const d = {}; for (const r of VIS_ROLES) d[r] = { views: {}, tabs: {}, settings: {} }; setDraftRoles(d); setSaved(null) }
   // ---- people (by client / by role) ----
-  const effective = (u) => { const key = u.email.toLowerCase(); if (key in draftUsers) return draftUsers[key] || vis.roles[visRoleOf(u.role)]; return vis.users[key] || vis.roles[visRoleOf(u.role)] }
-  const isCustom = (u) => { const key = u.email.toLowerCase(); return key in draftUsers ? draftUsers[key] != null : !!vis.users[key] }
+  const effective = (u) => { const key = u.email.toLowerCase(); if (key in draftUsers) return draftUsers[key] || vis.roles[visRoleOf(u.role)]; return entryFor(u, vis) || vis.roles[visRoleOf(u.role)] }
+  const legacy = (u) => hasLegacyTicks(u, vis)
+  const isCustom = (u) => { const key = u.email.toLowerCase(); return key in draftUsers ? draftUsers[key] != null : (!!vis.users[key] || legacy(u)) }
   const flipUser = (c, item) => {
     const u = c.user, key = u.email.toLowerCase()
     setDraftUsers((d) => {
@@ -1660,11 +1661,15 @@ export function VisibilitySettings({ clients = [] }) {
     const next = normVisibility({ ...vis, users: merged })
     SETTINGS.visibility = { ...(SETTINGS.visibility || {}), users: next.users }
     saveSettingsRemote({ visibility: { users: next.users } }); bumpSettings()
+    // Anyone saved here who still carried the old Team & access tab ticks is
+    // moved off them: Visibility is now the one place their tabs are set.
+    for (const key of Object.keys(draftUsers)) { const u = (users || []).find((x) => x.email.toLowerCase() === key); if (u && Array.isArray(u.tabs) && visRoleOf(u.role) === 'account_admin') { authApi('update-user', { method: 'POST', body: JSON.stringify({ email: u.email, tabs: null }) }).catch(() => {}); u.tabs = null } }
     setVis(next); setDraftUsers({}); setSaved('Saved. Each person gets their visibility on their next page load.')
   }
   const peopleCols = (list) => list.map((u) => {
     const r = visRoleOf(u.role), custom = isCustom(u)
-    return { key: u.email, role: r, user: u, entry: effective(u), custom, label: u.name || u.email, sub: <>{VIS_ROLE_LABELS[r] || r}<br />{custom ? 'custom' : 'default'}</>, action: { label: 'Use default', onClick: () => resetUser(u), disabled: !custom, title: custom ? 'Drop this person\'s custom set and use the role default' : 'Already on the role default' } }
+    const key = u.email.toLowerCase(), fromTicks = legacy(u) && !(key in draftUsers)
+    return { key: u.email, role: r, user: u, entry: effective(u), custom, label: u.name || u.email, sub: <>{VIS_ROLE_LABELS[r] || r}<br />{fromTicks ? 'custom · from old tab ticks' : custom ? 'custom' : 'default'}</>, action: { label: 'Use default', onClick: () => resetUser(u), disabled: !custom, title: custom ? 'Drop this person\'s custom set and use the role default' : 'Already on the role default' } }
   })
   const byName = (a, b) => String(a.name || a.email).localeCompare(String(b.name || b.email), undefined, { sensitivity: 'base' })
   // By client: the account-level people allocated to it. Agency people are on
@@ -1737,7 +1742,7 @@ export function SettingsPage({ config, enabled, setEnabled, restricted = {}, set
   // Sections this person can actually reach - a deep link to one they can't
   // would otherwise render an empty page.
   // Sections a Super Admin has hidden from this role or person (Settings ->
-  // Visibility). Your account, Appearance and the Super Admin sections are
+  // Visibility). My account, Appearance and the Super Admin sections are
   // never in that list.
   const hid = authEnabled ? userHidden(authUser) : null
   const on = (id) => !isHiddenSetting(hid, id)
@@ -1792,7 +1797,7 @@ export function SettingsPage({ config, enabled, setEnabled, restricted = {}, set
         {isAdmin && on('socialkpis') && <button className={section === 'socialkpis' ? 'on' : ''} onClick={() => setSection('socialkpis')}>Organic KPIs</button>}
         {isAdmin && on('dailyperf') && <button className={section === 'dailyperf' ? 'on' : ''} onClick={() => setSection('dailyperf')}>Daily performance</button>}
         {(!authEnabled || isAdmin) && on('team') && <button className={section === 'team' ? 'on' : ''} onClick={() => setSection('team')}>Team &amp; access</button>}
-        {authEnabled && <button className={section === 'account' ? 'on' : ''} onClick={() => setSection('account')}>Your account</button>}
+        {authEnabled && <button className={section === 'account' ? 'on' : ''} onClick={() => setSection('account')}>My account</button>}
         <button className={section === 'appearance' ? 'on' : ''} onClick={() => setSection('appearance')}>Appearance</button>
         {isSuper && authEnabled && <button className={section === 'visibility' ? 'on' : ''} onClick={() => setSection('visibility')}>Visibility</button>}
         {isSuper && authEnabled && <button className={section === 'terms' ? 'on' : ''} onClick={() => setSection('terms')}>Terms of use</button>}
@@ -1821,7 +1826,7 @@ export function SettingsPage({ config, enabled, setEnabled, restricted = {}, set
       {section === 'team' && (!authEnabled || isAdmin) && on('team') && <UsersAdmin authUser={authUser} authEnabled={authEnabled} clients={(config.clients || []).map((c) => ({ id: c.id, name: c.name, meta: c.meta || null, google: c.google || null, ga4: c.ga4 || null, ghl: c.ghl || null }))} />}
       {authEnabled && section === 'account' && (
         <div className="card">
-          <h3 style={{ marginTop: 0 }}>Your account</h3>
+          <h3 style={{ marginTop: 0 }}>My account</h3>
           <p className="cap" style={{ marginTop: -4 }}>Signed in as <b>{authUser ? (authUser.name || authUser.email) : ''}</b>{authUser ? ` · ${roleLabelOf(authUser)}` : ''}. Your name and mobile number are kept for account verification.</p>
           <YourDetailsCard user={authUser} />
           <h4 style={{ margin: '16px 0 4px' }}>Password</h4>

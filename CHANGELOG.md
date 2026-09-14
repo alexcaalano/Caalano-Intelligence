@@ -18,6 +18,15 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.633.0 - 2026-09-14 (commit PENDING)
+
+### Daily performance reads closer together; Key events by source defaults to Paid
+
+- The Daily performance column (movers panel and client cards) is capped at about 1,040 px wide on a large monitor, so the tiles, graph and source table sit close together instead of stretching across the screen. Smaller screens are unchanged.
+- In a window tile's breakdown, Key events by source opens on **Paid** (Meta + Google) rather than All CRM, since the page is about paid results; the other segments are one click away.
+
+---
+
 ## v3.632.0 - 2026-09-14 (commit 6fa64bf)
 
 ### Visibility: a narrow chart, account people by client, agency people on their own tab

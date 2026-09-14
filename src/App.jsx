@@ -36,7 +36,7 @@ const lazyView = (load, name) => {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-export const APP_VERSION = '3.632.0'
+export const APP_VERSION = '3.633.0'
 // The business clock. Every server window is cut on the client's local day
 // (Caalano Systems location timezone), so any day the app derives on its own -
 // preset ranges, "today", CSV dates - must use the same clock rather than the
@@ -1514,7 +1514,7 @@ function WindowBreakdown({ w, clientId, pipeId, stagePos, currency }) {
   // Key events split by lead-source channel. `src` picks the segment; reach/leads/won
   // are read from that segment (Paid = Meta+Google merged) and resolved with the same
   // keyEventRows engine as every other view.
-  const [src, setSrc] = useState('all')
+  const [src, setSrc] = useState('paid')
   const pickN = (obj) => { if (!obj) return 0; if (src === 'paid') return (obj.meta || 0) + (obj.google || 0); if (src === 'nonpaid') return obj.other || 0; return obj[src] || 0 }
   const mergeReach = (...maps) => { const o = {}; for (const m of maps) for (const k in (m || {})) o[k] = (o[k] || 0) + m[k]; return o }
   const reachFor = () => { if (!crm) return {}; const R = crm.reach || {}; if (src === 'paid') return mergeReach(R.meta, R.google); if (src === 'nonpaid') return R.other || {}; return R[src] || {} }

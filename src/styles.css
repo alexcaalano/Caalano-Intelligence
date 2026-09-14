@@ -5817,6 +5817,21 @@ body.hub-tv-on { overflow: hidden; }
 .fmset-route { color: var(--brand); background: color-mix(in srgb, var(--brand) 13%, transparent); }
 .fm-route-read { display: flex; flex-direction: column; gap: 2px; font-size: 12px; }
 @media (max-width: 640px) { .fm-route-row { grid-template-columns: 1fr; gap: 4px; } .fm-route-arrow { display: none; } }
+/* Campaign links: the pencil opens a campaign's ad sets / ad groups, each with its own pipeline. */
+.camp-pencil { flex: 0 0 auto; width: 30px; height: 28px; border: 1px solid var(--border-2); background: var(--panel-2); color: var(--muted); border-radius: 8px; cursor: pointer; font-size: 13px; line-height: 1; }
+.camp-pencil:hover, .camp-pencil.on { color: var(--brand); border-color: var(--brand); }
+.camp-pencil-gap { flex: 0 0 auto; width: 30px; }
+.camp-row.is-split .camp-nm { color: var(--text); }
+.camp-split-tag { margin-left: 8px; font-size: 10.5px; font-weight: 700; color: var(--brand); background: color-mix(in srgb, var(--brand) 12%, transparent); padding: 2px 7px; border-radius: 999px; vertical-align: 1px; }
+.camp-split { margin: 0 0 8px 34px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel-2); display: flex; flex-direction: column; gap: 6px; }
+.camp-split-h { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; font-weight: 700; margin-bottom: 2px; }
+.camp-split-h > span { display: inline-flex; align-items: center; gap: 6px; }
+.camp-split-row { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(180px, 260px); gap: 10px; align-items: center; }
+.camp-split-row .camp-lnk { max-width: 100%; }
+.camp-split-nm { font-size: 12.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.camp-split-nm small { color: var(--faint); font-weight: 500; }
+.camp-split-row.is-stale .camp-split-nm { color: var(--muted); }
+@media (max-width: 640px) { .camp-split { margin-left: 0; } .camp-split-row { grid-template-columns: 1fr; gap: 4px; } .camp-split-row .fm-route-arrow { display: none; } .camp-pencil { margin-left: auto; } }
 .pv-tbl .pv-avg { background: color-mix(in srgb, var(--google) 6%, var(--panel)); }
 .pv-tbl thead .pv-avg { right: auto; }
 

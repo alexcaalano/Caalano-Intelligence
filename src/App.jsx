@@ -36,7 +36,7 @@ const lazyView = (load, name) => {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-export const APP_VERSION = '3.644.0'
+export const APP_VERSION = '3.645.0'
 // The business clock. Every server window is cut on the client's local day
 // (Caalano Systems location timezone), so any day the app derives on its own -
 // preset ranges, "today", CSV dates - must use the same clock rather than the
@@ -1457,14 +1457,32 @@ const campInPipe = (clientId, pipeId, pipes) => (name) => {
   const pid = pipeOfCampaign(clientId, name, pipes)
   return pipeId === '_unlinked' ? pid == null : pid === pipeId
 }
+// The same test one level down: an ad set / ad group with its own link goes by
+// that, the rest follow their campaign.
+const adsetInPipe = (clientId, pipeId, pipes) => (camp, adset) => {
+  if (!pipeId || pipeId === 'all') return true
+  const pid = pipeOfAdset(clientId, camp, adset, pipes)
+  return pipeId === '_unlinked' ? pid == null : pid === pipeId
+}
+// Campaign rows for a drill: a campaign split at the ad-set level appears with
+// only the ad sets that belong to this pipeline, its row the sum of those.
+function drillRows(clientId, campaigns, kids, keep, keepA, active, keys, finish) {
+  const out = []
+  for (const c of campaigns) {
+    if (campIsSplit(clientId, c.name)) { const ks = kids.filter((a) => a.campaign === c.name && keepA(c.name, a.name) && active(a)); if (ks.length) out.push(rowFromKids(c, ks, keys, finish)) }
+    else if (keep(c.name) && active(c)) out.push(c)
+  }
+  return out
+}
 function MetaDrill({ clientId, days, money, pipeId, pipes }) {
   const st = useChannelFeed(clientId, 'meta', days)
   if (st.status === 'loading') return <div className="tr-src-drillbox"><Spinner label="Loading Meta campaigns…" /></div>
   if (st.status === 'err' || !st.data) return <div className="tr-src-drillbox"><span className="cap">Couldn’t load Meta campaigns.</span></div>
-  const keep = campInPipe(clientId, pipeId, pipes)
-  const camps = (st.data.campaigns || []).filter((c) => keep(c.name) && ((c.spend || 0) > 0 || (c.results || 0) > 0))
+  const keep = campInPipe(clientId, pipeId, pipes), keepA = adsetInPipe(clientId, pipeId, pipes)
+  const active = (x) => (x.spend || 0) > 0 || (x.results || 0) > 0
   const adsets = st.data.adsets || []
-  const kidsOf = (c) => adsets.filter((a) => a.campaign === c.name && ((a.spend || 0) > 0 || (a.results || 0) > 0))
+  const camps = drillRows(clientId, st.data.campaigns || [], adsets, keep, keepA, active, META_SUM_KEYS, metaFinish)
+  const kidsOf = (c) => adsets.filter((a) => a.campaign === c.name && keepA(c.name, a.name) && active(a))
   return (
     <div className="tr-src-drillbox">
       <DrillCampaigns rows={camps} kidsOf={kidsOf} cols={META_DRILL_COLS} kidLabel="ad sets" money={money} empty={pipeId && pipeId !== 'all' ? `No Meta campaign linked to this pipeline spent in the last ${days} days.` : `No Meta campaign spend in the last ${days} days.`} />
@@ -1478,13 +1496,14 @@ function GoogleDrill({ clientId, days, money, showActions = true, pipeId, pipes 
   const st = useChannelFeed(clientId, 'google', days)
   if (st.status === 'loading') return <div className="tr-src-drillbox"><Spinner label="Loading Google campaigns…" /></div>
   if (st.status === 'err' || !st.data) return <div className="tr-src-drillbox"><span className="cap">Couldn’t load Google campaigns.</span></div>
-  const keep = campInPipe(clientId, pipeId, pipes)
-  const camps = (st.data.campaigns || []).filter((c) => keep(c.name))
+  const keep = campInPipe(clientId, pipeId, pipes), keepA = adsetInPipe(clientId, pipeId, pipes)
   const groups = st.data.adGroups || []
-  const kidsOf = (c) => groups.filter((g) => g.campaign === c.name)
+  const camps = drillRows(clientId, st.data.campaigns || [], groups, keep, keepA, () => true, GOOGLE_SUM_KEYS)
+  const kidsOf = (c) => groups.filter((g) => g.campaign === c.name && keepA(c.name, g.name))
+  const keepAct = (r) => (r.adGroup != null && campIsSplit(clientId, r.campaign) ? keepA(r.campaign, r.adGroup) : keep(r.campaign))
   const acts = {}
-  for (const r of (st.data.conversionActions || []).filter((r) => keep(r.campaign))) { const e = acts[r.name] = acts[r.name] || { name: r.name, category: r.category, conv: 0, all: 0, pconv: null, pall: null }; e.conv += r.conversions || 0; e.all += r.allConversions || 0 }
-  for (const r of (st.data.conversionActionsPrev || []).filter((r) => keep(r.campaign))) { const e = acts[r.name]; if (!e) continue; e.pconv = (e.pconv || 0) + (r.conversions || 0); e.pall = (e.pall || 0) + (r.allConversions || 0) }
+  for (const r of (st.data.conversionActions || []).filter(keepAct)) { const e = acts[r.name] = acts[r.name] || { name: r.name, category: r.category, conv: 0, all: 0, pconv: null, pall: null }; e.conv += r.conversions || 0; e.all += r.allConversions || 0 }
+  for (const r of (st.data.conversionActionsPrev || []).filter(keepAct)) { const e = acts[r.name]; if (!e) continue; e.pconv = (e.pconv || 0) + (r.conversions || 0); e.pall = (e.pall || 0) + (r.allConversions || 0) }
   const rows = Object.values(acts).sort((a, b) => (b.conv - a.conv) || (b.all - a.all))
   const totConv = rows.reduce((s, r) => s + r.conv, 0)
   const totAll = rows.reduce((s, r) => s + r.all, 0)
@@ -3076,7 +3095,9 @@ function MetaDeep({ deep, currency, attr, clientId, range, nonce, pipe: pipeProp
   // - a Settings campaign→pipeline link first, else a name match - so the ad
   // numbers match the green CRM columns instead of staying whole-account.
   const inPipe = (campName) => pipe === 'all' || pipeOfCampaign(clientId, campName, allPipes) === pipe
-  const m = pipe === 'all' ? deep.meta : scopeMetaToPipe(deep.meta, inPipe)
+  const inPipeA = (campName, adset) => pipe === 'all' || pipeOfAdset(clientId, campName, adset, allPipes) === pipe
+  const isSplit = (campName) => campIsSplit(clientId, campName)
+  const m = pipe === 'all' ? deep.meta : scopeMetaToPipe(deep.meta, inPipe, inPipeA, isSplit)
   const scopedEmpty = pipe !== 'all' && !(m.campaigns || []).length
   const A = pipeAttr && pipeAttr.data && pipeAttr.data.attribution
   const has360 = !!A
@@ -3084,7 +3105,10 @@ function MetaDeep({ deep, currency, attr, clientId, range, nonce, pipe: pipeProp
   // Per-pipeline ad spend (whole account). Feeds the funnel's pipeline dropdown -
   // each option shows its spend - and scopes cost per event when one is picked.
   const pipeSpend = {}
-  for (const c of (deep.meta.campaigns || [])) { const pid = pipeOfCampaign(clientId, c.name, allPipes); if (pid) pipeSpend[pid] = (pipeSpend[pid] || 0) + (c.spend || 0) }
+  for (const c of (deep.meta.campaigns || [])) {
+    if (isSplit(c.name)) { for (const a of (deep.meta.adsets || [])) { if (a.campaign !== c.name) continue; const pid = pipeOfAdset(clientId, c.name, a.name, allPipes); if (pid) pipeSpend[pid] = (pipeSpend[pid] || 0) + (a.spend || 0) } continue }
+    const pid = pipeOfCampaign(clientId, c.name, allPipes); if (pid) pipeSpend[pid] = (pipeSpend[pid] || 0) + (c.spend || 0)
+  }
   // The funnel follows the top filter. When that says "All", the funnel shows all
   // pipelines too - it used to quietly narrow to the highest-spend one while the
   // spend above it stayed whole-account, so every cost-per-event was divided by a
@@ -3327,7 +3351,10 @@ function MetaDeep({ deep, currency, attr, clientId, range, nonce, pipe: pipeProp
         // Previous-period ad spend per pipeline, so cost-per-event can show a
         // vs-prev efficiency chip (cost down = green) alongside the volume delta.
         const pipeSpendPrev = {}
-        for (const c of (deep.meta.campaigns || [])) { const pid = pipeOfCampaign(clientId, c.name, allPipes); if (pid && c.prev) pipeSpendPrev[pid] = (pipeSpendPrev[pid] || 0) + (c.prev.spend || 0) }
+        for (const c of (deep.meta.campaigns || [])) {
+          if (isSplit(c.name)) { for (const a of (deep.meta.adsets || [])) { if (a.campaign !== c.name || !a.prev) continue; const pid = pipeOfAdset(clientId, c.name, a.name, allPipes); if (pid) pipeSpendPrev[pid] = (pipeSpendPrev[pid] || 0) + (a.prev.spend || 0) } continue }
+          const pid = pipeOfCampaign(clientId, c.name, allPipes); if (pid && c.prev) pipeSpendPrev[pid] = (pipeSpendPrev[pid] || 0) + (c.prev.spend || 0)
+        }
         const totalSpendPrev = (deep.meta.prev && deep.meta.prev.spend) || Object.values(pipeSpendPrev).reduce((s, v) => s + v, 0)
         const groupFor = (pid, label, spendP, spendPrevP, crmP, leadsP, sub) => {
           const keListP = keyEventsForPipe(loadKeyEvents(clientId), pid || 'all')
@@ -3725,14 +3752,19 @@ function GoogleDeep({ deep, currency, attr, clientId, range, nonce, pipe: pipePr
   if (!deep?.google) return <EmptyDeep channel="Google Ads" range={range} />
   // Scope the whole Google ad side to the selected pipeline's linked campaigns.
   const inPipe = (campName) => pipe === 'all' || pipeOfCampaign(clientId, campName, allPipes) === pipe
-  const g = pipe === 'all' ? deep.google : scopeGoogleToPipe(deep.google, inPipe)
+  const inPipeA = (campName, ag) => pipe === 'all' || pipeOfAdset(clientId, campName, ag, allPipes) === pipe
+  const isSplit = (campName) => campIsSplit(clientId, campName)
+  const g = pipe === 'all' ? deep.google : scopeGoogleToPipe(deep.google, inPipe, inPipeA, isSplit)
   const scopedEmpty = pipe !== 'all' && !(g.campaigns || []).length
   const A = pipeAttr && pipeAttr.data && pipeAttr.data.attribution
   const has360 = !!A
   const keList = keyEventsForPipe(loadKeyEvents(clientId), pipe)
   // Per-pipeline Google spend. Feeds the funnel's dropdown and scopes cost per event.
   const pipeSpend = {}
-  for (const c of (deep.google.campaigns || [])) { const pid = pipeOfCampaign(clientId, c.name, allPipes); if (pid) pipeSpend[pid] = (pipeSpend[pid] || 0) + (c.cost || 0) }
+  for (const c of (deep.google.campaigns || [])) {
+    if (isSplit(c.name)) { for (const a of (deep.google.adGroups || [])) { if (a.campaign !== c.name) continue; const pid = pipeOfAdset(clientId, c.name, a.name, allPipes); if (pid) pipeSpend[pid] = (pipeSpend[pid] || 0) + (a.cost || 0) } continue }
+    const pid = pipeOfCampaign(clientId, c.name, allPipes); if (pid) pipeSpend[pid] = (pipeSpend[pid] || 0) + (c.cost || 0)
+  }
   // The funnel follows the top filter. When that says "All", the funnel shows all
   // pipelines too - it used to quietly narrow to the highest-spend one while the
   // spend above it stayed whole-account, so every cost-per-event was divided by a
@@ -3896,7 +3928,10 @@ function GoogleDeep({ deep, currency, attr, clientId, range, nonce, pipe: pipePr
         const prevCrmOf = (pid) => pid ? (((prevPipeMeta.find((p) => p.id === pid) || {}).crm) || null) : (prevGCh ? prevGCh.totals : null)
         const totalsCrm = gCh ? { leads: gCh.totals.leads, booked: gCh.totals.booked, won: gCh.totals.won, revenue: gCh.totals.revenue } : null
         const pipeSpendPrev = {}
-        for (const c of (deep.google.campaigns || [])) { const pid = pipeOfCampaign(clientId, c.name, allPipes); if (pid && c.prev) pipeSpendPrev[pid] = (pipeSpendPrev[pid] || 0) + (c.prev.cost || 0) }
+        for (const c of (deep.google.campaigns || [])) {
+          if (isSplit(c.name)) { for (const a of (deep.google.adGroups || [])) { if (a.campaign !== c.name || !a.prev) continue; const pid = pipeOfAdset(clientId, c.name, a.name, allPipes); if (pid) pipeSpendPrev[pid] = (pipeSpendPrev[pid] || 0) + (a.prev.cost || 0) } continue }
+          const pid = pipeOfCampaign(clientId, c.name, allPipes); if (pid && c.prev) pipeSpendPrev[pid] = (pipeSpendPrev[pid] || 0) + (c.prev.cost || 0)
+        }
         const totalSpendPrev = (deep.google.prev && deep.google.prev.cost) || Object.values(pipeSpendPrev).reduce((s, v) => s + v, 0)
         const groupFor = (pid, label, spendP, spendPrevP, crmP, leadsP, sub) => {
           if (!crmP) return null
@@ -4917,16 +4952,55 @@ export function pipeOfCampaign(clientId, campName, pipes) {
   if (t) return t
   return suggestPipeline(campName, pipes) || null
 }
+// Ad-set level links sit beside the campaign links under a reserved key:
+// campmap[clientId].__adsets[campaignName][adSetName] = pipelineId | 'all'.
+// An ad set (or Google ad group) without a rule follows its campaign, so a
+// campaign is only "split" once at least one of its ad sets has a rule.
+export function loadAdsetRules(clientId, campName) { const m = loadCampMap(clientId).__adsets; return (m && m[campName]) || {} }
+export function saveAdsetRules(clientId, campName, rules) {
+  const cur = loadCampMap(clientId); const all = { ...(cur.__adsets || {}) }
+  if (rules && Object.keys(rules).length) all[campName] = rules; else delete all[campName]
+  const nx = { ...cur }; if (Object.keys(all).length) nx.__adsets = all; else delete nx.__adsets
+  saveCampMap(clientId, nx)
+}
+export function campIsSplit(clientId, campName) { return Object.keys(loadAdsetRules(clientId, campName)).length > 0 }
+export function pipeOfAdset(clientId, campName, adsetName, pipes) {
+  if (campName == null) return null
+  const t = adsetName != null ? loadAdsetRules(clientId, campName)[adsetName] : undefined
+  if (t === 'all') return null
+  if (t) return t
+  return pipeOfCampaign(clientId, campName, pipes)
+}
+// A split campaign's row, rebuilt from the ad sets that belong to the pipeline
+// in view: the additive fields summed, the derived ones recomputed, prev too.
+const META_SUM_KEYS = ['spend', 'impressions', 'clicks', 'linkClicks', 'leads', 'results', 'reach', 'videoViews']
+const GOOGLE_SUM_KEYS = ['cost', 'impressions', 'clicks', 'conversions']
+const metaFinish = (r) => { r.costPerResult = r.results ? Math.round((r.spend / r.results) * 100) / 100 : null; return r }
+function rowFromKids(c, kids, keys, finish = (r) => r) {
+  const sum = (arr) => { const o = {}; for (const k of keys) o[k] = arr.reduce((t, x) => t + (Number(x && x[k]) || 0), 0); return o }
+  const pk = kids.map((k) => k.prev).filter(Boolean)
+  const out = { ...c, ...sum(kids), split: true, prev: pk.length ? finish({ ...(c.prev || {}), ...sum(pk) }) : null }
+  return finish(out)
+}
 // Scope a Meta rollup to the campaigns matching keep(name): filter campaigns /
 // ad sets / creatives / ad-daily to that subset and recompute account totals,
 // results breakdown, daily series and prev from it. Reach is summed across
 // campaigns (a mild over-count vs true dedup'd account reach) - flagged in UI.
-function scopeMetaToPipe(m, keep) {
-  const campaigns = (m.campaigns || []).filter((c) => keep(c.name))
+// keepA(campaign, adSet) and isSplit(campaign) carry the ad-set level links: a
+// split campaign keeps only the ad sets that belong here, and its row is the
+// sum of those.
+function scopeMetaToPipe(m, keep, keepA = null, isSplit = null) {
+  const allAdsets = m.adsets || []
+  const campaigns = []
+  for (const c of (m.campaigns || [])) {
+    if (isSplit && keepA && isSplit(c.name)) { const kids = allAdsets.filter((a) => a.campaign === c.name && keepA(c.name, a.name)); if (kids.length) campaigns.push(rowFromKids(c, kids, META_SUM_KEYS, metaFinish)) }
+    else if (keep(c.name)) campaigns.push(c)
+  }
   const ok = new Set(campaigns.map((c) => c.name))
-  const adsets = (m.adsets || []).filter((a) => ok.has(a.campaign))
-  const ads = (m.ads || []).filter((a) => ok.has(a.campaign))
-  const adDaily = (m.adDaily || []).filter((r) => ok.has(r.campaign))
+  const okA = (camp, adset) => ok.has(camp) && (!keepA || !isSplit || !isSplit(camp) || keepA(camp, adset))
+  const adsets = allAdsets.filter((a) => okA(a.campaign, a.name))
+  const ads = (m.ads || []).filter((a) => okA(a.campaign, a.adset))
+  const adDaily = (m.adDaily || []).filter((r) => okA(r.campaign, r.adset))
   const sum = (arr, k) => arr.reduce((s, x) => s + (Number(x && x[k]) || 0), 0)
   const totals = {
     spend: sum(campaigns, 'spend'), impressions: sum(campaigns, 'impressions'), clicks: sum(campaigns, 'clicks'),
@@ -4947,13 +5021,19 @@ function scopeMetaToPipe(m, keep) {
 }
 // Google equivalent: scope a Google rollup to the campaigns matching keep(name)
 // and recompute totals + prev from that subset.
-function scopeGoogleToPipe(g, keep) {
-  const campaigns = (g.campaigns || []).filter((c) => keep(c.name))
+function scopeGoogleToPipe(g, keep, keepA = null, isSplit = null) {
+  const allGroups = g.adGroups || []
+  const campaigns = []
+  for (const c of (g.campaigns || [])) {
+    if (isSplit && keepA && isSplit(c.name)) { const kids = allGroups.filter((a) => a.campaign === c.name && keepA(c.name, a.name)); if (kids.length) campaigns.push(rowFromKids(c, kids, GOOGLE_SUM_KEYS)) }
+    else if (keep(c.name)) campaigns.push(c)
+  }
   const ok = new Set(campaigns.map((c) => c.name))
-  const adGroups = (g.adGroups || []).filter((a) => ok.has(a.campaign))
-  const keywords = (g.keywords || []).filter((k) => ok.has(k.campaign))
-  const searchTerms = (g.searchTerms || []).filter((s) => ok.has(s.campaign))
-  const conversionActions = (g.conversionActions || []).filter((r) => !r.campaign || ok.has(r.campaign))
+  const okA = (camp, ag) => ok.has(camp) && (!keepA || !isSplit || !isSplit(camp) || ag == null || keepA(camp, ag))
+  const adGroups = allGroups.filter((a) => okA(a.campaign, a.name))
+  const keywords = (g.keywords || []).filter((k) => okA(k.campaign, k.adGroup))
+  const searchTerms = (g.searchTerms || []).filter((x) => okA(x.campaign, x.adGroup))
+  const conversionActions = (g.conversionActions || []).filter((r) => !r.campaign || okA(r.campaign, r.adGroup))
   const sum = (arr, k) => arr.reduce((s, x) => s + (Number(x && x[k]) || 0), 0)
   const totals = { cost: sum(campaigns, 'cost'), impressions: sum(campaigns, 'impressions'), clicks: sum(campaigns, 'clicks'), conversions: sum(campaigns, 'conversions') }
   const pc = campaigns.map((c) => c.prev).filter(Boolean)

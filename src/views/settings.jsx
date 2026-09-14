@@ -1,7 +1,7 @@
 // Settings: the client editors and the Settings page. Carved out of App.jsx so it loads on first open; the
 // helpers it shares with the rest of the app are imported from there.
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { APP_VERSION, Avatar, BIZ_TYPES, CC_CHANS, Caveat, ChangePasswordCard, ClinicSettings, DASH_AUD, DASH_MODULES, DASH_PRESETS, DEFAULT_HOURS, DOW_LABELS, FATIGUE_DEFAULTS, FAVICON, FormsSettingsTab, GeoSettings, HelpNote, OptLogSettings, PROFILE_FIELDS, ROLE_LABEL, SEED_KEYEVENTS, SETTINGS, SignOutEverywhereCard, YourDetailsCard, Spinner, TAB_OPTIONS, TermsAdmin, TermsRegister, UsersAdmin, acolor, apiJson, applyAliases, clientLogoSrc, dashAudience, dashModuleFits, dedupeFetch, deleteClient, domainOf, dpClientOn, dpPipeOn, fetchDiscover, fmtDMY, fmtHours, formKeyEvents, formsDoneCount, hhmm, initials, isAdminishFE, isClientDeleted, iso, loadAliases, loadBizType, loadCampMap, loadCashOn, loadCloseOverride, loadDashboard, loadFatigueCfg, loadHours, loadKeep, loadKeyEvents, loadKeyEventsRaw, loadKpis, loadLogo, loadMetaConv, loadProfile, loadQualStage, loadSocialKpis, mkOutcomeMap, normId, presetRange, rangeLabel, rangeMaturity, rangeQuery, readNavUrl, removeCustomClient, restoreClient, roleLabelOf, saveBizType, saveCampMap, saveCashOn, saveCloseOverride, saveCustomClient, saveDashboard, saveFatigueCfg, saveHours, saveKeyEvents, saveKpis, saveLogo, saveMetaConv, saveProfile, saveQualStage, saveSocialKpis, setAlias, setDpClient, setDpPipe, setKeep, syncLogos, unorm, useDiscoverNames, useSettingsSync, writeNavUrl, normCrmUrl, saveCrmUrl, CRM_DEFAULT_URL } from '../App.jsx'
+import { APP_VERSION, Avatar, BIZ_TYPES, CC_CHANS, Caveat, ChangePasswordCard, ClinicSettings, DASH_AUD, DASH_MODULES, DASH_PRESETS, DEFAULT_HOURS, DOW_LABELS, FATIGUE_DEFAULTS, FAVICON, FormsSettingsTab, GeoSettings, HelpNote, OptLogSettings, PROFILE_FIELDS, ROLE_LABEL, SEED_KEYEVENTS, SETTINGS, SignOutEverywhereCard, YourDetailsCard, Spinner, TAB_OPTIONS, TermsAdmin, TermsRegister, UsersAdmin, acolor, apiJson, applyAliases, clientLogoSrc, dashAudience, dashModuleFits, dedupeFetch, deleteClient, domainOf, dpClientOn, dpPipeOn, fetchDiscover, fmtDMY, fmtHours, formKeyEvents, formsDoneCount, hhmm, initials, isAdminishFE, isClientDeleted, iso, loadAdsetRules, loadAliases, loadBizType, loadCampMap, loadCashOn, loadCloseOverride, loadDashboard, loadFatigueCfg, loadHours, loadKeep, loadKeyEvents, loadKeyEventsRaw, loadKpis, loadLogo, loadMetaConv, loadProfile, loadQualStage, loadSocialKpis, mkOutcomeMap, normId, presetRange, rangeLabel, rangeMaturity, rangeQuery, readNavUrl, removeCustomClient, restoreClient, roleLabelOf, saveAdsetRules, saveBizType, saveCampMap, saveCashOn, saveCloseOverride, saveCustomClient, saveDashboard, saveFatigueCfg, saveHours, saveKeyEvents, saveKpis, saveLogo, saveMetaConv, saveProfile, saveQualStage, saveSocialKpis, setAlias, setDpClient, setDpPipe, setKeep, syncLogos, unorm, useDiscoverNames, useSettingsSync, writeNavUrl, normCrmUrl, saveCrmUrl, CRM_DEFAULT_URL } from '../App.jsx'
 import { fmtCurrency, fmtNumber } from '../lib/format.js'
 import { VIS_VIEWS, VIS_TABS, VIS_SETTINGS, VIS_ROLES, VIS_ROLE_LABELS, viewsForRole, tabsForRole, settingsForRole, normVisibility, isHiddenSetting, entryFor, hasLegacyTicks, visSettingLabel } from '../lib/visibility.js'
 import { authApi, saveSettingsRemote, bumpSettings, userHidden, InfoTip, loadAnnot, saveAnnot } from '../App.jsx'
@@ -658,7 +658,11 @@ export function AliasEditor({ clientId, nonce }) {
 export function CampaignLinker({ clientId, embedded, nonce }) {
   const [open, setOpen] = useState(!!embedded)
   const [st, setSt] = useState({ status: 'idle', blend: null })
+  // The ad sets (Meta) and ad groups (Google) inside each campaign, last 30
+  // days, for routing a campaign below the campaign level.
+  const [ents, setEnts] = useState(null)
   const [manual, setManual] = useState(() => loadCampMap(clientId))
+  const [split, setSplit] = useState(null)
   useEffect(() => {
     if (!open || st.status !== 'idle') return
     setSt({ status: 'loading', blend: null })
@@ -668,10 +672,23 @@ export function CampaignLinker({ clientId, embedded, nonce }) {
       .then((j) => setSt({ status: 'ok', blend: j.blend }))
       .catch(() => setSt({ status: 'err', blend: null }))
   }, [open, st.status, clientId])
-  const setLink = (name, target) => setManual((m) => { const nx = { ...m }; if (target === 'auto') delete nx[name]; else nx[name] = target; saveCampMap(clientId, nx); return nx })
+  useEffect(() => {
+    if (!open) return
+    let alive = true
+    dedupeFetch(`/.netlify/functions/windsor?scope=linkents&client=${clientId}${nonce ? `&_r=${nonce}` : ''}`)
+      .then((x) => (x.ok ? x.json() : null)).then((j) => { if (alive) setEnts((j && j.ents) || []) }).catch(() => { if (alive) setEnts([]) })
+    return () => { alive = false }
+  }, [open, clientId, nonce])
+  // Every write starts from the saved map, so a campaign link never drops the
+  // ad-set rules saved beside it (or the other way round).
+  const setLink = (name, target) => { const nx = { ...loadCampMap(clientId) }; if (target === 'auto') delete nx[name]; else nx[name] = target; saveCampMap(clientId, nx); setManual(nx) }
+  const setRule = (camp, adset, target) => { const rules = { ...loadAdsetRules(clientId, camp) }; if (target === 'camp') delete rules[adset]; else rules[adset] = target; saveAdsetRules(clientId, camp, rules); setManual(loadCampMap(clientId)) }
+  const clearRules = (camp) => { saveAdsetRules(clientId, camp, {}); setManual(loadCampMap(clientId)); setSplit(null) }
+  const rulesOf = (camp) => (manual.__adsets && manual.__adsets[camp]) || {}
   const b = st.blend
   const pipes = (b && b.pipelines) || []
   const camps = (b && b.campaigns) || []
+  const pipeOpts = pipes.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)
   return (
     <div className="linker">
       {!embedded && <button className="linker-toggle" onClick={() => setOpen((o) => !o)}>{open ? '▾' : '▸'} Link campaigns to pipelines</button>}
@@ -681,18 +698,61 @@ export function CampaignLinker({ clientId, embedded, nonce }) {
             : !camps.length ? <p className="cap">No campaigns found in the last 30 days.</p>
               : !pipes.length ? <p className="cap">No Caalano Systems pipelines to link to.</p>
                 : <>
-                  <p className="cap" style={{ marginTop: 0 }}>Assign each campaign to a pipeline, or “All pipelines” to share its spend. Auto = matched by name.</p>
-                  {camps.map((cc) => (
-                    <div className="camp-row" key={cc.source + cc.name}>
-                      <span className="src-badge" style={{ background: cc.source === 'Meta' ? '#4f7cff' : '#12b886' }}>{cc.source === 'Meta' ? 'M' : 'G'}</span>
-                      <span className="camp-nm" title={cc.name}>{cc.name}</span>
-                      <select className="camp-lnk" value={manual[cc.name] ?? 'auto'} onChange={(e) => setLink(cc.name, e.target.value)}>
-                        <option value="auto">Auto{cc.auto && cc.auto !== 'all' ? ` · ${pipes.find((p) => p.id === cc.auto)?.name?.slice(0, 20) || 'matched'}` : ' · all'}</option>
+                  <p className="cap" style={{ marginTop: 0 }}>Assign each campaign to a pipeline, or “All pipelines” to share its spend. Auto = matched by name. The pencil routes a campaign's ad sets to different pipelines.</p>
+                  {camps.map((cc) => {
+                    const rules = rulesOf(cc.name); const ruleNames = Object.keys(rules); const nRules = ruleNames.length
+                    const kidLabel = cc.source === 'Meta' ? 'ad set' : 'ad group'
+                    const kids = (ents || []).filter((e) => e.source === cc.source && e.campaign === cc.name)
+                    const stale = ruleNames.filter((n) => !kids.some((k) => k.name === n))
+                    const isOpen = split === cc.source + cc.name
+                    const canSplit = kids.length > 0 || nRules > 0
+                    const ruleSelect = (name) => (
+                      <select className="camp-lnk" value={rules[name] ?? 'camp'} onChange={(e) => setRule(cc.name, name, e.target.value)}>
+                        <option value="camp">Same as campaign</option>
                         <option value="all">All pipelines</option>
-                        {pipes.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                        {pipeOpts}
                       </select>
-                    </div>
-                  ))}
+                    )
+                    return (
+                      <React.Fragment key={cc.source + cc.name}>
+                        <div className={`camp-row${nRules ? ' is-split' : ''}`}>
+                          <span className="src-badge" style={{ background: cc.source === 'Meta' ? '#4f7cff' : '#12b886' }}>{cc.source === 'Meta' ? 'M' : 'G'}</span>
+                          <span className="camp-nm" title={cc.name}>{cc.name}{nRules ? <span className="camp-split-tag">{nRules} {kidLabel}{nRules === 1 ? '' : 's'} routed</span> : null}</span>
+                          <select className="camp-lnk" value={manual[cc.name] ?? 'auto'} onChange={(e) => setLink(cc.name, e.target.value)}>
+                            <option value="auto">Auto{cc.auto && cc.auto !== 'all' ? ` · ${pipes.find((p) => p.id === cc.auto)?.name?.slice(0, 20) || 'matched'}` : ' · all'}</option>
+                            <option value="all">All pipelines</option>
+                            {pipeOpts}
+                          </select>
+                          {canSplit
+                            ? <button type="button" className={`camp-pencil${isOpen ? ' on' : ''}`} title={`Route this campaign's ${kidLabel}s to different pipelines`} aria-label={`Route by ${kidLabel}`} onClick={() => setSplit(isOpen ? null : cc.source + cc.name)}>✎</button>
+                            : <span className="camp-pencil-gap" title={ents == null ? 'Loading…' : `No ${kidLabel}s with spend in the last 30 days`} />}
+                        </div>
+                        {isOpen ? (
+                          <div className="camp-split">
+                            <div className="camp-split-h">
+                              <span>Route by {kidLabel} <InfoTip>Each {kidLabel} can go to its own pipeline, the way a form answer can. “Same as campaign” follows the campaign's link above. The Daily Performance tiles, the pipeline filter on the Meta and Google tabs and the creatives' key events all follow these rules; spend, results and conversions move with the {kidLabel}.</InfoTip></span>
+                              {nRules ? <button type="button" className="btn-ghost sm" onClick={() => clearRules(cc.name)}>Clear</button> : null}
+                            </div>
+                            {kids.map((k) => (
+                              <div className="camp-split-row" key={k.name}>
+                                <span className="camp-split-nm" title={k.name}>{k.name}<small> · {fmtCurrency(Math.round(k.spend), undefined).replace(/\.00$/, '')} · 30 days</small></span>
+                                <span className="fm-route-arrow">→</span>
+                                {ruleSelect(k.name)}
+                              </div>
+                            ))}
+                            {stale.map((n) => (
+                              <div className="camp-split-row is-stale" key={n}>
+                                <span className="camp-split-nm" title={n}>{n}<small> · no spend in the last 30 days</small></span>
+                                <span className="fm-route-arrow">→</span>
+                                {ruleSelect(n)}
+                              </div>
+                            ))}
+                            {!kids.length && !stale.length ? <p className="cap" style={{ margin: 0 }}>No {kidLabel}s found.</p> : null}
+                          </div>
+                        ) : null}
+                      </React.Fragment>
+                    )
+                  })}
                 </>}
       </div>}
     </div>

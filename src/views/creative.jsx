@@ -1,7 +1,7 @@
 // Creative Cockpit, Meta Insights and Client Update. Carved out of App.jsx so it loads on first open; the
 // helpers it shares with the rest of the app are imported from there.
 import React, { useEffect, useRef, useState } from 'react'
-import { C360GrpRow, CC_ANGLES, CC_AUD_SUGGEST, CC_CTAS, CC_FORMATS, CC_STYLES, CURATOR_ENABLED, Caveat, CcChips, CcConceptCard, MdText, O360Head, PROFILE_FIELDS, PanScroll, SETTINGS, Sc, Spinner, aliasedOutcomeMap, buildO360Cols, ccBuild, ccFindA, ccFindC, ccFindF, groupAnswers, keyEventsForPipe, loadBoard, loadClientCtx, loadCreativeMeta, loadCreativeTax, loadInsights, loadKeyEvents, mergeLocations, o360Cells, o360Fields, pipeOfCampaign, profileFilled, profileText, rangeLabel, rangeQuery, readNavUrl, saveBoard, saveClientCtx, saveCreativeMeta, saveInsights, stagePosMap, unorm, useAttribution, useAuDb, useSettingsSync, writeNavUrl } from '../App.jsx'
+import { C360GrpRow, CC_ANGLES, CC_AUD_SUGGEST, CC_CTAS, CC_FORMATS, CC_STYLES, CURATOR_ENABLED, Caveat, CcChips, CcConceptCard, MdText, O360Head, PROFILE_FIELDS, PanScroll, SETTINGS, Sc, Spinner, aliasedOutcomeMap, buildO360Cols, ccBuild, ccFindA, ccFindC, ccFindF, groupAnswers, keyEventsForPipe, loadBoard, loadClientCtx, loadCreativeMeta, loadCreativeTax, loadInsights, loadKeyEvents, mergeLocations, o360Cells, o360Fields, pipeOfAdset, profileFilled, profileText, rangeLabel, rangeQuery, readNavUrl, saveBoard, saveClientCtx, saveCreativeMeta, saveInsights, stagePosMap, unorm, useAttribution, useAuDb, useSettingsSync, writeNavUrl } from '../App.jsx'
 import { fmtCurrency, fmtNumber } from '../lib/format.js'
 
 export function CreativeCuratorPage({ clients }) {
@@ -629,7 +629,7 @@ export function CreativeCockpit({ client, currency, range, nonce }) {
   const _colsCache = {}
   const colsForPipe = (pid) => { const k = pid || '_all'; if (!(k in _colsCache)) _colsCache[k] = (hasCrm && A) ? buildO360Cols(keyEventsForPipe(rawKe, pid || 'all'), stagePos, calNames) : null; return _colsCache[k] }
   const oCre = (hasCrm && A) ? aliasedOutcomeMap(client.id, 'content', A.byCreative) : null
-  const pipeOfCre = (c) => (allPipes.length ? pipeOfCampaign(client.id, c.campaign, allPipes) : null)
+  const pipeOfCre = (c) => (allPipes.length ? pipeOfAdset(client.id, c.campaign, c.adset, allPipes) : null)
   const keLeft = hasCrm ? 10 : 8 // leading (non-green) grid column count, for the banner + expand colSpan
 
   // Attach saved tags + the per-creative key-event fields. Each creative's green

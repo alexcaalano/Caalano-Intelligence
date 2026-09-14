@@ -1378,7 +1378,11 @@ async function buildTrends(key) {
   const closedStart = new Date(today); closedStart.setUTCDate(closedStart.getUTCDate() - CLOSED_BACK)
   // Saved campaign→pipeline links, so per-pipeline spend can be split by the actual
   // Settings mapping (Phase 2) rather than a blunt lead-share allocation.
-  const savedCampmap = await getStore({ name: 'caalano-settings', consistency: 'strong' }).get('all', { type: 'json' }).then((s) => (s && s.campmap) || {}).catch(() => ({}))
+  const savedSettings = await getStore({ name: 'caalano-settings', consistency: 'strong' }).get('all', { type: 'json' }).catch(() => null) || {}
+  const savedCampmap = savedSettings.campmap || {}
+  // Key events name the pipelines someone has set up for; those become tiles
+  // from the moment they are configured (see `configured` below).
+  const savedKeyevents = savedSettings.keyevents || {}
   // Each client's configured primary Meta conversion, so the daily "results" match its
   // optimised event (custom conversions included) instead of standard leads only.
   const metaPrimaryByClient = await readAllMetaPrimary()
@@ -1448,6 +1452,31 @@ async function buildTrends(key) {
     }))
   }
   for (const r of gg) { const id = googleId[acctKey(r.account_id)]; if (!id) continue; const di = dayIndex.get(String(r.date || '').slice(0, 10)); if (di == null) continue; const e = ensure(id); const sp = num(r.spend); const cv = num(r.conversions); e.gSpend[di] += sp; e.gConv[di] += cv; if (r.campaign) { ensureCamp(e.campGoogle, r.campaign)[di] += sp; ensureCamp(e.campGoogleConv, r.campaign)[di] += cv } }
+  // Ad-set level links: campmap[client].__adsets[campaign][adSet] = pipeline
+  // splits one campaign across pipelines below the campaign. Such a campaign
+  // needs its daily figures per ad set (Meta) or ad group (Google), which the
+  // agency-wide pulls above do not carry, so those rows are fetched per client,
+  // only for the clients that have such a rule and only for the split campaigns.
+  const splitClients = Object.entries(savedCampmap).filter(([id, m]) => CLIENTS[id] && m && m.__adsets && Object.values(m.__adsets).some((r) => r && Object.keys(r).length))
+  await Promise.all(splitClients.map(async ([id, m]) => {
+    const cfg = CLIENTS[id]; const e = ensure(id)
+    const splitCamps = new Set(Object.keys(m.__adsets).filter((c) => m.__adsets[c] && Object.keys(m.__adsets[c]).length))
+    e.adsetMeta = new Map(); e.adsetMetaLeads = new Map(); e.adgGoogle = new Map(); e.adgGoogleConv = new Map()
+    const sub = (mm, camp, name) => { let cm = mm.get(camp); if (!cm) { cm = new Map(); mm.set(camp, cm) } return ensureCamp(cm, name) }
+    const dayOf = (r) => dayIndex.get(String(r.date || '').slice(0, 10))
+    if (cfg.meta) {
+      const pf = (metaPrimaryByClient[id] || []).filter((f) => f && !baseFbFields.includes(f))
+      const fields = ['account_id', 'campaign', 'adset_name', 'date', 'spend', ...FB_LEAD_FIELDS]
+      let rows = []
+      try { rows = await windsorFetch('facebook', [...fields, ...pf], dstr(start), dstr(today), null, key, { accounts: cfg.meta }) } catch { try { rows = await windsorFetch('facebook', fields, dstr(start), dstr(today), null, key, { accounts: cfg.meta }) } catch { rows = [] } }
+      for (const r of rows) { if (!r.campaign || !r.adset_name || !splitCamps.has(r.campaign)) continue; if (r.account_id && !acctEq(r.account_id, cfg.meta)) continue; const di = dayOf(r); if (di == null) continue; sub(e.adsetMeta, r.campaign, r.adset_name)[di] += num(r.spend); sub(e.adsetMetaLeads, r.campaign, r.adset_name)[di] += metaResultOf(id, r) }
+    }
+    if (cfg.google) {
+      let rows = []
+      try { rows = await windsorFetch('google_ads', ['account_id', 'campaign', 'ad_group_name', 'date', 'spend', 'conversions'], dstr(start), dstr(today), null, key, { accounts: cfg.google }) } catch { rows = [] }
+      for (const r of rows) { if (!r.campaign || !r.ad_group_name || !splitCamps.has(r.campaign)) continue; if (r.account_id && !acctEq(r.account_id, cfg.google)) continue; const di = dayOf(r); if (di == null) continue; sub(e.adgGoogle, r.campaign, r.ad_group_name)[di] += num(r.spend); sub(e.adgGoogleConv, r.campaign, r.ad_group_name)[di] += num(r.conversions) }
+    }
+  }))
   // Windsor blended booked (fallback when the GHL app isn't connected / a client's fetch fails)
   const idxByAcct = {}; const pipeNameByAcct = {}
   { const byAcct = {}; for (const p of pipes) { const id = ghlId[norm(p.account_id)]; if (!id) continue; (byAcct[id] = byAcct[id] || []).push(p); (pipeNameByAcct[id] = pipeNameByAcct[id] || {})[p.pipeline_id] = p.pipeline_name || 'Pipeline' } for (const [id, arr] of Object.entries(byAcct)) idxByAcct[id] = stageIndex(arr) }
@@ -1637,12 +1666,25 @@ async function buildTrends(key) {
     // Only split a client into per-pipeline tiles when it genuinely runs more than one
     // pipeline. Single-pipeline clients keep the one combined tile (splitting there
     // adds nothing and would wrongly carve off an "Unlinked" tile).
-    const realPipes = [...E.pipe.values()].filter((p) => p.id !== 'none' && sumR(p.leads, 0, 56) > 0)
+    // Campaign→pipeline links are stored per client: campmap[clientId][campaignName],
+    // with ad-set level rules under campmap[clientId].__adsets[campaignName][adSet].
+    const clientCampmap = (savedCampmap && savedCampmap[id]) || {}
+    // A pipeline someone has set up for - a key event on it, or a campaign or ad
+    // set linked to it - is a tile from the moment it is configured, before its
+    // first lead or dollar: that is what the setup is for. Only pipelines the
+    // CRM actually lists count, so a stale id in old settings cannot conjure one.
+    const configured = new Set()
+    for (const [k, v] of Object.entries(clientCampmap)) {
+      if (k === '__adsets') { for (const rules of Object.values(v || {})) for (const pid of Object.values(rules || {})) if (pid && pid !== 'all') configured.add(pid) }
+      else if (v && v !== 'all') configured.add(v)
+    }
+    for (const ev of (savedKeyevents[id] || [])) if (ev && typeof ev === 'object' && ev.pipeline) configured.add(ev.pipeline)
+    const pipeNames = pipeNameByAcct[id] || {}
+    for (const pid of [...configured]) { if (pid === 'none' || E.pipe.has(pid)) continue; if (pipeNames[pid]) ensurePipe(E, pid, pipeNames[pid]); else configured.delete(pid) }
+    const realPipes = [...E.pipe.values()].filter((p) => p.id !== 'none' && (sumR(p.leads, 0, 56) > 0 || configured.has(p.id)))
     const pipeList = realPipes
     let pipelinesOut = null
     if (pipeList.length > 1) {
-      // Campaign→pipeline links are stored per client: campmap[clientId][campaignName].
-      const clientCampmap = (savedCampmap && savedCampmap[id]) || {}
       // Lead totals per pipeline (28d) drive the auto-matcher's tie-breaks.
       const pArr = pipeList.map((p) => ({ id: p.id, name: p.name, crm: { leads: sumR(p.leads, 0, 28) } }))
       const validPid = new Set(pArr.map((p) => p.id))
@@ -1654,13 +1696,37 @@ async function buildTrends(key) {
         const a = auto.get(name)
         return (a && a !== 'all' && validPid.has(a)) ? a : null
       }
+      // Ad-set rules: an ad set with its own pipeline goes there; "all" shares it
+      // (unlinked); anything else follows its campaign.
+      const adsetRules = clientCampmap.__adsets || {}
+      const isSplit = (camp) => { const r = adsetRules[camp]; return !!(r && Object.keys(r).length) }
+      const ruleFor = (camp, adset) => { const r = adsetRules[camp]; const v = r && r[adset]; if (v === 'all') return null; if (v && validPid.has(v)) return v; return resolvePid(camp) }
       // Route a per-campaign daily map into per-pipeline arrays (+ an unlinked bucket).
       const newTargets = () => { const m = new Map(); for (const p of pipeList) m.set(p.id, mk()); return m }
       const pMS = newTargets(), pML = newTargets(), pGS = newTargets(), pGC = newTargets()
       const uMS = mk(), uML = mk(), uGS = mk(), uGC = mk()
-      const route = (src, tMap, uArr) => { for (const [name, arr] of src) { const pid = resolvePid(name); const t = pid ? tMap.get(pid) : uArr; for (let i = 0; i < 56; i++) t[i] += arr[i] } }
-      route(E.campMeta, pMS, uMS); route(E.campMetaLeads, pML, uML)
-      route(E.campGoogle, pGS, uGS); route(E.campGoogleConv, pGC, uGC)
+      // subSrc: per-campaign map of per-ad-set daily arrays for split campaigns;
+      // subW: the ad sets' spend arrays, the weights for whatever the campaign
+      // carries beyond its ad sets' sum (custom conversions counted at campaign
+      // level), which follows the ad sets' spend share that day.
+      const route = (src, tMap, uArr, subSrc, subW) => {
+        for (const [name, arr] of src) {
+          const subs = isSplit(name) && subSrc ? subSrc.get(name) : null
+          if (!subs || !subs.size) { const pid = resolvePid(name); const t = pid ? tMap.get(pid) : uArr; for (let i = 0; i < 56; i++) t[i] += arr[i]; continue }
+          const wsubs = (subW && subW.get(name)) || subs
+          const target = (pid) => (pid ? tMap.get(pid) : uArr)
+          for (let i = 0; i < 56; i++) {
+            let tot = 0, wtot = 0
+            for (const [an, a] of subs) { tot += a[i]; const w = wsubs.get(an); wtot += w ? w[i] : 0; target(ruleFor(name, an))[i] += a[i] }
+            const res = arr[i] - tot
+            if (Math.abs(res) < 1e-9) continue
+            if (wtot > 0) { for (const [an] of subs) { const w = wsubs.get(an); if (!w || !w[i]) continue; target(ruleFor(name, an))[i] += res * (w[i] / wtot) } }
+            else target(resolvePid(name))[i] += res
+          }
+        }
+      }
+      route(E.campMeta, pMS, uMS, E.adsetMeta, E.adsetMeta); route(E.campMetaLeads, pML, uML, E.adsetMetaLeads, E.adsetMeta)
+      route(E.campGoogle, pGS, uGS, E.adgGoogle, E.adgGoogle); route(E.campGoogleConv, pGC, uGC, E.adgGoogleConv, E.adgGoogle)
       // Full tr-shaped windows: meta / google / blended, with booked from the
       // pipeline's own CRM (blended across channels - used only for the booking-rate
       // sub-stat, matching how the client tile reads booked ÷ results).
@@ -1691,7 +1757,7 @@ async function buildTrends(key) {
             windows: tileWindows(mS, mL, gS, gC, p.booked, p), daily: tileDaily(mS, mL, gS, gC, p.booked, p.won),
           }
         })
-        .filter((po) => po.leads28 > 0 || po.spend28 > 0.5)
+        .filter((po) => po.leads28 > 0 || po.spend28 > 0.5 || configured.has(po.id))
         .sort((a, b) => (b.leads28 - a.leads28) || (b.spend28 - a.spend28))
       // Still worth splitting only if ≥2 pipelines actually have activity.
       if (realTiles.length > 1) {
@@ -2873,7 +2939,7 @@ function resultTtlFor(scope, channel, to) {
 const cacheStore = () => getStore({ name: 'caalano-cache', consistency: 'strong' })
 // Scopes safe to cache: client-scoped, GET, identical for every authorised
 // caller. (Agency-wide aggregates are filtered per-caller, so they're excluded.)
-const CACHEABLE_SCOPES = new Set(['pivot', 'saleshub', 'repcard', 'spenddaily', 'bizloc', 'users', 'callcohort', 'ccdrill', 'speed', 'appts', 'cohorts', 'forms', 'weekly', 'ovrow', 'health', 'updateextra', 'anomalies', 'social', 'socialtrend', 'stagetiming', 'enqtimes', 'usercalls', 'clinic', 'calperf'])
+const CACHEABLE_SCOPES = new Set(['linkents', 'pivot', 'saleshub', 'repcard', 'spenddaily', 'bizloc', 'users', 'callcohort', 'ccdrill', 'speed', 'appts', 'cohorts', 'forms', 'weekly', 'ovrow', 'health', 'updateextra', 'anomalies', 'social', 'socialtrend', 'stagetiming', 'enqtimes', 'usercalls', 'clinic', 'calperf'])
 const CACHEABLE_CHANNELS = new Set(['meta', 'google', 'attribution', 'blend'])
 // Agency-wide scopes that carry NO client param. They ARE the slowest first-load
 // calls (whole-roster Windsor + GHL fan-out), so caching them is the single
@@ -3579,6 +3645,26 @@ export default async (req) => {
     return json({ scope: 'hublive', client, now: Date.now(), events: events.slice(-120) })
   }
   // The webhook URL to paste into the marketplace app, for a superadmin.
+  // Settings → Campaign links: the ad sets (Meta) and ad groups (Google) inside
+  // each campaign over the last 30 days, so a campaign can be routed to
+  // pipelines below the campaign level.
+  if (scope === 'linkents') {
+    const cc = clientCfg(client)
+    if (!cc) return json({ error: 'unknown client' }, 404)
+    const to = tzToday(); const from = new Date(to); from.setUTCDate(from.getUTCDate() - 30)
+    const ds = (d) => d.toISOString().slice(0, 10)
+    const filt = (acct) => (rows) => rows.filter((r) => !r.account_id || acctEq(r.account_id, acct))
+    const [fb, gg] = await Promise.all([
+      cc.meta ? windsorFetch('facebook', ['account_id', 'campaign', 'adset_name', 'spend'], ds(from), ds(to), null, key, { accounts: cc.meta }).then(filt(cc.meta)).catch(() => []) : Promise.resolve([]),
+      cc.google ? windsorFetch('google_ads', ['account_id', 'campaign', 'ad_group_name', 'spend'], ds(from), ds(to), null, key, { accounts: cc.google }).then(filt(cc.google)).catch(() => []) : Promise.resolve([]),
+    ])
+    const agg = new Map()
+    const add = (source, camp, name, sp) => { if (!camp || !name) return; const k = source + '\u0001' + camp + '\u0001' + name; const e = agg.get(k) || { source, campaign: camp, name, spend: 0 }; e.spend += num(sp); agg.set(k, e) }
+    for (const r of fb) add('Meta', r.campaign, r.adset_name, r.spend)
+    for (const r of gg) add('Google', r.campaign, r.ad_group_name, r.spend)
+    const ents = [...agg.values()].map((e) => ({ ...e, spend: Math.round(e.spend) })).sort((a, b) => b.spend - a.spend)
+    return json({ scope: 'linkents', client, ents }, 200, true)
+  }
   if (scope === 'webhookurl') {
     if (!me || me.role !== 'superadmin') return json({ error: 'Super Admins only.' }, 403)
     const t = liveToken()

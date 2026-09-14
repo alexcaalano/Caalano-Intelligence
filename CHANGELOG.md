@@ -18,6 +18,24 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.619.0 - 2026-09-14
+
+**A release that changes what a number means shows on the next load.** (commit PENDING)
+
+- The server's result cache key now carries a schema version
+  (`RESULT_CACHE_SCHEMA` in `cacheKeyFrom`), bumped to 2 for the v3.618.0
+  Meta results rule. Payloads built by earlier code are left behind instead
+  of being served until they expire, which for a settled ad range was up to
+  a day. The warmers write the new keys on their next run; until then the
+  first load builds live.
+- The browser's remembered payloads (IndexedDB) are stamped with the app
+  version and dropped when it changes, so a new release never paints the
+  previous release's numbers first.
+- Release rule from here: any change to a results definition, or to a
+  field the UI depends on, bumps the schema constant in the same commit.
+
+---
+
 ## v3.618.0 - 2026-09-14
 
 **Meta Results match Ads Manager: each row reports its own optimisation event.** (commit be718df)

@@ -2856,6 +2856,12 @@ async function hubBuild(client, ghl, { from, to, hours, today }) {
 async function readResultCache(key) { const t = Date.now(); try { return await cacheStore().get(key, { type: 'json' }) } catch { return null } finally { upstream.blob += Date.now() - t; upstream.blobN++ } }
 function writeResultCache(key, payload) { try { cacheStore().setJSON(key, { at: Date.now(), payload }).catch(() => {}) } catch { /* non-fatal */ } }
 function cacheKeyFrom(url) {
+  // Bump when the meaning of a cached payload changes (a results rule, a new
+  // field the UI relies on): every entry built by the previous code is then
+  // left behind instead of served until it expires, which for a settled ad
+  // range can be a day. Kept inside the function: warm.mjs and its test lift
+  // this function out of the file by its source, so it must stand alone.
+  const RESULT_CACHE_SCHEMA = 2
   const p = new URLSearchParams(url.search)
   // _r/nonce = refresh cache-buster, debug = raw sample, _a = the deep-fetch retry
   // counter (a per-attempt browser cache-buster). None should fragment the SERVER
@@ -2863,7 +2869,7 @@ function cacheKeyFrom(url) {
   // (which has no _a) write the exact key the interactive request reads.
   p.delete('_r'); p.delete('debug'); p.delete('nonce'); p.delete('_a'); p.delete('_p'); p.delete('_w')
   const entries = [...p.entries()].sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : (a[1] < b[1] ? -1 : 1)))
-  return 'v1:' + encodeURIComponent(entries.map(([k, v]) => `${k}=${v}`).join('&'))
+  return `v${RESULT_CACHE_SCHEMA}:` + encodeURIComponent(entries.map(([k, v]) => `${k}=${v}`).join('&'))
 }
 
 // Reliability log - a capped, per-day ring buffer of failures + slow builds so we

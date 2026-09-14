@@ -18,6 +18,16 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.649.0 - 2026-09-14
+
+**Action Centre: Deals & Actions as its own page, and the phone's front page** (commit PENDING)
+
+- A new sidebar entry, **Action Centre**, sits above the reporting pages for everyone (agency roles and account roles alike). It is one client's Deals & Actions (My results, Live deals, Action list, Compare) with a client picker up top for anyone with more than one CRM client; the client and the page ride in the link (`?v=actionhub&c=`). The name is a working title, held in one constant so it can change without touching the id.
+- On a phone the app now opens on the Action Centre rather than Agency Overview: the people who open it on a phone are the ones moving deals, not reading reports. A deep link still opens where it points. A person whose visibility hides the page, or who has no client with a CRM connection, opens where they did before.
+- The page can be switched off per role or person under Settings → Access → Visibility like any other sidebar entry. The Deals & Actions tab inside a client's workspace is unchanged.
+
+---
+
 ## v3.648.0 - 2026-09-14
 
 **Trend Report on a phone** (commit 2ea69f4)

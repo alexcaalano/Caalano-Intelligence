@@ -10,7 +10,7 @@ import {
 } from './lib/format.js'
 import { PHONE_COUNTRIES, DEFAULT_PHONE_COUNTRY, countryByIso, countryByDial, parsePhone, formatNational, isEmail as isEmailAddr } from './lib/contact.js'
 import { RESULT_CACHE_SCHEMA } from './lib/cache-schema.js'
-import { hiddenFor, isHiddenView, isHiddenTab, tabsForRole } from './lib/visibility.js'
+import { ACTION_HUB_LABEL, hiddenFor, isHiddenView, isHiddenTab, tabsForRole } from './lib/visibility.js'
 import { GOAL_METRICS, goalMetric, SPLITS, normGoals, newGoalId, goalShares, validateGoal, goalLevel, repValue, goalActual, repTargetsFromGoals, migrateRepKpis, goalWindow, goalTargetFor, monthKeysFrom, quarterKeysFrom, RATE_METRICS } from './lib/goals.js'
 // Views carved out of this file load on first open (React.lazy), so the first
 // paint carries the shell and the tabs people land on, not every screen.
@@ -36,7 +36,7 @@ const lazyView = (load, name) => {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-export const APP_VERSION = '3.648.0'
+export const APP_VERSION = '3.649.0'
 // The business clock. Every server window is cut on the client's local day
 // (Caalano Systems location timezone), so any day the app derives on its own -
 // preset ranges, "today", CSV dates - must use the same clock rather than the
@@ -18247,6 +18247,24 @@ const MonthlyReport = lazyView(() => import('./views/monthly-report.jsx'), 'Mont
 const PivotReport = lazyView(() => import('./views/pivot.jsx'), 'PivotReport')
 // Reporting: the Monthly Report decks and the Trend Report, as tabs. The tab
 // rides in the URL (?s=trend; the older ?s=pivot still opens it).
+// The action page: one client's Deals & Actions, chosen up top, outside the
+// reporting pages. The phone's front page for anyone whose job is to move
+// deals rather than read reports.
+function ActionHubPage({ clients, currency, authUser, nonce }) {
+  const list = (clients || []).slice().sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base' }))
+  const [clientId, setClientId] = useState(() => { const c = readNavUrl().c; return (c && list.some((x) => x.id === c)) ? c : (list[0] ? list[0].id : '') })
+  // The view rides along with the client, or a ?c= alone would read as a
+  // client dashboard link once the roster lands.
+  useEffect(() => { if (clientId) writeNavUrl({ v: 'actionhub', c: clientId }, false) }, [clientId])
+  const client = list.find((c) => c.id === clientId) || list[0]
+  if (!client) return <div className="card empty-deep"><div className="big">✓</div><b>No client with a CRM connection.</b></div>
+  return (
+    <div className="hub-page">
+      {list.length > 1 ? <div className="hub-bar"><label className="act-sel">Client <select value={client.id} onChange={(e) => setClientId(e.target.value)}>{list.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label></div> : null}
+      <DealsActionsView key={client.id} clientId={client.id} authUser={authUser} currency={currency} nonce={nonce} />
+    </div>
+  )
+}
 function ReportingPage({ clients, currency, authUser }) {
   const hid = userHidden(authUser)
   const canMonthly = !isHiddenView(hid, 'reporting_monthly'), canTrend = !isHiddenView(hid, 'reporting_trend')
@@ -19014,6 +19032,7 @@ function SocialDashboard({ clients, range, nonce }) {
 // one colour and matches the text weight - no multicolour emoji.
 function NavIcon({ name }) {
   const P = {
+    actionhub: <><path d="M9 11l3 3L22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></>,
     overview: <><rect x="3" y="3" width="7" height="7" rx="1.5" /><rect x="14" y="3" width="7" height="7" rx="1.5" /><rect x="3" y="14" width="7" height="7" rx="1.5" /><rect x="14" y="14" width="7" height="7" rx="1.5" /></>,
     trends: <><polyline points="3 16 9 10 13 14 21 6" /><polyline points="15 6 21 6 21 12" /></>,
     weekly: <><rect x="3" y="4" width="18" height="17" rx="2" /><path d="M3 9h18M8 2v4M16 2v4" /><path d="M8.5 15l2 2 4-4" /></>,
@@ -19088,7 +19107,7 @@ function ClientSwitcher({ clients, active, onPick, idxOf }) {
 // Back/Forward work, and any screen can be linked to. The URL is never an
 // authorisation boundary - every data request is still checked server-side, so a
 // link to a client you can't see simply returns 403 and falls back to home.
-const NAV_VIEWS = new Set(['overview', 'trends', 'weekly', 'forecast', 'cockpit', 'curator', 'insights', 'update', 'monthly', 'social', 'reports', 'settings', 'clients'])
+const NAV_VIEWS = new Set(['actionhub', 'overview', 'trends', 'weekly', 'forecast', 'cockpit', 'curator', 'insights', 'update', 'monthly', 'social', 'reports', 'settings', 'clients'])
 export function readNavUrl() {
   try { const p = new URLSearchParams(window.location.search); return { v: p.get('v'), c: p.get('c'), t: p.get('t'), p: p.get('p'), s: p.get('s'), r: p.get('r'), from: p.get('from'), to: p.get('to'), wb: p.get('wb'), m: p.get('m') } } catch { return {} }
 }
@@ -19167,7 +19186,10 @@ function Dashboard({ authUser, authEnabled, onLogout, realUser, onViewAs }) {
   const [data, setData] = useState(null)
   const [config, setConfig] = useState(null)
   const [err, setErr] = useState(null)
-  const [view, setView] = useState(() => { const { v } = readNavUrl(); return v && NAV_VIEWS.has(v) ? v : 'overview' })
+  // On a phone the app opens on the action page: the people who open it on a
+  // phone are the ones moving deals, not reading reports. A hidden or empty
+  // action page falls through to the first page this person can see.
+  const [view, setView] = useState(() => { const { v } = readNavUrl(); if (v && NAV_VIEWS.has(v)) return v; try { if (window.matchMedia('(max-width: 700px)').matches) return 'actionhub' } catch { /* no matchMedia */ } return 'overview' })
   const [picked, setPicked] = useState(null)
   // The client sub-tab (Caalano360 / Users / Meta Ads…) lives here too so the URL
   // can carry it; ClientWorkspace seeds from initialTab and reports changes back.
@@ -19298,13 +19320,18 @@ function Dashboard({ authUser, authEnabled, onLogout, realUser, onViewAs }) {
   const showView = (id) => !isHiddenView(hid, id) && (id !== 'monthly' || !isHiddenView(hid, 'reporting_monthly') || !isHiddenView(hid, 'reporting_trend'))
   const canReports = isViewer ? !!(authUser && authUser.reports) && showView('reports') : false
   const hasDashTabs = (!isViewer || hid.tabs.length < tabsForRole(role).length) && (!isViewer || showView('dashboards'))
+  // The action page needs a client with a CRM; without one it is not offered.
+  const hubClients = (isViewer ? myClients : visibleClients).filter((c) => c.ghl)
+  const canHub = showView('actionhub') && hubClients.length > 0
   const viewerView = view === 'settings' ? 'settings'
+    : (view === 'actionhub' && canHub) ? 'actionhub'
     : (view === 'reports' && canReports) ? 'reports'
       : (hasDashTabs ? 'clients' : (canReports ? 'reports' : 'clients'))
   // A hidden agency view is never shown, even by deep link: fall to the first
   // one this person can see.
-  const AGENCY_VIEWS = ['overview', 'trends', 'weekly', 'forecast', 'cockpit', 'insights', 'update', 'monthly', 'social']
-  const curView = isViewer ? viewerView : ((AGENCY_VIEWS.includes(view) && !showView(view)) ? (AGENCY_VIEWS.find(showView) || 'settings') : view)
+  const AGENCY_VIEWS = ['actionhub', 'overview', 'trends', 'weekly', 'forecast', 'cockpit', 'insights', 'update', 'monthly', 'social']
+  const agencyCan = (id) => (id === 'actionhub' ? canHub : showView(id))
+  const curView = isViewer ? viewerView : ((AGENCY_VIEWS.includes(view) && !agencyCan(view)) ? (AGENCY_VIEWS.find(agencyCan) || 'settings') : view)
   // Resolve a deep-linked ?c= client synchronously here too (not just in the async
   // effect) so a refresh straight onto a client URL doesn't flash the empty state.
   const urlClientId = readNavUrl().c
@@ -19329,6 +19356,7 @@ function Dashboard({ authUser, authEnabled, onLogout, realUser, onViewAs }) {
         )}
         <nav className="nav">
           {!isViewer && <>
+            {canHub && <button className={curView === 'actionhub' ? 'active' : ''} onClick={() => go('actionhub')}><span className="ic"><NavIcon name="actionhub" /></span>{ACTION_HUB_LABEL}</button>}
             {showView('overview') && <button className={curView === 'overview' ? 'active' : ''} onClick={() => go('overview')}><span className="ic"><NavIcon name="overview" /></span>Agency Overview</button>}
             {showView('trends') && <button className={curView === 'trends' ? 'active' : ''} onClick={() => go('trends')}><span className="ic"><NavIcon name="trends" /></span>Daily Performance</button>}
             {showView('weekly') && <button className={curView === 'weekly' ? 'active' : ''} onClick={() => go('weekly')}><span className="ic"><NavIcon name="weekly" /></span>Weekly Traffic Light</button>}
@@ -19340,12 +19368,13 @@ function Dashboard({ authUser, authEnabled, onLogout, realUser, onViewAs }) {
             {showView('social') && <button className={curView === 'social' ? 'active' : ''} onClick={() => go('social')}><span className="ic"><NavIcon name="social" /></span>Organic Social Media</button>}
           </>}
           {isViewer && <>
+            {canHub && <button className={curView === 'actionhub' ? 'active' : ''} onClick={() => go('actionhub')}><span className="ic"><NavIcon name="actionhub" /></span>{ACTION_HUB_LABEL}</button>}
             {canReports && <button className={curView === 'reports' ? 'active' : ''} onClick={() => go('reports')}><span className="ic"><NavIcon name="monthly" /></span>Monthly Reports</button>}
             {hasDashTabs && <>
               <div className="nav-lab">My dashboards</div>
               {myClients.length ? myClients.map((c) => <button key={c.id} className={curView === 'clients' && curPicked && curPicked.id === c.id ? 'active' : ''} onClick={() => openClient(c)}><span className="ic"><NavIcon name="report" /></span>{c.name}</button>) : <div className="nav-empty">No dashboards assigned yet - your admin will set these up.</div>}
             </>}
-            {!hasDashTabs && !canReports && <div className="nav-empty">No access assigned yet - your admin will set these up.</div>}
+            {!hasDashTabs && !canReports && !canHub && <div className="nav-empty">No access assigned yet - your admin will set these up.</div>}
           </>}
         </nav>
         <div className="side-foot">
@@ -19383,18 +19412,19 @@ function Dashboard({ authUser, authEnabled, onLogout, realUser, onViewAs }) {
         </div> : null}
         <div className="head">
           <div>
-            <h2>{curView === 'overview' ? 'Agency Overview' : curView === 'trends' ? 'Daily Performance' : curView === 'weekly' ? 'Weekly Traffic Light' : curView === 'forecast' ? 'Funnel Forecaster' : curView === 'cockpit' ? 'Creative Cockpit' : curView === 'curator' ? 'Creative Curator' : curView === 'insights' ? 'Meta Insights' : curView === 'update' ? 'Client Update' : curView === 'monthly' ? 'Reporting' : curView === 'social' ? 'Organic Social Media' : curView === 'reports' ? 'Monthly Reports' : curView === 'settings' ? 'Settings' : isViewer ? 'Your report' : 'Clients'}</h2>
-            <p>{curView === 'overview' ? 'Blended paid performance across all clients, live for the selected range.' : curView === 'trends' ? 'Rolling 3 / 7 / 14 / 21 / 28-day performance per client, each vs the prior equal window.' : curView === 'weekly' ? 'One client at a time, reported Monday-Sunday by ISO week - spend pacing, leads, appointments and wins vs KPI.' : curView === 'forecast' ? 'What a month of spend should turn into, stage by stage - from each client\u2019s own last 90 days, or a scenario you build.' : curView === 'cockpit' ? 'Every creative for a client, with performance, categorisation and AI strategy.' : curView === 'curator' ? 'Strategise new creatives to make: pick Format, Style, CTA, Audience and Angle for instant or AI concept ideas, and save the best to a board.' : curView === 'insights' ? 'Everything Meta-derived in one place - delivery health, creative fatigue and more, across every active Meta client.' : curView === 'update' ? 'Generate a client-ready account update (WhatsApp + email) for the selected range.' : curView === 'monthly' ? 'Monthly Report decks, and the Trend Report: any metric, any period, by day, week, month, quarter or year.' : curView === 'social' ? 'Organic Instagram + Facebook Page performance per client - followers, reach, engagement, best posts and audience, for the selected range.' : curView === 'reports' ? 'Your published monthly reports - frozen snapshots you can read on screen or download as a PDF.' : curView === 'settings' ? (isViewer ? 'Your account.' : 'Clients, key events, KPI targets and campaign links - saved to the server and shared across your team.') : isViewer ? 'Your live reporting for the selected range.' : 'Open any client for their Overall, CRM, Meta and Google workspace.'}</p>
+            <h2>{curView === 'actionhub' ? ACTION_HUB_LABEL : curView === 'overview' ? 'Agency Overview' : curView === 'trends' ? 'Daily Performance' : curView === 'weekly' ? 'Weekly Traffic Light' : curView === 'forecast' ? 'Funnel Forecaster' : curView === 'cockpit' ? 'Creative Cockpit' : curView === 'curator' ? 'Creative Curator' : curView === 'insights' ? 'Meta Insights' : curView === 'update' ? 'Client Update' : curView === 'monthly' ? 'Reporting' : curView === 'social' ? 'Organic Social Media' : curView === 'reports' ? 'Monthly Reports' : curView === 'settings' ? 'Settings' : isViewer ? 'Your report' : 'Clients'}</h2>
+            <p>{curView === 'actionhub' ? 'What needs doing on the deals: appointments to result, messages waiting, stale deals, and each rep\'s own results.' : curView === 'overview' ? 'Blended paid performance across all clients, live for the selected range.' : curView === 'trends' ? 'Rolling 3 / 7 / 14 / 21 / 28-day performance per client, each vs the prior equal window.' : curView === 'weekly' ? 'One client at a time, reported Monday-Sunday by ISO week - spend pacing, leads, appointments and wins vs KPI.' : curView === 'forecast' ? 'What a month of spend should turn into, stage by stage - from each client\u2019s own last 90 days, or a scenario you build.' : curView === 'cockpit' ? 'Every creative for a client, with performance, categorisation and AI strategy.' : curView === 'curator' ? 'Strategise new creatives to make: pick Format, Style, CTA, Audience and Angle for instant or AI concept ideas, and save the best to a board.' : curView === 'insights' ? 'Everything Meta-derived in one place - delivery health, creative fatigue and more, across every active Meta client.' : curView === 'update' ? 'Generate a client-ready account update (WhatsApp + email) for the selected range.' : curView === 'monthly' ? 'Monthly Report decks, and the Trend Report: any metric, any period, by day, week, month, quarter or year.' : curView === 'social' ? 'Organic Instagram + Facebook Page performance per client - followers, reach, engagement, best posts and audience, for the selected range.' : curView === 'reports' ? 'Your published monthly reports - frozen snapshots you can read on screen or download as a PDF.' : curView === 'settings' ? (isViewer ? 'Your account.' : 'Clients, key events, KPI targets and campaign links - saved to the server and shared across your team.') : isViewer ? 'Your live reporting for the selected range.' : 'Open any client for their Overall, CRM, Meta and Google workspace.'}</p>
           </div>
           <div className="spacer" />
-          {curView !== 'settings' && curView !== 'monthly' && curView !== 'reports' && curView !== 'trends' && <DateRange range={range} onChange={setRange} busy={agency.status === 'loading'} />}
+          {curView !== 'settings' && curView !== 'monthly' && curView !== 'reports' && curView !== 'trends' && curView !== 'actionhub' && <DateRange range={range} onChange={setRange} busy={agency.status === 'loading'} />}
           {(curView === 'overview' || curView === 'weekly' || (curView === 'clients' && curPicked)) && <WonBasisToggle value={wonBasis} onChange={setWonBasis} />}
-          {curView !== 'monthly' && curView !== 'reports' && <button className="refresh-btn" title="Refresh live data" onClick={() => setRefreshKey((k) => k + 1)}><span className={agency.status === 'loading' ? 'spin sm' : ''} style={{ display: 'inline-block' }}>⟳</span> Refresh</button>}
+          {curView !== 'monthly' && curView !== 'reports' && curView !== 'actionhub' && <button className="refresh-btn" title="Refresh live data" onClick={() => setRefreshKey((k) => k + 1)}><span className={agency.status === 'loading' ? 'spin sm' : ''} style={{ display: 'inline-block' }}>⟳</span> Refresh</button>}
         </div>
         {/* A client who follows an agency-only link (Reporting, Daily Performance…)
             lands on their own dashboard; say so rather than looking like the link broke. */}
-        {isViewer && AGENCY_VIEWS.includes(view) ? <div className="card pv-note"><p className="cap" style={{ margin: 0 }}>That link is for agency users, so here is your dashboard instead.</p></div> : null}
+        {isViewer && AGENCY_VIEWS.includes(view) && view !== 'actionhub' ? <div className="card pv-note"><p className="cap" style={{ margin: 0 }}>That link is for agency users, so here is your dashboard instead.</p></div> : null}
         <ErrorBoundary key={curView + '|' + (curPicked && curPicked.id || '')} onHome={() => go(isViewer ? 'clients' : 'overview')}>
+          {curView === 'actionhub' && canHub && <ActionHubPage clients={hubClients} currency={data.currency} authUser={authUser} nonce={refreshKey} />}
           {curView === 'overview' && !isViewer && <Overview rows={rows} currency={data.currency} periodLabel={rangeLabel(range)} live={agency.status === 'ok'} alerts={agency.data && agency.data.alerts} range={range} nonce={refreshKey} wonBasis={wonBasis} onPick={openClient} />}
           {curView === 'trends' && !isViewer && <TrendsTab rows={rows} currency={data.currency} nonce={refreshKey} onPick={openClient} />}
           {curView === 'weekly' && !isViewer && <WeeklyTab rows={rows} currency={data.currency} nonce={refreshKey} wonBasis={wonBasis} />}

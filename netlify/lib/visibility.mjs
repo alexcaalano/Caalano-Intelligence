@@ -14,7 +14,11 @@
 // Sidebar views. Agency roles get the agency views; client roles get the two
 // things their sidebar can hold - published reports and their client
 // workspaces. Settings is never hidden.
+// The action page's name lives here so the sidebar, the header and the
+// Visibility list say the same thing; the id stays put if the name changes.
+export const ACTION_HUB_LABEL = 'Action Centre'
 export const VIS_VIEWS = [
+  { id: 'actionhub', label: ACTION_HUB_LABEL, roles: ['superadmin', 'admin', 'user', 'account_admin', 'account_user'] },
   { id: 'overview', label: 'Agency Overview', roles: ['superadmin', 'admin', 'user'] },
   { id: 'trends', label: 'Daily Performance', roles: ['superadmin', 'admin', 'user'] },
   { id: 'weekly', label: 'Weekly Traffic Light', roles: ['superadmin', 'admin', 'user'] },

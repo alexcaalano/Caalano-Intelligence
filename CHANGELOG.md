@@ -20,7 +20,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ## v3.645.0 - 2026-09-14
 
-**Campaign links: route a campaign's ad sets to different pipelines** (commit PENDING)
+**Campaign links: route a campaign's ad sets to different pipelines** (commit 93d9977)
 
 - Settings → a client → Campaign links: each campaign now has a pencil. It opens the campaign's ad sets (Meta) or ad groups (Google) from the last 30 days, each with its own pipeline: "Same as campaign" follows the campaign's link above, or pick a pipeline, or "All pipelines" to share it. A campaign with rules shows a "2 ad sets routed" tag; Clear removes them. Rules for an ad set that has since stopped spending stay listed so they can be changed or cleared.
 - Everything that scopes to a pipeline follows the rules: the Daily Performance pipeline tiles (spend, results and cost per result move with the ad set), the campaign and ad set drill-downs under those tiles, the pipeline filter on a client's Meta and Google tabs (campaigns, ad sets, ad groups, keywords, search terms, creatives, conversion actions and the daily series), and each creative's key-event columns. A split campaign appears under each pipeline with only the ad sets that belong there, its row the sum of those.

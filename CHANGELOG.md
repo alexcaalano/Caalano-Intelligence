@@ -18,6 +18,17 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.630.0 - 2026-09-14 (commit PENDING)
+
+### Settings → Visibility as a feature chart
+
+- **By role**: every sidebar page and client tab down the left, one column per role across the top (Super Admin always ✓, then Agency Admin, Agency User, Account Admin, Account User), so the whole picture is one view. A dash marks a row that does not apply to a role. "Show everything to everyone" clears every default.
+- **By client**: pick a client and everyone who can open it appears as a column (agency roles always, client roles by allocation). A switch in a person's column gives them their own set, marked *custom*; **Use default** in the column header puts them back on their role; a set that ends up identical to the role default is not stored as custom.
+- **People in a role**: the same people-as-columns view for everyone holding one role.
+- One Save per view; the first column and the header stay put while a wide table scrolls sideways, on desktop and phone.
+
+---
+
 ## v3.629.0 - 2026-09-14 (commit 1d6150b)
 
 ### Settings → Visibility: who sees which pages and client tabs (Super Admin)

@@ -36,7 +36,7 @@ const lazyView = (load, name) => {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-export const APP_VERSION = '3.645.0'
+export const APP_VERSION = '3.646.0'
 // The business clock. Every server window is cut on the client's local day
 // (Caalano Systems location timezone), so any day the app derives on its own -
 // preset ranges, "today", CSV dates - must use the same clock rather than the
@@ -3131,8 +3131,8 @@ function MetaDeep({ deep, currency, attr, clientId, range, nonce, pipe: pipeProp
   // pipeline of the campaign that creative ran in, so it only shows that campaign's
   // key events (not every pipeline's). Memoized per pipeline.
   const creColsCache = {}
-  const creColsFor = (campName) => {
-    const pid = pipeOfCampaign(clientId, campName, allPipes)
+  const creColsFor = (campName, adset) => {
+    const pid = pipeOfAdset(clientId, campName, adset, allPipes)
     const k = pid || '_all'
     if (!creColsCache[k]) creColsCache[k] = buildO360Cols(keyEventsForPipe(loadKeyEvents(clientId), pid || 'all'), stagePos, calNames)
     return { cols: creColsCache[k], pid }
@@ -3492,8 +3492,8 @@ function MetaDeep({ deep, currency, attr, clientId, range, nonce, pipe: pipeProp
         ? <MRCreativeSection
             ads={adsFull.filter((a) => (a.spend || 0) > 0)}
             oCre={oCre} o360cols={o360cols}
-            o360colsFor={(campName) => creColsFor(campName).cols}
-            pipeLabelFor={allPipes.length > 1 ? (campName) => { const { pid } = creColsFor(campName); return pid ? ((allPipes.find((p) => p.id === pid) || {}).name || null) : null } : null}
+            o360colsFor={(campName, adset) => creColsFor(campName, adset).cols}
+            pipeLabelFor={allPipes.length > 1 ? (campName, adset) => { const { pid } = creColsFor(campName, adset); return pid ? ((allPipes.find((p) => p.id === pid) || {}).name || null) : null } : null}
             money={(v) => fmtCurrency(v, currency)} n0={fmtNumber} currency={currency}
             clientId={clientId} range={range} channel="meta"
           />

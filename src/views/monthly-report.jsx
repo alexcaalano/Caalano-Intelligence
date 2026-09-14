@@ -2,7 +2,7 @@
 // helpers it shares with the rest of the app are imported from there.
 import React, { useEffect, useRef, useState } from 'react'
 import { Bar, BarChart, CartesianGrid, Cell, ComposedChart, LabelList, Legend, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { C360GrpRow, KeyEventsFunnel, KeyPeopleModal, MRKpi, O360ColGroup, O360Head, SortTh, Spinner, aliasedOutcomeMap, buildO360Cols, calCountMap, clientDownloadOn, fmtDate, formKeyEvents, isAdminishFE, keyEventRows, keyEventsForPipe, loadCampMap, loadKeyEvents, mkOutcomeMap, mrFetch, o360Cells, o360ColClass, o360Fields, rangeQuery, reachedByStage, readNavUrl, resolveKeyEvents, setClientDownload, sortRows, stagePosMap, stageReachOf, suggestPipeline, unorm, useSettingsSync, useSort, writeNavUrl } from '../App.jsx'
+import { C360GrpRow, KeyEventsFunnel, KeyPeopleModal, MRKpi, O360ColGroup, O360Head, SortTh, Spinner, aliasedOutcomeMap, buildO360Cols, calCountMap, clientDownloadOn, fmtDate, formKeyEvents, isAdminishFE, keyEventRows, campIsSplit, keyEventsForPipe, loadAdsetRules, loadCampMap, loadKeyEvents, mkOutcomeMap, mrFetch, o360Cells, o360ColClass, o360Fields, pipeOfAdset, rangeQuery, reachedByStage, readNavUrl, resolveKeyEvents, setClientDownload, sortRows, stagePosMap, stageReachOf, suggestPipeline, unorm, useSettingsSync, useSort, writeNavUrl } from '../App.jsx'
 import { fmtCompact, fmtCurrency, fmtNumber, fmtPct } from '../lib/format.js'
 
 // ---------------------------------------------------------------------------
@@ -1074,7 +1074,7 @@ export function MRCreativeSection({ ads, oCre, o360cols, o360colsFor, pipeLabelF
   const enriched = ads.map((a) => {
     const o = oCre.get(unorm(a.name))
     const leads = a.results != null ? a.results : a.leads
-    const cols = (o360colsFor ? o360colsFor(a.campaign) : o360cols) || o360cols
+    const cols = (o360colsFor ? o360colsFor(a.campaign, a.adset) : o360cols) || o360cols
     let events = [], won = 0, revenue = 0
     const evByLabel = new Map()
     if (cols && o) {
@@ -1109,7 +1109,7 @@ export function MRCreativeSection({ ads, oCre, o360cols, o360colsFor, pipeLabelF
       }
     }
     const ctr = a.impressions ? (a.clicks / a.impressions) * 100 : null
-    const pipeName = pipeLabelFor ? pipeLabelFor(a.campaign) : null
+    const pipeName = pipeLabelFor ? pipeLabelFor(a.campaign, a.adset) : null
     return { ...a, leads, ctrV: ctr, cpl: leads ? a.spend / leads : null, events, evByLabel, won, revenue, pipeName, roas: revenue && a.spend ? revenue / a.spend : null, cpw: won && a.spend ? a.spend / won : null }
   })
   // Sort chips span the UNION of every pipeline's key events (shared o360cols); a
@@ -1297,18 +1297,28 @@ export function renderMonthlyDeck(rep, h) {
   // the union; otherwise fall back to a name-token match against the pipeline names
   // (same matcher the forms use) so campaigns left on "Auto" still resolve. null →
   // union (truly unmatched).
-  const pipeOfCampaign = (campName) => {
+  // Ad-set level links count too: with an ad set named, that ad set's own rule
+  // wins. Without one, a campaign split across pipelines at the ad-set level
+  // resolves to the one pipeline its ad sets agree on, else to the union.
+  const cid = rep.client && rep.client.id
+  const pipeOfCampaign = (campName, adset) => {
     if (!multiPipe || campName == null) return null
-    const t = campPipeMap[campName]
-    if (t === 'all') return null
-    if (t) return t
-    return suggestPipeline(campName, pipelines) || null
+    if (adset != null) return pipeOfAdset(cid, campName, adset, pipelines)
+    if (!campIsSplit(cid, campName)) {
+      const t = campPipeMap[campName]
+      if (t === 'all') return null
+      if (t) return t
+      return suggestPipeline(campName, pipelines) || null
+    }
+    const kids = [...((meta && meta.adsets) || []), ...((google && google.adGroups) || [])].filter((a) => a.campaign === campName)
+    const pids = new Set(kids.length ? kids.map((a) => pipeOfAdset(cid, campName, a.name, pipelines)) : Object.values(loadAdsetRules(cid, campName)).map((v) => (v === 'all' ? null : v)))
+    return pids.size === 1 ? ([...pids][0] || null) : null
   }
   const pipeNameOf = (pid) => ((pipelines.find((p) => p.id === pid) || {}).name || null)
-  const pipeLabelFor = (campName) => pipeNameOf(pipeOfCampaign(campName))
-  const o360colsFor = (campName) => {
+  const pipeLabelFor = (campName, adset) => pipeNameOf(pipeOfCampaign(campName, adset))
+  const o360colsFor = (campName, adset) => {
     if (!o360cols) return null
-    const pid = pipeOfCampaign(campName)
+    const pid = pipeOfCampaign(campName, adset)
     if (!pid) return o360cols
     if (pipeColsCache.has(pid)) return pipeColsCache.get(pid)
     const c = buildO360Cols(keyEventsForPipe(rawKeyEvents, pid), stagePos, calNames)

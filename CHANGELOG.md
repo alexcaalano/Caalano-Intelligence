@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.631.0 - 2026-09-14 (commit PENDING)
+## v3.631.0 - 2026-09-14 (commit 7967c65)
 
 ### Visibility: Super Admin has switches too
 

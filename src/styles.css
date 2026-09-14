@@ -5547,3 +5547,12 @@ body.hub-tv-on { overflow: hidden; }
 .v2-funnel .rate small.v2-older { color: var(--faint); font-weight: 500; }
 .v2-pop-n { color: var(--muted); }
 .ir-sub .ir-older { color: var(--faint); }
+/* Daily performance: channel → campaigns → ad sets / ad groups drill. The child
+   rows sit indented under their campaign; long names wrap instead of pushing the
+   table past its column. */
+.tr-camp .tr-camp-name { white-space: normal; overflow-wrap: anywhere; }
+.tr-camp td.lft { max-width: 420px; }
+.tr-camp .tr-camp-kid td { background: color-mix(in srgb, var(--brand) 4%, transparent); color: var(--muted); font-size: 11.5px; }
+.tr-camp .tr-camp-kid td.lft { padding-left: 26px; position: relative; }
+.tr-camp .tr-camp-kid td.lft::before { content: '↳'; position: absolute; left: 10px; color: var(--faint); }
+.tr-camp-sub { margin-top: 14px; }

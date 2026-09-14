@@ -35,7 +35,7 @@ const lazyView = (load, name) => {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-export const APP_VERSION = '3.624.0'
+export const APP_VERSION = '3.625.0'
 // The business clock. Every server window is cut on the client's local day
 // (Caalano Systems location timezone), so any day the app derives on its own -
 // preset ranges, "today", CSV dates - must use the same clock rather than the
@@ -1357,60 +1357,131 @@ function TrendGraph({ daily, eff, currency, hasMeta, hasGoogle }) {
     </div>
   )
 }
-// Lazy-load a client's Google conversion actions over the last N days (the deep
-// Google feed carries per-action rows), aggregated by action name - so the Google
-// Results number can be broken into the conversion actions that made it up.
-function useGoogleConvActions(clientId, days) {
+// Lazy-load one channel's own feed (Meta: campaigns + ad sets; Google: campaigns,
+// ad groups and conversion actions) over the last N complete days, so a Results
+// number on Daily performance can be opened up two levels: channel → campaigns →
+// ad sets / ad groups. Meta is read as the "core" part (no per-ad pulls).
+function useChannelFeed(clientId, channel, days) {
   const [st, setSt] = useState({ status: 'loading', data: null })
   useEffect(() => {
     let alive = true; setSt({ status: 'loading', data: null })
     const dayAgo = (n) => { const d = new Date(); d.setHours(12, 0, 0, 0); d.setDate(d.getDate() - n); return iso(d) }
-    fetch(`/.netlify/functions/windsor?client=${clientId}&channel=google&from=${dayAgo(days)}&to=${dayAgo(1)}`)
-      .then((r) => r.json()).then((j) => { if (alive) setSt({ status: j && j.google ? 'ok' : 'err', data: j && j.google }) })
+    fetch(`/.netlify/functions/windsor?client=${clientId}&channel=${channel}&from=${dayAgo(days)}&to=${dayAgo(1)}${channel === 'meta' ? '&part=core' : ''}`)
+      .then((r) => r.json()).then((j) => { if (alive) setSt({ status: j && j[channel] ? 'ok' : 'err', data: j && j[channel] }) })
       .catch(() => { if (alive) setSt({ status: 'err', data: null }) })
     return () => { alive = false }
-  }, [clientId, days])
+  }, [clientId, channel, days])
   return st
 }
-function GoogleConvDrill({ clientId, days, money }) {
-  const st = useGoogleConvActions(clientId, days)
-  if (st.status === 'loading') return <div className="tr-src-drillbox"><Spinner label="Loading Google conversion actions…" /></div>
-  if (st.status === 'err' || !st.data) return <div className="tr-src-drillbox"><span className="cap">Couldn’t load Google conversion actions.</span></div>
+// Campaigns with a second level under each (ad sets for Meta, ad groups for
+// Google). One open campaign at a time; the child rows sit indented under it.
+function DrillCampaigns({ rows, kidsOf, cols, kidLabel, money, empty }) {
+  const [open, setOpen] = useState(null)
+  if (!rows.length) return <span className="cap">{empty}</span>
+  return (
+    <table className="mini-tbl tr-brk-tbl tr-camp">
+      <thead><tr>{cols.map((c) => <th key={c.key} className={c.left ? 'lft' : ''}>{c.label}</th>)}</tr></thead>
+      <tbody>
+        {rows.map((r) => {
+          const kids = kidsOf(r)
+          const can = kids.length > 0
+          const on = open === r.name
+          return (
+            <React.Fragment key={r.name}>
+              <tr className={can ? 'tr-src-click' : ''} onClick={can ? () => setOpen(on ? null : r.name) : undefined} title={can ? `Click to see the ${kidLabel} in this campaign` : undefined}>
+                {cols.map((c, i) => <td key={c.key} className={c.left ? 'lft' : ''}>{i === 0 ? <><span className="tr-camp-name">{r.name}</span>{can ? <span className="tr-src-more">{on ? '▾' : '▸'} {kids.length} {kidLabel}</span> : null}</> : c.render(r, money)}</td>)}
+              </tr>
+              {on ? kids.map((k) => (
+                <tr key={k.name} className="tr-camp-kid">
+                  {cols.map((c, i) => <td key={c.key} className={c.left ? 'lft' : ''}>{i === 0 ? <span className="tr-camp-name">{k.name}</span> : c.render(k, money)}</td>)}
+                </tr>
+              )) : null}
+            </React.Fragment>
+          )
+        })}
+      </tbody>
+    </table>
+  )
+}
+const drillNum = (v, dp = 0) => fmtNumber(Math.round((v || 0) * Math.pow(10, dp)) / Math.pow(10, dp))
+const META_DRILL_COLS = [
+  { key: 'name', label: 'Campaign', left: true },
+  { key: 'spend', label: 'Spend', render: (r, money) => money(r.spend || 0) },
+  { key: 'results', label: 'Results', render: (r) => drillNum(r.results) },
+  { key: 'type', label: 'Result type', render: (r) => <span className="cap">{r.resultType || 'Leads'}</span> },
+  { key: 'cpr', label: 'Cost / result', render: (r, money) => (r.costPerResult != null ? `${money(r.costPerResult)}${r.cprUnit ? ' ' + r.cprUnit : ''}` : '-') },
+]
+const GOOGLE_DRILL_COLS = [
+  { key: 'name', label: 'Campaign', left: true },
+  { key: 'cost', label: 'Spend', render: (r, money) => money(r.cost || 0) },
+  { key: 'clicks', label: 'Clicks', render: (r) => drillNum(r.clicks) },
+  { key: 'conv', label: 'Conversions', render: (r) => drillNum(r.conversions, 1) },
+  { key: 'cpc', label: 'Cost / conv.', render: (r, money) => (r.conversions ? money(r.cost / r.conversions) : '-') },
+]
+// Meta: campaigns → ad sets, each reporting the event it optimises for (the
+// result type), so what a row calls a result is what Ads Manager calls it.
+function MetaDrill({ clientId, days, money }) {
+  const st = useChannelFeed(clientId, 'meta', days)
+  if (st.status === 'loading') return <div className="tr-src-drillbox"><Spinner label="Loading Meta campaigns…" /></div>
+  if (st.status === 'err' || !st.data) return <div className="tr-src-drillbox"><span className="cap">Couldn’t load Meta campaigns.</span></div>
+  const camps = (st.data.campaigns || []).filter((c) => (c.spend || 0) > 0 || (c.results || 0) > 0)
+  const adsets = st.data.adsets || []
+  const kidsOf = (c) => adsets.filter((a) => a.campaign === c.name && ((a.spend || 0) > 0 || (a.results || 0) > 0))
+  return (
+    <div className="tr-src-drillbox">
+      <DrillCampaigns rows={camps} kidsOf={kidsOf} cols={META_DRILL_COLS} kidLabel="ad sets" money={money} empty={`No Meta campaign spend in the last ${days} days.`} />
+      <p className="tr-brk-note cap">Results are each row's own optimisation event (the result type), as Ads Manager reports them. Click a campaign for its ad sets. Account-wide over the last {days} days to yesterday.</p>
+    </div>
+  )
+}
+// Google: campaigns → ad groups, then the conversion actions that make up the
+// Conversions number underneath.
+function GoogleDrill({ clientId, days, money, showActions = true }) {
+  const st = useChannelFeed(clientId, 'google', days)
+  if (st.status === 'loading') return <div className="tr-src-drillbox"><Spinner label="Loading Google campaigns…" /></div>
+  if (st.status === 'err' || !st.data) return <div className="tr-src-drillbox"><span className="cap">Couldn’t load Google campaigns.</span></div>
+  const camps = st.data.campaigns || []
+  const groups = st.data.adGroups || []
+  const kidsOf = (c) => groups.filter((g) => g.campaign === c.name)
   const acts = {}
   for (const r of (st.data.conversionActions || [])) { const e = acts[r.name] = acts[r.name] || { name: r.name, category: r.category, conv: 0, all: 0 }; e.conv += r.conversions || 0; e.all += r.allConversions || 0 }
   const rows = Object.values(acts).sort((a, b) => (b.conv - a.conv) || (b.all - a.all))
   const totConv = rows.reduce((s, r) => s + r.conv, 0)
-  if (!rows.length) return <div className="tr-src-drillbox"><span className="cap">No Google conversion actions recorded in the last {days} days.</span></div>
   return (
     <div className="tr-src-drillbox">
-      <table className="mini-tbl tr-brk-tbl">
-        <thead><tr><th className="lft">Conversion action</th><th>Conversions</th><th>All conv.</th><th>% of conv.</th></tr></thead>
-        <tbody>
-          {rows.map((r) => { const primary = r.conv > 0; return <tr key={r.name}><td className="lft">{primary ? <span title="Primary - counts toward the Results number">⭐ </span> : ''}{r.name}{r.category ? <span className="cap"> · {r.category}</span> : null}</td><td>{fmtNumber(Math.round(r.conv * 10) / 10)}</td><td>{fmtNumber(Math.round(r.all * 10) / 10)}</td><td>{totConv ? fmtPct((r.conv / totConv) * 100, 0) : '-'}</td></tr> })}
-          <tr className="tr-src-tot"><td className="lft">Total</td><td>{fmtNumber(Math.round(totConv * 10) / 10)}</td><td>{fmtNumber(Math.round(rows.reduce((s, r) => s + r.all, 0) * 10) / 10)}</td><td>100%</td></tr>
-        </tbody>
-      </table>
-      <p className="tr-brk-note cap"><b>⭐ = primary conversion</b> - these are what make up the Results number (Google’s primary/optimised “Conversions” count). Un-starred rows are secondary actions, counted only in “All conv.”. Account-wide over the last {days} days.</p>
+      <DrillCampaigns rows={camps} kidsOf={kidsOf} cols={GOOGLE_DRILL_COLS} kidLabel="ad groups" money={money} empty={`No Google campaign spend in the last ${days} days.`} />
+      {showActions ? <>
+        <div className="tr-brk-lab tr-camp-sub">Conversion actions</div>
+        {rows.length ? <table className="mini-tbl tr-brk-tbl">
+          <thead><tr><th className="lft">Conversion action</th><th>Conversions</th><th>All conv.</th><th>% of conv.</th></tr></thead>
+          <tbody>
+            {rows.map((r) => { const primary = r.conv > 0; return <tr key={r.name}><td className="lft">{primary ? <span title="Primary - counts toward the Results number">⭐ </span> : ''}{r.name}{r.category ? <span className="cap"> · {r.category}</span> : null}</td><td>{fmtNumber(Math.round(r.conv * 10) / 10)}</td><td>{fmtNumber(Math.round(r.all * 10) / 10)}</td><td>{totConv ? fmtPct((r.conv / totConv) * 100, 0) : '-'}</td></tr> })}
+            <tr className="tr-src-tot"><td className="lft">Total</td><td>{fmtNumber(Math.round(totConv * 10) / 10)}</td><td>{fmtNumber(Math.round(rows.reduce((s, r) => s + r.all, 0) * 10) / 10)}</td><td>100%</td></tr>
+          </tbody>
+        </table> : <span className="cap">No Google conversion actions recorded in the last {days} days.</span>}
+        <p className="tr-brk-note cap"><b>⭐ = primary conversion</b> - these make up the Conversions number (Google’s primary/optimised “Conversions” count). Un-starred rows are secondary actions, counted only in “All conv.”. Click a campaign for its ad groups. Account-wide over the last {days} days to yesterday.</p>
+      </> : null}
     </div>
   )
 }
 function TrendSource({ w28, row, money, clientId, pipeId }) {
-  const [openG, setOpenG] = useState(false)
+  const [open, setOpen] = useState(null) // 'google' | 'meta' | null
   if (!w28) return null
-  const canDrill = !!(row.hasGoogle && clientId && (!pipeId || pipeId === 'all'))
+  // Account-wide drills only: the channel feeds are not pipeline-scoped.
+  const canDrill = !!(clientId && (!pipeId || pipeId === 'all'))
   const rows = []
-  if (row.hasGoogle) rows.push({ key: 'google', src: 'Google Ads', cost: w28.google.spend, leads: w28.google.results, drill: canDrill })
-  if (row.hasMeta) rows.push({ key: 'meta', src: 'Facebook Ads', cost: w28.meta.spend, leads: w28.meta.results })
+  if (row.hasGoogle) rows.push({ key: 'google', src: 'Google Ads', cost: w28.google.spend, leads: w28.google.results, drill: canDrill, more: 'campaigns · ad groups · conversion actions' })
+  if (row.hasMeta) rows.push({ key: 'meta', src: 'Facebook Ads', cost: w28.meta.spend, leads: w28.meta.results, drill: canDrill, more: 'campaigns · ad sets' })
   const tot = rows.reduce((a, r) => ({ cost: a.cost + r.cost, leads: a.leads + r.leads }), { cost: 0, leads: 0 })
   const cpl = (c, l) => (l ? money(c / l) : '-')
   return (
     <table className="mini-tbl tr-src"><thead><tr><th className="lft">Source · last 28 days</th><th>Cost</th><th>Results</th><th>Cost / result</th></tr></thead>
       <tbody>{rows.map((r) => (
         <React.Fragment key={r.key}>
-          <tr className={r.drill ? 'tr-src-click' : ''} onClick={r.drill ? () => setOpenG((o) => !o) : undefined} title={r.drill ? 'Click to see the Google conversion actions behind this number' : undefined}>
-            <td className="lft">{r.src}{r.drill ? <span className="tr-src-more">{openG ? '▾' : '▸'} conversion actions</span> : null}</td><td>{money(r.cost)}</td><td>{fmtNumber(Math.round(r.leads))}</td><td>{cpl(r.cost, r.leads)}</td>
+          <tr className={r.drill ? 'tr-src-click' : ''} onClick={r.drill ? () => setOpen((o) => (o === r.key ? null : r.key)) : undefined} title={r.drill ? `Click to see the ${r.more} behind this number` : undefined}>
+            <td className="lft">{r.src}{r.drill ? <span className="tr-src-more">{open === r.key ? '▾' : '▸'} {r.more}</span> : null}</td><td>{money(r.cost)}</td><td>{fmtNumber(Math.round(r.leads))}</td><td>{cpl(r.cost, r.leads)}</td>
           </tr>
-          {r.drill && openG ? <tr className="tr-src-drillrow"><td colSpan={4}><GoogleConvDrill clientId={clientId} days={28} money={money} /></td></tr> : null}
+          {r.drill && open === r.key ? <tr className="tr-src-drillrow"><td colSpan={4}>{r.key === 'google' ? <GoogleDrill clientId={clientId} days={28} money={money} /> : <MetaDrill clientId={clientId} days={28} money={money} />}</td></tr> : null}
         </React.Fragment>
       ))}
         <tr className="tr-src-tot"><td className="lft">Grand total</td><td>{money(tot.cost)}</td><td>{fmtNumber(Math.round(tot.leads))}</td><td>{cpl(tot.cost, tot.leads)}</td></tr></tbody>
@@ -1458,8 +1529,9 @@ function WindowBreakdown({ w, clientId, pipeId, stagePos, currency }) {
   const winRange = { from: dayAgo(w.n - 1), to: dayAgo(0) }
   // Google conversion-actions drill for THIS window (account tiles only - the actions
   // feed is account-wide, so it wouldn't match a pipeline tile's scoped Google results).
-  const [gOpen, setGOpen] = useState(false)
-  const canGDrill = !!(clientId && (!pipeId || pipeId === 'all') && w.google && (w.google.results || w.google.spend))
+  const [chanOpen, setChanOpen] = useState(null) // 'Meta' | 'Google' | null
+  const canChanDrill = !!(clientId && (!pipeId || pipeId === 'all'))
+  const drillMore = { Meta: 'campaigns · ad sets', Google: 'campaigns · ad groups · conversion actions' }
   return (
     <div className="tr-brk">
       <div className="tr-brk-grid">
@@ -1469,11 +1541,12 @@ function WindowBreakdown({ w, clientId, pipeId, stagePos, currency }) {
             <thead><tr><th className="lft">Source</th><th>Spend</th><th>Results</th><th>Cost / result</th></tr></thead>
             <tbody>
               {srcRows.length ? srcRows.map((r) => {
-                const isG = r.label === 'Google' && canGDrill
+                const can = canChanDrill
+                const on = chanOpen === r.label
                 return (
                   <React.Fragment key={r.label}>
-                    <tr className={isG ? 'tr-src-click' : ''} onClick={isG ? () => setGOpen((o) => !o) : undefined} title={isG ? 'Click for the Google conversion actions in this window' : undefined}>
-                      <td className="lft">{r.label}{isG ? <span className="tr-src-more">{gOpen ? '▾' : '▸'} conversion actions</span> : null}</td><td>{money(r.spend)}</td><td>{fmtNumber(r.results)}</td><td>{cpr(r.spend, r.results)}</td>
+                    <tr className={can ? 'tr-src-click' : ''} onClick={can ? () => setChanOpen((o) => (o === r.label ? null : r.label)) : undefined} title={can ? `Click for the ${drillMore[r.label]} in this window` : undefined}>
+                      <td className="lft">{r.label}{can ? <span className="tr-src-more">{on ? '▾' : '▸'} {drillMore[r.label]}</span> : null}</td><td>{money(r.spend)}</td><td>{fmtNumber(r.results)}</td><td>{cpr(r.spend, r.results)}</td>
                     </tr>
                   </React.Fragment>
                 )
@@ -1508,7 +1581,8 @@ function WindowBreakdown({ w, clientId, pipeId, stagePos, currency }) {
       {/* Google conversion-actions drill renders full-width BELOW the two-column grid -
           its wide table won't fit a half-width cell (it used to overlap the key-events
           column). */}
-      {canGDrill && gOpen ? <div className="tr-brk-convdrill"><div className="tr-brk-lab">Google conversion actions · last {w.n} days</div><GoogleConvDrill clientId={clientId} days={w.n} money={money} /></div> : null}
+      {canChanDrill && chanOpen === 'Meta' ? <div className="tr-brk-convdrill"><div className="tr-brk-lab">Meta campaigns and ad sets · last {w.n} days</div><MetaDrill clientId={clientId} days={w.n} money={money} /></div> : null}
+      {canChanDrill && chanOpen === 'Google' ? <div className="tr-brk-convdrill"><div className="tr-brk-lab">Google campaigns, ad groups and conversion actions · last {w.n} days</div><GoogleDrill clientId={clientId} days={w.n} money={money} /></div> : null}
       {drill ? <KeyPeopleModal event={{ ...drill, pipeline: drill.pipeline || (pipeId && pipeId !== 'all' ? pipeId : null) }} clientId={clientId} channel={src} range={winRange} currency={currency} onClose={() => setDrill(null)} /> : null}
     </div>
   )

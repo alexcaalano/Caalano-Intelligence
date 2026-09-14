@@ -18,6 +18,17 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.625.0 - 2026-09-14 (commit PENDING)
+
+### Daily performance: two-level drill on each channel
+
+- **Source table (last 28 days)**: click Facebook Ads to open its campaigns (spend, results, result type, cost per result); click a campaign to open its ad sets under it. Click Google Ads to open its campaigns (spend, clicks, conversions, cost per conversion); click a campaign for its ad groups; the conversion actions table sits underneath as before.
+- **Date tiles (last 3 / 7 / 14 / 21 / 28 days)**: the Meta and Google rows in the tile's Ad spend → results table open the same two-level drills for that window, rendered full width under the two-column grid so nothing overlaps Key events by source.
+- Results on Meta rows are each row's own optimisation event, matching Ads Manager. Long campaign names wrap; child rows are indented. Account-wide (the channel feeds are not pipeline-scoped), over the last N days to yesterday. Meta is read as the light "core" part (no per-ad pulls).
+- Internals: `useChannelFeed`, `DrillCampaigns`, `MetaDrill`, `GoogleDrill` replace the Google-only conversion-actions drill.
+
+---
+
 ## v3.624.0 - 2026-09-14 (commit e3b2ccd)
 
 ### Key event reach: every booked person attributed; calendar rows measured on this period's leads

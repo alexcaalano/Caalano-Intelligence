@@ -756,6 +756,13 @@ organisation level, and the sign-in gains an organisation switcher.
 - [ ] Security contact `alex@caalanodigital.com.au` on the site.
 - [ ] Meta App Review and Google OAuth verification submissions prepared
       (screencast, test accounts, privacy URL, deletion URL).
+- [ ] **Settings → "CRM connection" becomes "Integrations".** Once Meta and
+      Google connect from inside the app (section 7.3), the section that today
+      holds only the Caalano Systems connection carries every provider:
+      Caalano Systems, Meta, Google, GA4 and whatever follows, each with its
+      connect / reconnect state and health. Rename the section and its
+      Visibility row at that point; keep the `crm` id so saved visibility
+      settings and deep links (?s=crm) still resolve. Raised 2026-09-14.
 - [ ] **Server-enforced Visibility for agency roles.** Settings → Visibility
       (v3.629.0–v3.632.0) hides sidebar pages and client tabs per role and
       per person. For Account roles the tab ticks are already checked on

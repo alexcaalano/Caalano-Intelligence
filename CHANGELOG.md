@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.636.0 - 2026-09-14 (commit PENDING)
+## v3.636.0 - 2026-09-14 (commit b3d3578)
 
 ### Visibility: Agency first
 

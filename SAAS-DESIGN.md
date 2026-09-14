@@ -756,6 +756,19 @@ organisation level, and the sign-in gains an organisation switcher.
 - [ ] Security contact `alex@caalanodigital.com.au` on the site.
 - [ ] Meta App Review and Google OAuth verification submissions prepared
       (screencast, test accounts, privacy URL, deletion URL).
+- [ ] **Server-enforced Visibility for agency roles.** Settings → Visibility
+      (v3.629.0–v3.632.0) hides sidebar pages and client tabs per role and
+      per person. For Account roles the tab ticks are already checked on
+      every read. For agency roles the hide is app-only today: the sidebar
+      drops the page and deep links fall back, but the server still permits
+      the underlying reads to staff, because every agency role is a Caalano
+      employee. The moment an agency role is held by someone outside Caalano
+      (a tenant's own staff), the server must refuse those reads too. The
+      session already carries `hidden` for the person; the work is a
+      scope → sidebar-page map on the server (the same shape as
+      `VIEWER_REQ_TABS` for tabs) and a check in the main data function
+      before any agency-wide or client read. Agreed 2026-09-14: do this
+      before the first outside tenant, alongside the DPA.
 
 ## 12. Decisions taken on 2026-09-12
 

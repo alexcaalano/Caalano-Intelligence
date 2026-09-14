@@ -1069,10 +1069,10 @@ export const SET_FILTERS = [['all', 'All'], ['active', 'Active'], ['inactive', '
 // Every panel is a card with a head (title, an "i" that explains it on hover,
 // actions on the right) and rows: the label on the left, the control on the
 // right. What a setting means lives in the hover, so the page is the controls.
-export function SetHead({ title, info, infoTitle, sub, actions, children }) {
+export function SetHead({ title, badge, info, infoTitle, sub, actions, children }) {
   return (
     <div className="set-head">
-      <div className="set-head-t"><h3>{title}{info ? <InfoTip title={infoTitle}>{info}</InfoTip> : null}</h3>{sub ? <p className="set-sub">{sub}</p> : null}</div>
+      <div className="set-head-t"><h3>{title}{info ? <InfoTip title={infoTitle}>{info}</InfoTip> : null}{badge ? <span className="set-head-b">{badge}</span> : null}</h3>{sub ? <p className="set-sub">{sub}</p> : null}</div>
       {actions || children ? <div className="set-head-a">{actions}{children}</div> : null}
     </div>
   )
@@ -1532,7 +1532,7 @@ export function CrmConnectionSection({ isSuper, clients }) {
   const showHook = () => { setHook({ loading: true }); fetch(`/.netlify/functions/windsor?scope=webhookurl${firstClient ? `&client=${encodeURIComponent(firstClient.id)}` : ''}`, { credentials: 'same-origin' }).then((r) => r.json().catch(() => ({}))).then((j) => setHook(j || {})).catch(() => setHook({ error: 'Could not load.' })) }
   return (
     <div className="card">
-      <SetHead title="Caalano Systems" actions={<span className={`set-pill ${tone}`}>{pill}</span>}
+      <SetHead title="Caalano Systems" badge={<span className={`set-pill ${tone}`}>{pill}</span>}
         info={<>The agency-level link to the CRM: every Open in CRM link, the live deal feed, calendars, forms and the Sales Hub read through it. Reinstalling the app inside the CRM without completing the connection here does not store the access. Removing the app from the agency revokes it until it is connected again.</>} />
       <div className="set-rows">
         <SetRow label="Connection" hint={<span className={tone === 'bad' ? 'act-bad' : ''}>{line}</span>}
@@ -1583,7 +1583,7 @@ export function CrmAddressCard() {
 export function IntegrationSoon({ name, what, onClients }) {
   return (
     <div className="card">
-      <SetHead title={name} actions={<span className="set-pill soon">Coming soon</span>}
+      <SetHead title={name} badge={<span className="set-pill soon">Coming soon</span>}
         info={<>An agency-level {name} connection will live here. For now each client's {what} are linked on their card under Clients.</>} />
       <div className="set-rows">
         <SetRow label={what[0].toUpperCase() + what.slice(1)} hint="Linked per client for now">

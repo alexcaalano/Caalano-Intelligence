@@ -319,6 +319,8 @@ tbody tr:hover { background: var(--panel-2); }
 .set-head-t { min-width: 0; }
 .set-head h3 { margin: 0; font-size: 17px; font-weight: 800; letter-spacing: -.01em; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .set-head h3 .u-badge { margin-left: 2px; }
+.set-head-b { display: inline-flex; margin-left: 4px; }
+.set-head-b .set-pill { font-size: 10px; padding: 3px 9px; }
 .set-sub { margin: 4px 0 0; font-size: 12.5px; color: var(--muted); line-height: 1.45; }
 .set-sub b { color: var(--text); }
 .set-head-a { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-left: auto; }
@@ -5839,3 +5841,24 @@ body.hub-tv-on { overflow: hidden; }
 .alloc-check { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 500; color: var(--text); cursor: pointer; }
 .alloc-check > span { display: inline-flex; align-items: center; gap: 6px; }
 .alloc-links.set-row-c { flex-direction: column; align-items: stretch; gap: 6px; }
+
+/* Trend Report: entity rows (campaigns, ad sets, ad groups, creatives) */
+.pv-ent-pick { margin-top: 10px; padding-top: 8px; border-top: 1px dashed var(--border); }
+.pv-ent-pick .set-sec-t { display: flex; align-items: center; gap: 6px; }
+.pv-ent-metrics { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0 0 4px; }
+.pv-tbl .pv-ent-grp td { background: color-mix(in srgb, var(--brand) 7%, var(--panel-2)); color: var(--muted); }
+.pv-tbl .pv-ent-grp .pv-ico { margin-left: 8px; text-transform: none; letter-spacing: 0; font-size: 10.5px; }
+.pv-tbl .pv-ent-head td { background: var(--panel-2); font-weight: 700; text-align: left; }
+.pv-tbl .pv-ent-head .pv-first { display: flex; align-items: center; gap: 8px; min-width: 0; position: sticky; left: 0; }
+.pv-ent-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 380px; }
+.pv-ent-sub { color: var(--faint); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 320px; }
+.pv-tbl .pv-ent-row .pv-first { padding-left: 34px; }
+.pv-tbl .pv-ent-row td { padding-top: 4px; padding-bottom: 4px; font-size: 12px; }
+.pv-tbl .pv-ent-head td { padding-top: 5px; padding-bottom: 5px; }
+.pv-ent-lab { font-weight: 500; color: var(--muted); }
+.pv-cre { display: inline-flex; align-items: center; gap: 4px; }
+.pv-play { width: 22px; height: 22px; border-radius: 50%; border: 0; background: var(--brand); color: #fff; font-size: 9px; cursor: pointer; display: inline-grid; place-items: center; }
+.pv-play-modal { max-width: 520px; width: 100%; }
+.pv-play-body { display: flex; flex-direction: column; gap: 10px; align-items: center; }
+.pv-video { width: 100%; max-height: 70vh; border-radius: 10px; background: #000; object-fit: contain; }
+.pv-play-links { display: flex; gap: 8px; flex-wrap: wrap; }

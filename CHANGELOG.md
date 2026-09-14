@@ -18,6 +18,19 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.644.0 - 2026-09-14
+
+**Trend Report: campaign, ad set, creative and ad group rows** (commit PENDING)
+
+- **Break down by** in the metric picker: under Meta pick Campaigns, Ad sets and Creatives; under Google pick Campaigns and Ad groups. Each entity appears as a block under the platform sections with its own metric rows (Meta: spend, results, cost per result, impressions, clicks, link CTR; Google: cost, conversions, cost per conversion, clicks, impressions, conversion rate), chosen with chips beside each entity type.
+- The top 10 by spend over the period show first; **Show all** on the group heading reveals the rest. Ad sets and ad groups carry their campaign name; creatives show a thumbnail, and hovering the thumbnail previews it. A play button on video creatives opens the video in a modal, with links to the ad preview or the Instagram post where the video itself is not available.
+- Creatives are reported when the period is grouped by month (they are not dated day by day); the other entities follow any grouping.
+- Entity rows are included in the CSV, in the URL (`pe`, `pem`, `peg`) and in saved layouts and client defaults.
+- Entities load month by month after the metrics, with the same retry and progress treatment; the server builds them under `scope=pivot&src=ents`.
+- Settings → Integrations: the Connected / Not connected / Coming soon status pill now sits beside the panel title rather than at the far right of the card.
+
+---
+
 ## v3.643.0 - 2026-09-14 (commit 04cb7e3)
 
 ### Trend Report: Total and Average columns

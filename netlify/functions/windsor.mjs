@@ -4217,7 +4217,7 @@ export default async (req) => {
     // sum, so the parts add up per bucket - and a month is always small enough to
     // page in full, which is what lets a client's whole history come back rather
     // than the newest 1,500 opportunities.
-    const src = ['ads', 'crm', 'closed'].includes(url.searchParams.get('src')) ? url.searchParams.get('src') : 'all'
+    const src = ['ads', 'crm', 'closed', 'ents'].includes(url.searchParams.get('src')) ? url.searchParams.get('src') : 'all'
     const d0 = new Date(from + 'T00:00:00Z'), d1 = new Date(to + 'T00:00:00Z')
     if (!isFinite(d0) || !isFinite(d1) || d1 < d0) return json({ error: 'bad range' }, 400)
     const spanDays = Math.round((d1 - d0) / 86400000) + 1
@@ -4252,7 +4252,80 @@ export default async (req) => {
     let metaOk = true, googleOk = true, crmOk = true, crmErr = null
     let resultType = 'Leads'
     const jobs = []
-    if (cc.meta && src !== 'crm') jobs.push((async () => {
+    // ---- Entities: campaigns, ad sets and creatives (Meta), campaigns and ad
+    // groups (Google), per bucket. Read a month at a time like the ad totals.
+    // Day and week grouping read by date and roll each day up on its own;
+    // month and longer read the whole chunk in one, which is also where
+    // creatives are offered (a day-by-day creative read is too heavy).
+    if (src === 'ents') {
+      const dated = by === 'day' || by === 'week'
+      const ents = {}
+      const entsOf = (ds) => { const b = bucketOf(ds); if (!b) return null; b.ents = b.ents || { mcamp: [], madset: [], mad: [], gcamp: [], gadgroup: [] }; return b.ents }
+      const ej = []
+      if (cc.meta) ej.push((async () => {
+        try {
+          const fallback = await readMetaPrimary(client).catch(() => null)
+          const extra = (fallback && fallback.extra) || []
+          const RESULT_FIELDS = extra.length ? [...META_RESULT_FIELDS, ...extra] : META_RESULT_FIELDS
+          const d = dated ? ['date'] : []
+          const campFields = ['account_id', ...d, 'campaign', 'reach', 'spend', 'impressions', 'clicks', 'inline_link_clicks', ...FB_LEAD_FIELDS, ...RESULT_FIELDS, 'actions_video_view']
+          const adsetFields = ['account_id', ...d, 'campaign', 'adset_name', 'adset_optimization_goal', 'adset_destination_type', 'adset_promoted_object', 'campaign_objective', 'reach', 'spend', 'impressions', 'clicks', 'inline_link_clicks', ...FB_LEAD_FIELDS, ...RESULT_FIELDS, 'actions_video_view']
+          const adFields = ['account_id', 'campaign', 'adset_name', 'ad_name', 'quality_ranking', 'instagram_permalink_url', ...CREATIVE_MEDIA_FIELDS, 'spend', 'impressions', 'clicks', 'inline_link_clicks', ...FB_LEAD_FIELDS, ...RESULT_FIELDS, 'actions_video_view']
+          const filt = (rows) => rows.filter((r) => !r.account_id || acctEq(r.account_id, cc.meta))
+          const [campRows, adsetRows, adRows] = await Promise.all([
+            windsorFetch('facebook', campFields, from, to, null, key, { accounts: cc.meta }).then(filt).catch(() => []),
+            windsorFetch('facebook', adsetFields, from, to, null, key, { accounts: cc.meta }).then(filt).catch(() => []),
+            dated ? Promise.resolve([]) : windsorFetch('facebook', adFields, from, to, null, key, { accounts: cc.meta }).then(filt).catch(() => []),
+          ])
+          // Custom conversions (an ad set optimised to one, or a custom primary),
+          // per campaign for the chunk, as the Meta tab reads them.
+          let ccData = null
+          if (!dated && (adsetRows.some((r) => promotedCustomId(r.adset_promoted_object)) || (fallback && (fallback.fields || []).some(isCustomConvField)))) {
+            const [names, counts] = await Promise.all([fetchCustomConvNames({ meta: cc.meta }, from, to, key).catch(() => new Map()), fetchCustomConvCounts({ meta: cc.meta }, from, to, key, true).catch(() => ({ total: new Map(), perCamp: new Map() }))])
+            ccData = { names, perCamp: counts.perCamp, total: counts.total }
+          }
+          const pick = (c) => ({ name: c.name, spend: Math.round(c.spend * 100) / 100, impressions: c.impressions, clicks: c.clicks, linkClicks: c.linkClicks, results: c.results, resultType: c.resultType, costPerResult: c.costPerResult })
+          const rollTo = (dayKey, cr, ar, adr) => {
+            const roll = rollupMeta(adr, [], [], cr, ar, [], fallback, extra, ccData)
+            const e = entsOf(dayKey); if (!e) return
+            for (const c of roll.campaigns) if (c.spend > 0 || c.results > 0) e.mcamp.push(pick(c))
+            for (const a of roll.adsets) if (a.spend > 0 || a.results > 0) e.madset.push({ ...pick(a), campaign: a.campaign })
+            for (const a of roll.ads.slice(0, 60)) if (a.spend > 0 || a.results > 0) e.mad.push({ ...pick(a), campaign: a.campaign, adset: a.adset, type: a.type, thumb: a.thumb, video: a.video, preview: a.preview, igUrl: a.igUrl })
+          }
+          if (dated) {
+            const byDay = new Map()
+            const add = (rows, k) => { for (const r of rows) { const ds = String(r.date || '').slice(0, 10); if (!ds) continue; let g = byDay.get(ds); if (!g) { g = { c: [], a: [] }; byDay.set(ds, g) } g[k].push(r) } }
+            add(campRows, 'c'); add(adsetRows, 'a')
+            for (const [ds, g] of byDay) rollTo(ds, g.c, g.a, [])
+          } else rollTo(from, campRows, adsetRows, adRows)
+        } catch { metaOk = false }
+      })())
+      if (cc.google) ej.push((async () => {
+        try {
+          const d = dated ? ['date'] : []
+          const rows = await windsorFetch('google_ads', ['account_id', ...d, 'campaign', 'ad_group_name', 'ad_group', 'spend', 'impressions', 'clicks', 'conversions'], from, to, null, key, { accounts: cc.google })
+          const cleanAg = (r) => r.ad_group_name || (r.ad_group ? String(r.ad_group).split('/').pop() : null)
+          const groups = new Map()
+          for (const r of rows) {
+            if (r.account_id && !acctEq(r.account_id, cc.google)) continue
+            const ds = dated ? String(r.date || '').slice(0, 10) : from
+            let g = groups.get(ds); if (!g) { g = { c: new Map(), a: new Map() }; groups.set(ds, g) }
+            const bump = (m, k, extraF) => { if (!k) return; let e = m.get(k); if (!e) { e = { ...extraF, cost: 0, impressions: 0, clicks: 0, conversions: 0 }; m.set(k, e) } e.cost += num(r.spend); e.impressions += num(r.impressions); e.clicks += num(r.clicks); e.conversions += num(r.conversions) }
+            bump(g.c, r.campaign, { name: r.campaign })
+            const ag = cleanAg(r); if (r.campaign && ag) bump(g.a, r.campaign + '|' + ag, { name: ag, campaign: r.campaign })
+          }
+          const r2 = (v) => Math.round(v * 100) / 100
+          for (const [ds, g] of groups) {
+            const e = entsOf(ds); if (!e) continue
+            for (const c of g.c.values()) if (c.cost > 0 || c.conversions > 0) e.gcamp.push({ ...c, cost: r2(c.cost), conversions: r2(c.conversions) })
+            for (const a of g.a.values()) if (a.cost > 0 || a.conversions > 0) e.gadgroup.push({ ...a, cost: r2(a.cost), conversions: r2(a.conversions) })
+          }
+        } catch { googleOk = false }
+      })())
+      await Promise.all(ej)
+      void ents
+    }
+    if (cc.meta && src !== 'crm' && src !== 'ents') jobs.push((async () => {
       const fallback = await readMetaPrimary(client).catch(() => null)
       const fields = fallback && fallback.fields ? fallback.fields : null
       const std = fields ? fields.filter((f) => !isCustomConvField(f)) : []
@@ -4288,7 +4361,7 @@ export default async (req) => {
         }
       } catch { metaOk = false }
     })())
-    if (cc.google && src !== 'crm') jobs.push((async () => {
+    if (cc.google && src !== 'crm' && src !== 'ents') jobs.push((async () => {
       try {
         const rows = await windsorFetch('google_ads', ['account_id', 'date', 'spend', 'impressions', 'clicks', 'conversions'], from, to, null, key, { accounts: cc.google })
         for (const r of rows) {
@@ -4300,7 +4373,7 @@ export default async (req) => {
     })())
     let stagePos = {}
     let closedTruncated = false
-    if (cc.ghl && src !== 'ads') jobs.push((async () => {
+    if (cc.ghl && src !== 'ads' && src !== 'ents') jobs.push((async () => {
       try {
         const ghlOK = await isConnected().catch(() => false)
         if (!ghlOK && client !== DEMO_CLIENT_ID) { crmOk = false; crmErr = 'CRM not connected'; return }

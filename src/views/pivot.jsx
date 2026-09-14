@@ -143,6 +143,46 @@ const srcOf = (k) => PV_SRC.find(([id]) => id === k) || PV_SRC[0]
 const SrcTag = ({ src }) => (src ? <span className={`agy-scope pv-src ${srcOf(src)[2]}`}>{srcOf(src)[1]}</span> : null)
 // Older links and saved views named a key event without a source: that was "all".
 const normId = (id) => (/^kec?:/.test(id) && id.split(':').length === 2 ? id + ':all' : id)
+// Entity rows: campaigns, ad sets and creatives (Meta), campaigns and ad
+// groups (Google), each laid out period by period under its platform. Read
+// from the server a month at a time; creatives only on month grouping and
+// longer, since a day-by-day creative read is too heavy.
+export const ENT_KINDS = [
+  { id: 'mcamp', g: 'Meta', label: 'Campaigns', plat: 'meta', key: (e) => e.name },
+  { id: 'madset', g: 'Meta', label: 'Ad sets', plat: 'meta', key: (e) => `${e.campaign}|${e.name}` },
+  { id: 'mad', g: 'Meta', label: 'Creatives', plat: 'meta', key: (e) => e.name, monthOnly: true },
+  { id: 'gcamp', g: 'Google', label: 'Campaigns', plat: 'google', key: (e) => e.name },
+  { id: 'gadgroup', g: 'Google', label: 'Ad groups', plat: 'google', key: (e) => `${e.campaign}|${e.name}` },
+]
+export const ENT_METRICS = {
+  meta: [
+    { id: 'spend', label: 'Spend', kind: 'money', good: 'neu', calc: (a) => a.spend },
+    { id: 'results', label: (a) => a.resultType || 'Results', kind: 'count', good: 'up', calc: (a) => a.results },
+    { id: 'cpr', label: 'Cost / result', kind: 'money', good: 'down', calc: (a) => div(a.spend, a.results) },
+    { id: 'impr', label: 'Impressions', kind: 'count', good: 'neu', calc: (a) => a.impressions },
+    { id: 'clicks', label: 'Link clicks', kind: 'count', good: 'up', calc: (a) => a.linkClicks },
+    { id: 'ctr', label: 'Link CTR', kind: 'pct', good: 'up', calc: (a) => (a.impressions ? (a.linkClicks / a.impressions) * 100 : null) },
+  ],
+  google: [
+    { id: 'cost', label: 'Spend', kind: 'money', good: 'neu', calc: (a) => a.cost },
+    { id: 'conv', label: 'Conversions', kind: 'count', good: 'up', calc: (a) => a.conversions },
+    { id: 'cpc', label: 'Cost / conversion', kind: 'money', good: 'down', calc: (a) => div(a.cost, a.conversions) },
+    { id: 'clicks', label: 'Clicks', kind: 'count', good: 'up', calc: (a) => a.clicks },
+    { id: 'impr', label: 'Impressions', kind: 'count', good: 'neu', calc: (a) => a.impressions },
+    { id: 'cvr', label: 'Conversion rate', kind: 'pct', good: 'up', calc: (a) => (a.clicks ? (a.conversions / a.clicks) * 100 : null) },
+  ],
+}
+const ENT_DEFAULT = { meta: ['spend', 'results', 'cpr'], google: ['cost', 'conv', 'cpc'] }
+const ENT_TOP = 10
+// Sum one entity's chunk figures into its bucket entry.
+const addEnt = (into, e) => {
+  const o = into || { name: e.name, campaign: e.campaign || null, adset: e.adset || null, spend: 0, cost: 0, impressions: 0, clicks: 0, linkClicks: 0, results: 0, conversions: 0, resultType: e.resultType || null, type: e.type || null, thumb: e.thumb || null, video: e.video || null, preview: e.preview || null, igUrl: e.igUrl || null }
+  for (const k of ['spend', 'cost', 'impressions', 'clicks', 'linkClicks', 'results', 'conversions']) o[k] += e[k] || 0
+  if (!o.thumb && e.thumb) o.thumb = e.thumb
+  if (!o.video && e.video) o.video = e.video
+  if (!o.resultType && e.resultType) o.resultType = e.resultType
+  return o
+}
 const DEFAULT_IDS = ['m_spend', 'm_results', 'm_cpr', 'g_cost', 'g_conv', 'g_cpc', 't_spend', 'c_leads', 'c_cpl', 'c_booked', 'c_won', 'c_revenue']
 const DEFAULT_CHART = ['t_spend', 'c_leads', 'c_cpl']
 const GROUP_ORDER = ['Meta', 'Google', 'Blended', 'CRM', 'Key events']
@@ -227,6 +267,14 @@ export function PivotReport({ clients, currency }) {
   // Total and Average columns, as on a P&L: Total on by default, Average off.
   const [showTotal, setShowTotal] = useState(() => q0.get('ptot') !== '0')
   const [showAvg, setShowAvg] = useState(() => q0.get('pavg') === '1')
+  const [ents, setEnts] = useState(() => (q0.get('pe') ? q0.get('pe').split(',').filter((k) => ENT_KINDS.some((x) => x.id === k)) : []))
+  const [entM, setEntM] = useState(() => ({ meta: q0.get('pem') ? q0.get('pem').split(',').filter(Boolean) : ENT_DEFAULT.meta, google: q0.get('peg') ? q0.get('peg').split(',').filter(Boolean) : ENT_DEFAULT.google }))
+  const [entAll, setEntAll] = useState({})   // kind -> true when every entity is shown, not just the top ten
+  const [entSt, setEntSt] = useState({ status: 'idle', by: {}, key: '' }) // by: bucketKey -> kind -> Map(entityKey -> agg)
+  const [play, setPlay] = useState(null)     // creative being played / previewed
+  const [hover, setHover] = useState(null)   // { src, x, y } thumbnail preview
+  const toggleEnt = (k) => setEnts((s) => (s.includes(k) ? s.filter((x) => x !== k) : [...s, k]))
+  const toggleEntM = (plat, id) => setEntM((m) => ({ ...m, [plat]: m[plat].includes(id) ? m[plat].filter((x) => x !== id) : [...m[plat], id] }))
   const [labels, setLabels] = useState(() => (q0.get('pl') ? q0.get('pl').split(',').filter(Boolean).map(normId) : []))
   const chartRef = useRef(null)
   // Nudge overlapping value labels apart once the chart has drawn (and again on resize).
@@ -242,8 +290,8 @@ export function PivotReport({ clients, currency }) {
   // A client's saved default layout: metrics, chart, period and grouping. It
   // loads whenever that client is picked; the URL wins only on first open.
   const defaults = (SETTINGS.pivot && SETTINGS.pivot.defaults) || {}
-  const applyLayout = (v) => { if (!v) return; setPreset(v.preset || 'last_12m'); if (v.custom) setCustom(v.custom); setBy(v.by || 'month'); setIds((v.ids || DEFAULT_IDS).map(normId)); setChart((v.chart || DEFAULT_CHART).map(normId)); setLabels((v.labels || []).map(normId)); setShowDelta(v.showDelta !== false); setShowTotal(v.showTotal !== false); setShowAvg(!!v.showAvg) }
-  const layout = () => ({ preset, custom, by, ids, chart, labels, showDelta, showTotal, showAvg, savedAt: new Date().toISOString() })
+  const applyLayout = (v) => { if (!v) return; setPreset(v.preset || 'last_12m'); if (v.custom) setCustom(v.custom); setBy(v.by || 'month'); setIds((v.ids || DEFAULT_IDS).map(normId)); setChart((v.chart || DEFAULT_CHART).map(normId)); setLabels((v.labels || []).map(normId)); setShowDelta(v.showDelta !== false); setShowTotal(v.showTotal !== false); setShowAvg(!!v.showAvg); setEnts(v.ents || []); setEntM({ meta: (v.entM && v.entM.meta) || ENT_DEFAULT.meta, google: (v.entM && v.entM.google) || ENT_DEFAULT.google }) }
+  const layout = () => ({ preset, custom, by, ids, chart, labels, showDelta, showTotal, showAvg, ents, entM, savedAt: new Date().toISOString() })
   const firstRun = useRef(true)
   useEffect(() => { if (firstRun.current) { firstRun.current = false; if (!q0.get('pm') && defaults[clientId]) applyLayout(defaults[clientId]); return } applyLayout(defaults[clientId] || null) /* eslint-disable-next-line */ }, [clientId])
   const writeDefaults = (next) => { SETTINGS.pivot = { ...(SETTINGS.pivot || {}), defaults: next }; saveSettingsRemote({ pivot: { defaults: next } }); bumpSettings() }
@@ -254,7 +302,7 @@ export function PivotReport({ clients, currency }) {
   const bounds = preset === 'custom' ? custom : (presetBounds(preset) || custom)
   const pickPreset = (id) => { setPreset(id); const p = PV_PRESETS.find(([k]) => k === id); if (p && p[2]) setBy(p[2]) }
   // The shareable link: everything about this view lives in the URL.
-  useEffect(() => { writeNavUrl({ v: 'monthly', s: 'trend', c: clientId, pp: preset, pf: preset === 'custom' ? custom.from : null, pt: preset === 'custom' ? custom.to : null, pb: by, pm: ids.join(','), pch: chart.join(','), pl: labels.length ? labels.join(',') : null, pd: showDelta ? null : '0', ptot: showTotal ? null : '0', pavg: showAvg ? '1' : null }, false) }, [clientId, preset, custom.from, custom.to, by, ids, chart, labels, showDelta, showTotal, showAvg])
+  useEffect(() => { writeNavUrl({ v: 'monthly', s: 'trend', c: clientId, pp: preset, pf: preset === 'custom' ? custom.from : null, pt: preset === 'custom' ? custom.to : null, pb: by, pm: ids.join(','), pch: chart.join(','), pl: labels.length ? labels.join(',') : null, pd: showDelta ? null : '0', ptot: showTotal ? null : '0', pavg: showAvg ? '1' : null, pe: ents.length ? ents.join(',') : null, pem: entM.meta.join(',') === ENT_DEFAULT.meta.join(',') ? null : entM.meta.join(','), peg: entM.google.join(',') === ENT_DEFAULT.google.join(',') ? null : entM.google.join(',') }, false) }, [clientId, preset, custom.from, custom.to, by, ids, chart, labels, showDelta, showTotal, showAvg, ents, entM])
 
   const [st, setSt] = useState({ status: 'idle' })
   const [prog, setProg] = useState(null) // { done, total, note }
@@ -316,6 +364,47 @@ export function PivotReport({ clients, currency }) {
     })()
     return () => { alive = false }
   }, [clientId, bounds.from, bounds.to, by, nonce])
+  // Entity rows load after the report, only when a breakdown is on, a month at
+  // a time with the same retries; the result is keyed by the range so a change
+  // of period or grouping reads again.
+  const entKey = `${clientId}|${bounds.from}|${bounds.to}|${by}|${nonce}`
+  const wantEnts = ents.length > 0 && st.status === 'ok'
+  useEffect(() => {
+    if (!wantEnts || entSt.key === entKey) return
+    let alive = true
+    setEntSt({ status: 'loading', by: {}, key: entKey, done: 0, total: 0 })
+    const base = `/.netlify/functions/windsor?scope=pivot&client=${encodeURIComponent(clientId)}&by=${by}&src=ents`
+    const months = monthChunks(bounds.from, bounds.to)
+    const byB = {}
+    let done = 0, failed = 0
+    setEntSt((e) => ({ ...e, total: months.length }))
+    const queue = months.slice()
+    const worker = async () => {
+      while (queue.length && alive) {
+        const c = queue.shift()
+        let j = null
+        for (let i = 0; i < 12 && alive; i++) {
+          if (i) await new Promise((r) => setTimeout(r, Math.min(8000, 1200 * i)))
+          try { j = await apiJson(`${base}&from=${c.from}&to=${c.to}${(i || nonce) ? `&_r=${nonce}${i}` : ''}`, { timeoutMs: 28000, tries: 1 }); if (j && j.buckets && j.metaOk !== false && j.googleOk !== false) break; j = null } catch { j = null }
+        }
+        if (!alive) return
+        if (!j) failed++
+        else for (const b of j.buckets) { if (!b.ents) continue; const slot = byB[b.key] = byB[b.key] || {}; for (const kind in b.ents) { const m = slot[kind] = slot[kind] || new Map(); const K = (ENT_KINDS.find((x) => x.id === kind) || {}).key || ((e) => e.name); for (const e of b.ents[kind]) m.set(K(e), addEnt(m.get(K(e)), e)) } }
+        done++; setEntSt((e) => ({ ...e, done }))
+      }
+    }
+    Promise.all([worker(), worker(), worker()]).then(() => { if (alive) setEntSt({ status: failed ? 'err' : 'ok', by: byB, key: entKey, failed }) })
+    return () => { alive = false }
+  }, [wantEnts, entKey])
+  // Entities ranked by spend over the range; the top ten by default.
+  const entList = (kind) => {
+    const K = ENT_KINDS.find((x) => x.id === kind); if (!K) return []
+    const tot = new Map()
+    for (const r of rows) { const m = entSt.by[r.key] && entSt.by[r.key][kind]; if (!m) continue; for (const [k, e] of m) tot.set(k, addEnt(tot.get(k), e)) }
+    const all = [...tot.entries()].map(([k, e]) => ({ k, e })).sort((a, b) => ((b.e.spend + b.e.cost) - (a.e.spend + a.e.cost)))
+    return { all, shown: entAll[kind] ? all : all.slice(0, ENT_TOP) }
+  }
+  const entCell = (kind, k, r) => { const m = entSt.by[r.key] && entSt.by[r.key][kind]; return m ? m.get(k) || null : null }
   const data = st.status === 'ok' ? st.data : null
   const ctx = { resultType: data ? data.resultType : 'Results' }
 
@@ -397,6 +486,15 @@ export function PivotReport({ clients, currency }) {
     const r2 = (v) => (v == null ? '' : Math.round(v * 100) / 100)
     const head = ['Metric', ...rows.map((r) => r.label), ...(showTotal ? ['Total'] : []), ...(showAvg ? [`Average per ${by}`] : [])]
     const lines = [head.join(','), ...selected.map((m) => [labelOf(m, ctx) + (m.src ? ` · ${srcOf(m.src)[1]}` : ''), ...rows.map((r) => r2(m.calc(r.base))), ...(showTotal ? [r2(m.calc(total))] : []), ...(showAvg ? [r2(avgOf(m))] : [])].map(esc).join(','))]
+    for (const kind of ents) {
+      const K = ENT_KINDS.find((x) => x.id === kind); if (!K || entSt.status !== 'ok') continue
+      const L = entList(kind)
+      for (const { k, e } of L.shown) for (const em of ENT_METRICS[K.plat].filter((x) => entM[K.plat].includes(x.id))) {
+        const vals = rows.map((r) => { const c = entCell(kind, k, r); return c ? em.calc(c) : null })
+        const have = vals.filter((v) => v != null && isFinite(v)); const totV = em.calc(e)
+        lines.push([`${K.g} ${K.label.toLowerCase()} · ${e.name} · ${typeof em.label === 'function' ? em.label(e) : em.label}`, ...vals.map(r2), ...(showTotal ? [r2(totV)] : []), ...(showAvg ? [r2(em.kind === 'count' || (em.kind === 'money' && em.good === 'neu') ? (totV == null ? null : totV / rows.length) : (have.length ? have.reduce((a, v) => a + v, 0) / have.length : null))] : [])].map(esc).join(','))
+      }
+    }
     const blob = new Blob([lines.join('\n')], { type: 'text/csv' })
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `trend-report-${client ? client.id : 'report'}-${bounds.from}_${bounds.to}-by-${by}.csv`; a.click(); URL.revokeObjectURL(a.href)
   }
@@ -452,6 +550,17 @@ export function PivotReport({ clients, currency }) {
                 {metrics.filter((m) => m.g === g && applies(m)).map((m) => (
                   <label key={m.id} className={`pv-pick-row${ids.includes(m.id) ? ' on' : ''}`} title={m.hint || undefined}><input type="checkbox" checked={ids.includes(m.id)} onChange={() => toggle(m.id)} /><span>{labelOf(m, ctx)}<SrcTag src={m.src} />{m.hint ? <small className="pv-hint"> · {m.hint}</small> : null}</span></label>
                 ))}
+                {(g === 'Meta' || g === 'Google') && (
+                  <div className="pv-ent-pick">
+                    <div className="set-sec-t">Break down by<InfoTip>Adds one block per {g} entity under the {g} section: the top ten by spend over the range, with a switch for all of them. Each entity shows the figures ticked here, period by period.{g === 'Meta' ? ' Creatives are offered on month grouping and longer.' : ''}</InfoTip></div>
+                    {ENT_KINDS.filter((K) => K.g === g && !(K.monthOnly && (by === 'day' || by === 'week'))).map((K) => (
+                      <label key={K.id} className={`pv-pick-row${ents.includes(K.id) ? ' on' : ''}`}><input type="checkbox" checked={ents.includes(K.id)} onChange={() => toggleEnt(K.id)} /><span>{K.label}</span></label>
+                    ))}
+                    {ents.some((k) => (ENT_KINDS.find((x) => x.id === k) || {}).g === g) ? (
+                      <div className="pv-ent-metrics">{ENT_METRICS[g === 'Meta' ? 'meta' : 'google'].map((em) => <label key={em.id} className={`pv-ke-box${entM[g === 'Meta' ? 'meta' : 'google'].includes(em.id) ? ' on' : ''}`} title={typeof em.label === 'function' ? em.label(ctx) : em.label}><input type="checkbox" checked={entM[g === 'Meta' ? 'meta' : 'google'].includes(em.id)} onChange={() => toggleEntM(g === 'Meta' ? 'meta' : 'google', em.id)} />{typeof em.label === 'function' ? em.label({ resultType: 'Results' }) : em.label}</label>)}</div>
+                    ) : null}
+                  </div>
+                )}
               </div>
             ))}
           {keLabels.length && has.crm ? (
@@ -537,11 +646,60 @@ export function PivotReport({ clients, currency }) {
                             </React.Fragment>
                           )
                         })}
+                        {ents.map((kind) => {
+                          const K = ENT_KINDS.find((x) => x.id === kind); if (!K || !((K.plat === 'meta' && has.meta) || (K.plat === 'google' && has.google))) return null
+                          const span = rows.length + 1 + (showTotal ? 1 : 0) + (showAvg ? 1 : 0)
+                          const ems = ENT_METRICS[K.plat].filter((em) => entM[K.plat].includes(em.id))
+                          const L = entSt.status === 'ok' || entSt.status === 'err' ? entList(kind) : null
+                          return (
+                            <React.Fragment key={'ent:' + kind}>
+                              <tr className="pv-grp pv-ent-grp"><td colSpan={span}><span>{K.g} · {K.label}{L ? <> · {entAll[kind] ? `all ${L.all.length}` : `top ${Math.min(ENT_TOP, L.all.length)} of ${L.all.length} by spend`}{L.all.length > ENT_TOP ? <button className="pv-ico" onClick={() => setEntAll((a) => ({ ...a, [kind]: !a[kind] }))}>{entAll[kind] ? 'Top 10 only' : 'Show all'}</button> : null}</> : null}</span></td></tr>
+                              {entSt.status === 'loading' ? <tr><td colSpan={span} className="lft pv-first"><span className="cap">Reading {K.label.toLowerCase()} · {entSt.done || 0} of {entSt.total || '…'} months…</span></td></tr> : null}
+                              {entSt.status === 'err' && L && !L.all.length ? <tr><td colSpan={span} className="lft pv-first"><span className="cap act-bad">Some months did not answer. Refresh to try again.</span></td></tr> : null}
+                              {L && L.shown.map(({ k, e }) => (
+                                <React.Fragment key={kind + ':' + k}>
+                                  <tr className="pv-ent-head"><td className="lft pv-first" colSpan={span}>
+                                    {kind === 'mad' ? <span className="pv-cre">{e.thumb ? <img className="cre-th" src={e.thumb} alt="" loading="lazy" onMouseEnter={(ev) => setHover({ src: e.thumb, x: ev.clientX, y: ev.clientY })} onMouseMove={(ev) => setHover((h) => (h ? { ...h, x: ev.clientX, y: ev.clientY } : h))} onMouseLeave={() => setHover(null)} onError={(ev) => { ev.target.style.display = 'none' }} /> : <span className="cre-th cre-th-none" />}{(e.video || e.preview || e.igUrl) ? <button className="pv-play" title={e.video ? 'Play the video' : 'Open the ad preview'} onClick={() => setPlay(e)}>▶</button> : null}</span> : null}
+                                    <span className="pv-ent-name" title={e.name}>{e.name}</span>
+                                    {e.campaign || e.adset || e.type ? <small className="pv-ent-sub">{[e.type, e.campaign, e.adset].filter(Boolean).join(' · ')}</small> : null}
+                                  </td></tr>
+                                  {ems.map((em) => {
+                                    const vals = rows.map((r) => { const c = entCell(kind, k, r); return c ? em.calc(c) : null })
+                                    const totV = em.calc(e)
+                                    const have = vals.filter((v) => v != null && isFinite(v))
+                                    const avgV = em.kind === 'count' || (em.kind === 'money' && em.good === 'neu') ? (totV == null ? null : totV / rows.length) : (have.length ? have.reduce((a, v) => a + v, 0) / have.length : null)
+                                    return (
+                                      <tr key={em.id} className="pv-ent-row">
+                                        <td className="lft pv-first"><span className="pv-lab pv-ent-lab">{typeof em.label === 'function' ? em.label(e) : em.label}</span></td>
+                                        {rows.map((r, j) => <td key={r.key}><span className="tr-cell">{fmtVal(em, vals[j], currency)}{showDelta && j > 0 ? <Dlt cur={vals[j]} prev={vals[j - 1]} good={em.good} pts={em.kind === 'pct'} dp={em.kind === 'pct' ? 1 : 0} /> : null}</span></td>)}
+                                        {showTotal ? <td className="pv-total">{fmtVal(em, totV, currency)}</td> : null}
+                                        {showAvg ? <td className="pv-total pv-avg">{fmtVal(em, avgV, currency)}</td> : null}
+                                      </tr>
+                                    )
+                                  })}
+                                </React.Fragment>
+                              ))}
+                              {L && !L.all.length && entSt.status === 'ok' ? <tr><td colSpan={span} className="lft pv-first"><span className="cap">No {K.label.toLowerCase()} with spend in this range.</span></td></tr> : null}
+                            </React.Fragment>
+                          )
+                        })}
                       </tbody>
                     </table>
                   </div>
                 )}
               </div>
+              {hover ? <img className="cre-preview" src={hover.src} alt="" style={{ left: Math.min(hover.x + 18, window.innerWidth - 268), top: Math.min(Math.max(12, hover.y - 120), window.innerHeight - 300) }} /> : null}
+              {play ? (
+                <div className="modal-bg" onClick={() => setPlay(null)}>
+                  <div className="modal pv-play-modal" onClick={(e) => e.stopPropagation()}>
+                    <div className="m-head"><div><h3>{play.name}</h3><span className="cap">{[play.type, play.campaign, play.adset].filter(Boolean).join(' · ')}</span></div><button className="icon-btn" onClick={() => setPlay(null)}>✕</button></div>
+                    <div className="m-body pv-play-body">
+                      {play.video ? <video className="pv-video" src={play.video} poster={play.thumb || undefined} controls autoPlay playsInline /> : play.thumb ? <img className="pv-video" src={play.thumb} alt="" /> : null}
+                      <div className="pv-play-links">{play.preview ? <a className="btn-ghost sm" href={play.preview} target="_blank" rel="noreferrer">Open the ad preview ↗</a> : null}{play.igUrl ? <a className="btn-ghost sm" href={play.igUrl} target="_blank" rel="noreferrer">Open on Instagram ↗</a> : null}</div>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
             </>
           )}
     </div>

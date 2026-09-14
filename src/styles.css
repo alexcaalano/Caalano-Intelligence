@@ -5536,3 +5536,11 @@ body.hub-tv-on { overflow: hidden; }
 .tel-field input { flex: 1 1 auto; min-width: 0; }
 .auth-form label > .tel-field { margin-top: 6px; }
 .auth-form .tel-field select, .auth-form .tel-field input { margin-top: 0; }
+/* Reach hover: the organic segment broken into its sub-channels. Indented under
+   the parent row, the swatch a short bar sized to that sub-channel's share so
+   the list reads at a glance without adding colours to the bar itself. */
+.v2-pop-sub { margin: 2px 0 4px; padding: 4px 0 4px 18px; border-left: 2px solid color-mix(in srgb, #c98500 45%, transparent); display: grid; gap: 1px; }
+.v2-pop-sub .v2-pop-r.sub { grid-template-columns: 28px 1fr auto 44px; padding: 1px 0; font-size: 12px; }
+.v2-pop-sub .v2-pop-r.sub i.o.sub { width: var(--w, 6px); max-width: 28px; height: 6px; border-radius: 2px; background: #c98500; opacity: .8; }
+.v2-pop-sub .v2-pop-r.sub.muted i.o.sub { opacity: .35; }
+.v2-leg small { color: var(--faint); font-weight: 500; }

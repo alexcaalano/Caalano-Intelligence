@@ -12,7 +12,9 @@ const liftFrom = (src) => (name) => {
 }
 const la = liftFrom(app), lw = liftFrom(win)
 const gs = app.indexOf('const V2_TAB_GROUPS = ['); const grpSrc = app.slice(gs, app.indexOf('\n]\n', gs) + 3)
-const { v2StoryPick, v2ReachSplit, v2SecOpen, v2TabGroups } = new Function(grpSrc + ['v2StoryPick', 'v2ReachSplit', 'v2SecOpen', 'v2TabGroups'].map(la).join('\n') + '\nreturn { v2StoryPick, v2ReachSplit, v2SecOpen, v2TabGroups }')()
+// The sub-channel key / label constants ride along with the split, which uses them.
+const ss = app.indexOf('const SUB_CHANNEL_KEYS = ['); const subSrc = app.slice(ss, app.indexOf('\n', app.indexOf('const SUB_CHANNEL_LABELS', ss)) + 1)
+const { v2StoryPick, v2ReachSplit, v2SubRows, v2SecOpen, v2TabGroups } = new Function(grpSrc + subSrc + ['v2StoryPick', 'v2ReachSplit', 'v2SubRows', 'v2SecOpen', 'v2TabGroups'].map(la).join('\n') + '\nreturn { v2StoryPick, v2ReachSplit, v2SubRows, v2SecOpen, v2TabGroups }')()
 const { spendByDay } = new Function("const num = (v) => { const n = parseFloat(v); return Number.isFinite(n) ? n : 0 }\n" + lw('spendByDay') + '\nreturn { spendByDay }')()
 let n = 0, bad = 0
 const ok = (name, c, x) => { n++; if (!c) { bad++; console.log('FAIL', name, JSON.stringify(x)) } }
@@ -38,11 +40,26 @@ ok('one line, one card', v2StoryPick([lines[1]]).length === 1)
 ok('empty', v2StoryPick([]).length === 0 && v2StoryPick(null).length === 0)
 
 // Bar split: other is the remainder; a split larger than the row is scaled to it.
-ok('split remainder', JSON.stringify(v2ReachSplit(100, 60, 25)) === JSON.stringify({ meta: 60, google: 25, other: 15 }))
-ok('split exact', JSON.stringify(v2ReachSplit(85, 60, 25)) === JSON.stringify({ meta: 60, google: 25, other: 0 }))
+ok('split remainder', JSON.stringify(v2ReachSplit(100, 60, 25)) === JSON.stringify({ meta: 60, google: 25, other: 15, sub: null }))
+ok('split exact', JSON.stringify(v2ReachSplit(85, 60, 25)) === JSON.stringify({ meta: 60, google: 25, other: 0, sub: null }))
 ok('split overflow scaled', (() => { const r = v2ReachSplit(50, 60, 40); return r.meta + r.google === 50 && r.other === 0 && r.meta === 30 })(), v2ReachSplit(50, 60, 40))
-ok('split zero', JSON.stringify(v2ReachSplit(0, 5, 5)) === JSON.stringify({ meta: 0, google: 0, other: 0 }))
-ok('split no channels', JSON.stringify(v2ReachSplit(7, 0, 0)) === JSON.stringify({ meta: 0, google: 0, other: 7 }))
+ok('split zero', JSON.stringify(v2ReachSplit(0, 5, 5)) === JSON.stringify({ meta: 0, google: 0, other: 0, sub: null }))
+// The organic segment's sub-channel rows: largest first, "not tagged" last,
+// zeros dropped, any remainder the stages do not know about shown as not
+// tagged, and an over-count scaled down to the segment rather than past it.
+{
+  const r = v2ReachSplit(100, 60, 25, { organic: 8, referral: 4, direct: 3, social: 0 })
+  ok('sub rows sorted', r.sub.map((x) => x.key).join() === 'organic,referral,direct', r.sub)
+  ok('sub rows labelled', r.sub[0].label === 'Organic search' && r.sub[0].value === 8, r.sub)
+  const r2 = v2ReachSplit(100, 60, 25, { organic: 8, direct: 2 })
+  ok('sub remainder as not tagged', r2.sub.map((x) => x.key + ':' + x.value).join() === 'organic:8,direct:2,unknown:5', r2.sub)
+  const r3 = v2ReachSplit(100, 60, 25, { organic: 20, referral: 10 })
+  ok('sub overflow scaled', r3.sub.reduce((a, x) => a + x.value, 0) === 15 && r3.sub[0].value === 10, r3.sub)
+  ok('sub absent -> null', v2ReachSplit(100, 60, 25).sub === null && v2ReachSplit(100, 60, 25, null).sub === null)
+  ok('sub empty -> empty rows', JSON.stringify(v2ReachSplit(85, 60, 25, { organic: 0 }).sub) === '[]')
+  ok('sub rows direct', v2SubRows(10, { unknown: 4, direct: 6 }).map((x) => x.key).join() === 'direct,unknown')
+}
+ok('split no channels', JSON.stringify(v2ReachSplit(7, 0, 0)) === JSON.stringify({ meta: 0, google: 0, other: 7, sub: null }))
 
 // Daily spend: summed per day, aligned to the day list, unknown days ignored, rounded to cents.
 const days = ['2026-09-01', '2026-09-02', '2026-09-03']

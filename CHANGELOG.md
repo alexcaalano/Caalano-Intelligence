@@ -18,6 +18,18 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.623.0 - 2026-09-14 (commit PENDING)
+
+### Key event reach: the organic segment broken down on hover
+
+- **Hover on any reach bar now lists what "Organic, referral, direct" is made of**: Organic search, Organic social, Referral, Direct, Email & SMS, Added in CRM / integrations, and Not tagged. Rows are indented under the parent line, largest first, with a count, a share of the organic segment and a small bar sized to that share. The bar itself keeps its single organic colour.
+- **Classifier** (`subChannelOf` in `netlify/lib/ghl.mjs`): reads the CRM's own session-source label first (Direct traffic, Organic search, Social media, Referral, Email, SMS, CRM UI, Third party...), then utm_source / utm_medium, then the referrer host. Leads the CRM created itself (manual entry, imports, integrations, workflows, chat widget, forms) are their own bucket; a lead with no attribution at all reads as Not tagged rather than being dressed up as Direct. Paid classification (Meta / Google) is unchanged.
+- **Payload**: each pipeline stage in `pipelinesFunnel` carries a `sub` map; `pipeContribution[].chan.other.sub` carries per-sub-channel leads and won. The Opportunities row, every stage / calendar row and the Won row all use it, per pipeline or account-wide.
+- **Result cache schema 3 -> 4**: the reach hover depends on the new fields, so payloads built by the previous code are left behind on the server and in the browser and rebuilt on the next load.
+- Tests: `tests/subchannel_test.mjs` (21 classifier cases); `tests/v2story_test.mjs` covers the sub rows (sorting, remainder as Not tagged, over-count scaled to the segment).
+
+---
+
 ## v3.622.0 - 2026-09-14
 
 **Creative cards show the real creative and play the video in a popup.** (commit 9e3b9e5)

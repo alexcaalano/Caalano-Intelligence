@@ -793,7 +793,12 @@ function utmOf(opp) {
   // only appears in utm_source).
   const sig = [a.utmSessionSource, a.sessionSource, a.utmSource, a.utm_source, a.utmMedium, a.utm_medium, a.medium, a.utmCampaign, a.utm_campaign, a.campaign, a.utmAdSource, a.adSource, a.referrer, a.fbclid, a.gclid, a.fbAdId, a.adId]
     .filter(Boolean).join(' ').toLowerCase()
-  return { source, medium, campaign, content, term, ad, matchType, url, adId: a.adId || a.fbAdId || a.gclid || a.fbclid || null, sig }
+  return { source, medium, campaign, content, term, ad, matchType, url, adId: a.adId || a.fbAdId || a.gclid || a.fbclid || null, sig,
+    // Raw pieces for the organic sub-channel split (subChannelOf): the CRM's
+    // own session-source label, the utm_source tag, the referrer, and whether
+    // the opportunity carries any attribution at all.
+    sessionSource: a.utmSessionSource || a.sessionSource || null, utmSource: a.utmSource || a.utm_source || null,
+    referrer: a.referrer || null, tagged: atts.length > 0 }
 }
 // Normalise a URL to a stable match key: drop protocol / www / query / hash /
 // trailing slash, lower-case. Used to join CRM first-touch URLs to the Google
@@ -816,6 +821,47 @@ function channelOf(u) {
   if (GOOGLE_RE.test(hay)) return 'google'
   return 'other'
 }
+// The non-paid ("Organic, referral, direct") leads broken into the channel
+// they actually came from, so the reach hover can list them. Reads the CRM's
+// own session-source label first (Direct traffic, Organic search, Social
+// media, Referral, Email...), then utm_source / utm_medium, then the referrer
+// host. Leads the CRM created itself (manual entry, imports, integrations,
+// workflows, chat widget, forms) are their own bucket, and anything with no
+// attribution at all is "unknown" rather than being dressed up as direct.
+export const SUB_CHANNELS = ['organic', 'social', 'referral', 'direct', 'email', 'crm', 'unknown']
+export const SUB_CHANNEL_LABELS = { organic: 'Organic search', social: 'Organic social', referral: 'Referral', direct: 'Direct', email: 'Email & SMS', crm: 'Added in CRM / integrations', unknown: 'Not tagged' }
+const SUB_REFERRAL_RE = /referr/i
+const SUB_ORGANIC_RE = /organic|\bseo\b|search|\bbing\b|duckduckgo|yahoo|ecosia|\bbaidu\b|yandex/i
+const SUB_SOCIAL_RE = /social|tiktok|linkedin|pinterest|snapchat|twitter|\bx\.com\b|reddit|threads|\bwhatsapp\b|telegram/i
+const SUB_EMAIL_RE = /e-?mail|newsletter|\bsms\b|mailchimp|klaviyo|activecampaign|hubspot|brevo|sendgrid|mailer/i
+const SUB_DIRECT_RE = /direct|typein|\(none\)|\bnone\b|\(direct\)/i
+const SUB_CRM_RE = /\bcrm\b|manual|import|integration|third.?party|\bapi\b|workflow|automation|bulk|zapier|\bmake\b|chat|widget|\bform\b|survey|calendar|booking|internal|admin|\bapp\b|mobile|inbound.?call|phone|\bivr\b|\bqr\b/i
+const refHost = (r) => { try { return new URL(String(r)).hostname.replace(/^www\./, '') } catch { return '' } }
+export function subChannelOf(u) {
+  if (!u || !u.tagged) return 'unknown'
+  const lab = `${u.sessionSource || ''} ${u.utmSource || ''} ${u.medium || ''}`.trim()
+  if (lab) {
+    if (SUB_REFERRAL_RE.test(lab)) return 'referral'
+    if (SUB_ORGANIC_RE.test(lab)) return 'organic'
+    if (SUB_SOCIAL_RE.test(lab)) return 'social'
+    if (SUB_EMAIL_RE.test(lab)) return 'email'
+    if (SUB_DIRECT_RE.test(lab)) return 'direct'
+    if (SUB_CRM_RE.test(lab)) return 'crm'
+  }
+  // No usable label: the referrer host says where the visit came from. A
+  // search engine reads as organic search, a social network as organic social,
+  // any other site as a referral, and no referrer at all as direct traffic.
+  const host = refHost(u.referrer)
+  if (host) {
+    if (SUB_ORGANIC_RE.test(host)) return 'organic'
+    if (/facebook|instagram|fb\.com|tiktok|linkedin|pinterest|snapchat|twitter|x\.com|reddit|threads\.net|youtube|youtu\.be/i.test(host)) return 'social'
+    if (u.url && refHost(u.url) === host) return 'direct'
+    return 'referral'
+  }
+  if (lab) return 'unknown'
+  return u.referrer === '' || u.url ? 'direct' : 'unknown'
+}
+const mkSub = () => { const o = {}; for (const k of SUB_CHANNELS) o[k] = 0; return o }
 
 // Self-booking tag: contacts that booked their own appointment carry a
 // "customer booked appointment" style tag. Tags ride inline on the opportunity
@@ -4564,6 +4610,7 @@ export async function buildCcDrill(locationId, from, to, channel, basis = 'creat
   for (const o of opps) {
     const val = num(o.monetaryValue)
     const u = utmOf(o); const ch = channelOf(u); const cb = chBucket(ch)
+    const sub = cb === 'other' ? subChannelOf(u) : null
     const label = sourceLabel(u, ch); const kind = kindOf(ch, label)
     const pi = idx.get(o.pipelineId); const stg = pi ? pi.byId[o.pipelineStageId] : null
     const name = contactNameOf(o)
@@ -4576,8 +4623,8 @@ export async function buildCcDrill(locationId, from, to, channel, basis = 'creat
       { const rcid = contactIdOf(o); if (rcid && pi && pi.stages) { const pos = stg ? stg.pos : -1; for (const s2 of (isWonNow ? pi.stages : pi.stages.filter((x) => x.pos <= pos))) for (const key of [s2.name, o.pipelineId + '::' + s2.name]) { let m = reachSet.get(key); if (!m) { m = new Set(); reachSet.set(key, m) } m.add(rcid) } } }
       let sm = stageAt.get(o.pipelineId); if (!sm) { sm = new Map(); stageAt.set(o.pipelineId, sm) } sm.set(o.pipelineStageId, (sm.get(o.pipelineStageId) || 0) + 1)
       let smc = stageAtChan.get(o.pipelineId); if (!smc) { smc = new Map(); stageAtChan.set(o.pipelineId, smc) }
-      let cobj = smc.get(o.pipelineStageId); if (!cobj) { cobj = { meta: 0, google: 0, other: 0 }; smc.set(o.pipelineStageId, cobj) }
-      cobj[cb]++
+      let cobj = smc.get(o.pipelineStageId); if (!cobj) { cobj = { meta: 0, google: 0, other: 0, sub: mkSub() }; smc.set(o.pipelineStageId, cobj) }
+      cobj[cb]++; if (cb === 'other') cobj.sub[sub]++
     }
     if (inCohort) leadCount++
     if (isWon) wonCount++; if (isLost) lostCount++
@@ -4597,9 +4644,12 @@ export async function buildCcDrill(locationId, from, to, channel, basis = 'creat
     }
     if (o.pipelineId) {
       let pa = pipeAgg.get(o.pipelineId)
-      if (!pa) { pa = { id: o.pipelineId, name: pipeName[o.pipelineId] || 'Pipeline', leads: 0, won: 0, lost: 0, open: 0, revenue: 0, openValue: 0, cash: 0, cashEntered: 0, paidInFull: 0, daily: mkDaily(), chan: { meta: { leads: 0, won: 0, revenue: 0, cash: 0 }, google: { leads: 0, won: 0, revenue: 0, cash: 0 }, other: { leads: 0, won: 0, revenue: 0, cash: 0 } } }; pipeAgg.set(o.pipelineId, pa) }
-      if (inCohort) { pa.leads++; pa.chan[cb].leads++ }
-      if (isWon) { pa.won++; pa.revenue += val; pa.chan[cb].won++; pa.chan[cb].revenue += val; if (cash != null) { pa.cash += cash; pa.cashEntered++; pa.chan[cb].cash += cash; if (paidInFull) pa.paidInFull++ } }
+      if (!pa) { pa = { id: o.pipelineId, name: pipeName[o.pipelineId] || 'Pipeline', leads: 0, won: 0, lost: 0, open: 0, revenue: 0, openValue: 0, cash: 0, cashEntered: 0, paidInFull: 0, daily: mkDaily(), chan: { meta: { leads: 0, won: 0, revenue: 0, cash: 0 }, google: { leads: 0, won: 0, revenue: 0, cash: 0 }, other: { leads: 0, won: 0, revenue: 0, cash: 0, sub: {} } } }; pipeAgg.set(o.pipelineId, pa) }
+      // The non-paid leads by sub-channel (organic search, referral, direct...)
+      // so the reach hover can break "Organic, referral, direct" down.
+      const subAgg = sub ? (pa.chan.other.sub[sub] || (pa.chan.other.sub[sub] = { leads: 0, won: 0 })) : null
+      if (inCohort) { pa.leads++; pa.chan[cb].leads++; if (subAgg) subAgg.leads++ }
+      if (isWon) { pa.won++; pa.revenue += val; pa.chan[cb].won++; pa.chan[cb].revenue += val; if (subAgg) subAgg.won++; if (cash != null) { pa.cash += cash; pa.cashEntered++; pa.chan[cb].cash += cash; if (paidInFull) pa.paidInFull++ } }
       else if (isLost) pa.lost++
       else if (isOpen) { pa.open++; pa.openValue += val }
     }
@@ -4707,7 +4757,7 @@ export async function buildCcDrill(locationId, from, to, channel, basis = 'creat
   // funnel can compute cumulative reach via reachedByStage().
   const pipelinesFunnel = pipelines.map((p) => {
     const pi = idx.get(p.id); const sm = stageAt.get(p.id) || new Map(); const smc = stageAtChan.get(p.id) || new Map()
-    const stages = (pi ? pi.stages : []).map((s) => { const cc = smc.get(s.id) || { meta: 0, google: 0, other: 0 }; return { id: s.id, name: s.name, pos: s.pos, count: sm.get(s.id) || 0, meta: cc.meta, google: cc.google, other: cc.other } })
+    const stages = (pi ? pi.stages : []).map((s) => { const cc = smc.get(s.id) || { meta: 0, google: 0, other: 0, sub: null }; return { id: s.id, name: s.name, pos: s.pos, count: sm.get(s.id) || 0, meta: cc.meta, google: cc.google, other: cc.other, sub: cc.sub || null } })
     return { id: p.id, name: p.name, stages }
   }).filter((p) => p.stages.some((s) => s.count > 0))
   const pipeContribution = [...pipeAgg.values()].map((p) => ({ ...p, revenue: Math.round(p.revenue), openValue: Math.round(p.openValue), cash: Math.round(p.cash), daily: p.daily ? { leads: p.daily.leads, won: p.daily.won, revenue: p.daily.revenue.map(Math.round) } : null, chan: { meta: { ...p.chan.meta, revenue: Math.round(p.chan.meta.revenue), cash: Math.round(p.chan.meta.cash) }, google: { ...p.chan.google, revenue: Math.round(p.chan.google.revenue), cash: Math.round(p.chan.google.cash) }, other: { ...p.chan.other, revenue: Math.round(p.chan.other.revenue), cash: Math.round(p.chan.other.cash) } } })).sort((a, b) => b.leads - a.leads)

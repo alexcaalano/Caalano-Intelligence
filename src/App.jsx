@@ -35,7 +35,7 @@ const lazyView = (load, name) => {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-export const APP_VERSION = '3.622.0'
+export const APP_VERSION = '3.623.0'
 // The business clock. Every server window is cut on the client's local day
 // (Caalano Systems location timezone), so any day the app derives on its own -
 // preset ranges, "today", CSV dates - must use the same clock rather than the
@@ -6697,15 +6697,34 @@ function channelKeyEvents(cc, clientId) {
   const keList = ccKeyEventsOf(cc, clientId)
   if (!keList.length || !pipes.length) return null
   const wonByCh = {}; for (const c of (cc.closeByChannel || [])) wonByCh[c.channel] = c.won || 0
+  for (const p of (cc.pipeContribution || [])) { const sb = (p.chan && p.chan.other && p.chan.other.sub) || {}; for (const k of Object.keys(sb)) wonByCh['sub:' + k] = (wonByCh['sub:' + k] || 0) + (sb[k].won || 0) }
   const rowsFor = (chanKey) => {
-    const cp = pipes.map((p) => ({ ...p, stages: (p.stages || []).map((s) => ({ ...s, count: chanKey === 'all' ? (s.count || 0) : (s[chanKey] || 0) })) }))
+    const cp = pipes.map((p) => ({ ...p, stages: (p.stages || []).map((s) => ({ ...s, count: stageChanCount(s, chanKey) })) }))
     return keyEventRows(keList, reachedByStage(cp), new Map(), stagePosMap(cp), chanKey === 'all' ? undefined : (wonByCh[chanKey] || 0))
   }
   const allRows = rowsFor('all')
   if (!allRows.length) return null
   const labels = allRows.map((r) => ({ label: r.label, kind: r.kind }))
   const countsFor = (chanKey) => { const bl = new Map(rowsFor(chanKey).map((r) => [r.label, r.count])); return labels.map((l) => bl.get(l.label) || 0) }
-  return { labels, meta: countsFor('meta'), google: countsFor('google') }
+  return { labels, meta: countsFor('meta'), google: countsFor('google'), sub: subCountsFor(pipes, (ck) => rowsFor(ck), labels) }
+}
+// The organic sub-channels (organic search, referral, direct...) counted the
+// same way as meta / google: each stage's count replaced by that sub-channel's
+// own, then the key events resolved over it. `rowsFor` takes a stage-count
+// key; here the key is 'sub:<name>', which the remap below understands.
+const SUB_CHANNEL_KEYS = ['organic', 'social', 'referral', 'direct', 'email', 'crm', 'unknown']
+const SUB_CHANNEL_LABELS = { organic: 'Organic search', social: 'Organic social', referral: 'Referral', direct: 'Direct', email: 'Email & SMS', crm: 'Added in CRM / integrations', unknown: 'Not tagged' }
+const stageChanCount = (s, chanKey) => chanKey === 'all' ? (s.count || 0) : chanKey.startsWith('sub:') ? ((s.sub && s.sub[chanKey.slice(4)]) || 0) : (s[chanKey] || 0)
+function subCountsFor(pipes, rowsFor, labels) {
+  const has = pipes.some((p) => (p.stages || []).some((st) => st.sub))
+  if (!has) return null
+  const out = {}
+  for (const k of SUB_CHANNEL_KEYS) {
+    const bl = new Map(rowsFor('sub:' + k).map((r) => [r.label, r.count]))
+    const arr = labels.map((l) => bl.get(l.label) || 0)
+    if (arr.some((v) => v > 0)) out[k] = arr
+  }
+  return out
 }
 
 // Per-pipeline version of channelKeyEvents: one entry per pipeline, each with its
@@ -6720,15 +6739,16 @@ function channelKeyEventsByPipe(cc, clientId) {
   return pipes.map((p) => {
     const pc = contrib.get(p.id)
     const wonByCh = { meta: (pc && pc.chan && pc.chan.meta.won) || 0, google: (pc && pc.chan && pc.chan.google.won) || 0 }
+    { const sb = (pc && pc.chan && pc.chan.other && pc.chan.other.sub) || {}; for (const k of Object.keys(sb)) wonByCh['sub:' + k] = sb[k].won || 0 }
     const kev = keyEventsForPipe(keList, p.id)
     const rowsFor = (chanKey) => {
-      const cp = [{ ...p, stages: (p.stages || []).map((s) => ({ ...s, count: chanKey === 'all' ? (s.count || 0) : (s[chanKey] || 0) })) }]
+      const cp = [{ ...p, stages: (p.stages || []).map((s) => ({ ...s, count: stageChanCount(s, chanKey) })) }]
       return keyEventRows(kev, reachedByStage(cp), new Map(), stagePosMap(cp), chanKey === 'all' ? undefined : (wonByCh[chanKey] || 0))
     }
     const allRows = rowsFor('all')
     const labels = allRows.map((r) => ({ label: r.label, kind: r.kind }))
     const countsFor = (ck) => { const bl = new Map(rowsFor(ck).map((r) => [r.label, r.count])); return labels.map((l) => bl.get(l.label) || 0) }
-    return { pipeId: p.id, name: p.name, labels, meta: countsFor('meta'), google: countsFor('google') }
+    return { pipeId: p.id, name: p.name, labels, meta: countsFor('meta'), google: countsFor('google'), sub: subCountsFor([p], rowsFor, labels) }
   }).filter((x) => x.labels.length)
 }
 
@@ -8228,11 +8248,28 @@ function ExecStory({ lines, loading }) {
 // key-event resolution, the rest as "other". A calendar row can carry more
 // bookings than the stage split knows about, so the split is scaled to the
 // row's count rather than allowed to overflow it. Pure, tested.
-function v2ReachSplit(count, meta, google) {
+function v2ReachSplit(count, meta, google, sub) {
   const c = Math.max(0, count || 0); let m = Math.max(0, meta || 0), g = Math.max(0, google || 0)
-  if (!c) return { meta: 0, google: 0, other: 0 }
+  if (!c) return { meta: 0, google: 0, other: 0, sub: null }
   if (m + g > c) { const f = c / (m + g); m = Math.round(m * f); g = Math.max(0, c - m) }
-  return { meta: m, google: g, other: Math.max(0, c - m - g) }
+  const other = Math.max(0, c - m - g)
+  return { meta: m, google: g, other, sub: v2SubRows(other, sub) }
+}
+// The organic segment's own breakdown for the hover: one row per sub-channel
+// with a count, largest first, only those present. The rows are the CRM's
+// per-sub-channel counts; where a calendar row counts more people than the
+// stages know about, the remainder is shown as "not tagged" rather than the
+// rows being scaled to look precise. Null when the payload has no split yet.
+function v2SubRows(other, sub) {
+  if (!sub || typeof sub !== 'object') return null
+  const rows = SUB_CHANNEL_KEYS.map((k) => ({ key: k, label: SUB_CHANNEL_LABELS[k], value: Math.max(0, sub[k] || 0) })).filter((r) => r.value > 0)
+  let known = rows.reduce((a, r) => a + r.value, 0)
+  if (known > other && known) { const f = other / known; for (const r of rows) r.value = Math.round(r.value * f); known = rows.reduce((a, r) => a + r.value, 0) }
+  const rest = Math.max(0, other - known)
+  const unk = rows.find((r) => r.key === 'unknown')
+  if (rest) { if (unk) unk.value += rest; else rows.push({ key: 'unknown', label: SUB_CHANNEL_LABELS.unknown, value: rest }) }
+  rows.sort((a, b) => (a.key === 'unknown' ? 1 : b.key === 'unknown' ? -1 : b.value - a.value))
+  return rows.filter((r) => r.value > 0)
 }
 // One reach bar: the share of leads as width, split by channel, the previous
 // period as a tick. Hovering shows the split as a small card rather than the
@@ -8268,6 +8305,7 @@ function V2ReachBar({ label, count, split, width, prevAt, leak, detail }) {
         <div className="v2-pop-r"><i className="m" />Meta<b>{fmtNumber(split.meta)}</b><span>{pc(split.meta)}</span></div>
         <div className="v2-pop-r"><i className="g" />Google<b>{fmtNumber(split.google)}</b><span>{pc(split.google)}</span></div>
         <div className="v2-pop-r"><i className="o" />Organic, referral, direct<b>{fmtNumber(split.other)}</b><span>{pc(split.other)}</span></div>
+        {split.sub && split.sub.length ? <div className="v2-pop-sub">{split.sub.map((r) => <div key={r.key} className={`v2-pop-r sub${r.key === 'unknown' ? ' muted' : ''}`}><i className="o sub" style={{ '--w': `${Math.max(6, Math.round((r.value / (split.other || 1)) * 100))}%` }} />{r.label}<b>{fmtNumber(r.value)}</b><span>{split.other ? `${Math.round((r.value / split.other) * 100)}%` : ''}</span></div>)}</div> : null}
         {detail && detail.length ? <div className="v2-pop-d">{detail.map((d, i) => <div key={i} className={`v2-pop-r${d.muted ? ' muted' : ''}${d.head ? ' head' : ''}`}><i className={d.head ? 'none' : 'dot'} />{d.label}<b>{d.value != null ? fmtNumber(d.value) : ''}</b><span>{d.sub || ''}</span></div>)}</div> : null}
         {prevAt != null ? <div className="v2-pop-p">Previous period {Math.round(prevAt * 100)}% of leads</div> : null}
       </div> : null}
@@ -8296,7 +8334,15 @@ function ExecReach({ reach, multi, kef, cc, pcc, clientId, money, spend, chanLab
     const src = multi ? byPipe.get(pid) : single
     if (!src) return null
     const i = src.labels.findIndex((l) => l.label === label)
-    return i < 0 ? null : { meta: src.meta[i] || 0, google: src.google[i] || 0 }
+    if (i < 0) return null
+    const sub = src.sub ? Object.fromEntries(Object.keys(src.sub).map((k) => [k, src.sub[k][i] || 0])) : null
+    return { meta: src.meta[i] || 0, google: src.google[i] || 0, sub }
+  }
+  // The organic sub-channel leads / won summed over the pipelines in scope.
+  const subOf = (pcs, field) => {
+    let any = false; const out = {}
+    for (const p of pcs) { const sb = (p.chan && p.chan.other && p.chan.other.sub) || null; if (!sb) continue; any = true; for (const k of Object.keys(sb)) out[k] = (out[k] || 0) + (sb[k][field] || 0) }
+    return any ? out : null
   }
   // Leads split by the CRM's own attribution (UTM on the opportunity), the
   // same basis every stage row below uses: the pipeline's contribution, or all
@@ -8309,7 +8355,7 @@ function ExecReach({ reach, multi, kef, cc, pcc, clientId, money, spend, chanLab
     if (!pcs.length) return v2ReachSplit(base, (cc && cc.paid && cc.paid.metaLeads) || 0, (cc && cc.paid && cc.paid.googleLeads) || 0)
     const m = pcs.reduce((a, p) => a + ((p.chan && p.chan.meta.leads) || 0), 0)
     const g = pcs.reduce((a, p) => a + ((p.chan && p.chan.google.leads) || 0), 0)
-    return v2ReachSplit(base, m, g)
+    return v2ReachSplit(base, m, g, subOf(pcs, 'leads'))
   }
   const pc = (v) => `${Math.round(v * 100)}%`
   // Spend per pipeline by lead share - the rule Pipeline performance uses - so
@@ -8325,10 +8371,10 @@ function ExecReach({ reach, multi, kef, cc, pcc, clientId, money, spend, chanLab
       const p = contrib.get(g.pid); if (!p) return null
       const pp = pContrib.get(g.pid)
       const sp = spendOf(g.pid)
-      return { count: p.won || 0, base: p.leads || 0, spend: sp, prevRate: pp && pp.leads ? (pp.won || 0) / pp.leads : null, split: v2ReachSplit(p.won || 0, p.chan ? p.chan.meta.won : 0, p.chan ? p.chan.google.won : 0) }
+      return { count: p.won || 0, base: p.leads || 0, spend: sp, prevRate: pp && pp.leads ? (pp.won || 0) / pp.leads : null, split: v2ReachSplit(p.won || 0, p.chan ? p.chan.meta.won : 0, p.chan ? p.chan.google.won : 0, subOf([p], 'won')) }
     }
     const t = (cc && cc.totals) || {}, pt = (pcc && pcc.totals) || null
-    return { count: t.won || 0, base: t.leads || 0, spend: spend || 0, prevRate: pt && pt.leads ? (pt.won || 0) / pt.leads : null, split: v2ReachSplit(t.won || 0, cc && cc.paid ? cc.paid.metaWon : 0, cc && cc.paid ? cc.paid.googleWon : 0) }
+    return { count: t.won || 0, base: t.leads || 0, spend: spend || 0, prevRate: pt && pt.leads ? (pt.won || 0) / pt.leads : null, split: v2ReachSplit(t.won || 0, cc && cc.paid ? cc.paid.metaWon : 0, cc && cc.paid ? cc.paid.googleWon : 0, subOf((cc && cc.pipeContribution) || [], 'won')) }
   }
   const cacOf = (w) => (w && w.count && w.spend ? money(Math.round(w.spend / w.count)) : null)
   return (
@@ -8365,7 +8411,7 @@ function ExecReach({ reach, multi, kef, cc, pcc, clientId, money, spend, chanLab
                 return g.rows.map((r, i) => {
                   const eff = effs[i], prevEff = i === 0 ? g.base : effs[i - 1]
                   const ch = chanOf(g.pid, r.label)
-                  const split = ch ? v2ReachSplit(eff, ch.meta, ch.google) : { meta: 0, google: 0, other: eff }
+                  const split = ch ? v2ReachSplit(eff, ch.meta, ch.google, ch.sub) : { meta: 0, google: 0, other: eff, sub: null }
                   const isBn = r === bn
                   const isCal = r.kind === 'calendar'
                   const byStage = isCal ? Math.max(r.stageReached || 0, eff > (r.fromCal || 0) ? eff : 0) : 0
@@ -8395,7 +8441,7 @@ function ExecReach({ reach, multi, kef, cc, pcc, clientId, money, spend, chanLab
           </div>
         )
       })}</div>}
-      {!table ? <div className="v2-leg"><span><i className="m" />Meta</span><span><i className="g" />Google</span><span><i className="o" />Organic, referral, direct</span><span><i className="pv" />Previous period</span></div> : null}
+      {!table ? <div className="v2-leg"><span><i className="m" />Meta</span><span><i className="g" />Google</span><span><i className="o" />Organic, referral, direct <small>· hover a bar for the split</small></span><span><i className="pv" />Previous period</span></div> : null}
     </div>
   )
 }

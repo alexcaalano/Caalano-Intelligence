@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.642.0 - 2026-09-14 (commit PENDING)
+## v3.642.0 - 2026-09-14 (commit 69199c6)
 
 ### Forms: route a form to a pipeline by one of its answers
 

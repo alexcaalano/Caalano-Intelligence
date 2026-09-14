@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.643.0 - 2026-09-14 (commit PENDING)
+## v3.643.0 - 2026-09-14 (commit 04cb7e3)
 
 ### Trend Report: Total and Average columns
 

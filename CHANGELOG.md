@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.626.0 - 2026-09-14 (commit PENDING)
+## v3.626.0 - 2026-09-14 (commit ca5e4e6)
 
 ### Daily performance on a phone
 

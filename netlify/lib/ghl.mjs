@@ -2821,16 +2821,17 @@ export async function bookedTrends(locationId, from, to) {
 // a won opp reached them all). This is the accurate, UTM-based channel split - the
 // Windsor `opportunity_source` classification is only a fallback when the app isn't
 // connected. Returns one record per opp so the caller can bucket into 56-day windows.
-export async function crmTrends(locationId, from, to) {
+export async function crmTrends(locationId, from, to, opts = {}) {
   const locTok = await locationTokenOrDemo(locationId)
   // Lost reasons come back as ids on the opportunity; the names live on a
   // separate endpoint. Carrying the name through means the movers panel can say
   // "Price 3 -> 18" rather than "Deals lost 9 -> 34", which is the difference
   // between a number and something you can act on.
-  const [opps, idx, reasons] = await Promise.all([
-    allOpportunities(locTok, locationId, from, to),
+  const [opps, idx, reasons, cashField] = await Promise.all([
+    allOpportunities(locTok, locationId, from, to, opts.cap || 1500),
     pipelineStageIndex(locTok, locationId),
     ghlGet(locTok, '/opportunities/lost-reason', { locationId, limit: 200 }).then((j) => j.lostReasons || []).catch(() => []),
+    oppCustomFields(locTok, locationId).then(cashFieldOf).catch(() => null),
   ])
   const reasonName = {}; for (const r of reasons) reasonName[r._id || r.id] = r.name
   const lostReasonOf = (o) => {
@@ -2858,9 +2859,26 @@ export async function crmTrends(locationId, from, to) {
     // maturity of a cohort that has not finished closing yet.
     const statusDate = (isWon || st === 'lost') ? (String(o.lastStatusChangeAt || '').slice(0, 10) || null) : null
     const isLost = st === 'lost'
-    out.push({ date, statusDate, channel: channelOf(utmOf(o)), pipelineId: o.pipelineId || 'none', reached, won: isWon, booked, lost: isLost, lostReason: isLost ? lostReasonOf(o) : null, value: num(o.monetaryValue) })
+    out.push({ date, statusDate, channel: channelOf(utmOf(o)), pipelineId: o.pipelineId || 'none', reached, won: isWon, booked, lost: isLost, lostReason: isLost ? lostReasonOf(o) : null, value: num(o.monetaryValue), cash: isWon && cashField ? oppCashValue(o, cashField) : null })
   }
   return out
+}
+// Deals won with a close date inside [from, to], whenever their lead arrived,
+// from the won snapshot (every won deal of the last WON_SNAP_DAYS, walked in
+// the background) - so a year of closed-basis wins is one read, not a page
+// through every opportunity ever created. `truncated` says the snapshot hit
+// its cap and the oldest wins may be missing.
+export async function wonClosedRows(locationId, from, to) {
+  const locTok = await locationTokenOrDemo(locationId)
+  const [snap, cashField] = await Promise.all([wonSnapshot(locTok, locationId), oppCustomFields(locTok, locationId).then(cashFieldOf).catch(() => null)])
+  const out = []
+  for (const o of (snap && snap.opps) || []) {
+    if (String(o.status || '').toLowerCase() !== 'won') continue
+    const statusDate = String(o.lastStatusChangeAt || '').slice(0, 10)
+    if (!statusDate || (from && statusDate < from) || (to && statusDate > to)) continue
+    out.push({ statusDate, channel: channelOf(utmOf(o)), pipelineId: o.pipelineId || 'none', value: num(o.monetaryValue), cash: cashField ? oppCashValue(o, cashField) : null })
+  }
+  return { rows: out, truncated: !!(snap && snap.truncated) }
 }
 
 // Deals WON during [from,to] by status-change date, regardless of when the lead

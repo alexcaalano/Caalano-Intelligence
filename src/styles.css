@@ -1094,7 +1094,10 @@ th.c360-col { color: #12b886; font-size: 10.5px; }
 .tr-dl.up { color: var(--pos); } .tr-dl.down { color: var(--neg); } .tr-dl.neu { color: var(--muted); } .tr-dl.flat { color: var(--faint); font-weight: 600; }
 .tr-th-sub { font-weight: 500; text-transform: none; letter-spacing: 0; color: var(--faint); margin-left: 6px; }
 .tr-src-chev { display: inline-block; width: 12px; color: var(--faint); font-size: 10px; }
-.tr-dl-tbl th:not(.lft), .tr-dl-tbl td:not(.lft) { padding-left: 14px; }
+.tr-dl-tbl th:not(.lft), .tr-dl-tbl td:not(.lft) { padding-left: 14px; text-align: center; }
+.tr-dl-tbl .tr-cell { justify-content: center; }
+.tr-brk-tbl th:not(.lft), .tr-brk-tbl td:not(.lft), .tr-camp th:not(.lft), .tr-camp td:not(.lft) { text-align: center; }
+.tr-brk-tbl .tr-cell, .tr-camp .tr-cell { justify-content: center; }
 .tr-src-tot .tr-cell .tr-dl { font-weight: 700; }
 .tr-card { padding: 18px 18px 20px; scroll-margin-top: 16px; }
 /* Brief highlight when a mover scrolls you to its client tile */
@@ -5776,3 +5779,24 @@ body.hub-tv-on { overflow: hidden; }
   .pv-tbl th, .pv-tbl td { padding: 6px 8px; font-size: 11.5px; }
   .pv-row-tools { opacity: 1; }
 }
+
+/* Trend Report: source tags and the key-event picker matrix */
+.pv-src { margin-left: 7px; vertical-align: 1px; }
+.pv-pick-row .pv-src { margin-left: 6px; }
+.pv-ke { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); }
+.pv-ke-tbl { width: auto; font-size: 12.5px; }
+.pv-ke-tbl th, .pv-ke-tbl td { padding: 6px 10px; text-align: center; white-space: nowrap; }
+.pv-ke-tbl th.lft, .pv-ke-tbl td.lft { text-align: left; font-weight: 650; }
+.pv-ke-tbl th .pv-src { margin-left: 0; }
+.pv-ke-box { display: inline-flex; align-items: center; gap: 3px; padding: 3px 7px; border-radius: 6px; border: 1px solid var(--border); background: var(--panel-2); color: var(--muted); font-size: 11px; font-weight: 800; cursor: pointer; margin: 0 2px; }
+.pv-ke-box input { margin: 0; width: 12px; height: 12px; }
+.pv-ke-box.on { color: var(--brand); border-color: color-mix(in srgb, var(--brand) 45%, transparent); background: color-mix(in srgb, var(--brand) 10%, transparent); }
+.pv-bar .refresh-btn { margin-left: 0; }
+.pv-loading .cap { margin: 8px 0 0; }
+.pv-prog { height: 6px; border-radius: 999px; background: var(--panel-2); border: 1px solid var(--border); overflow: hidden; margin-top: 10px; }
+.pv-prog span { display: block; height: 100%; background: var(--brand); transition: width .3s; }
+.pv-chip em { font-style: normal; font-size: 10px; color: var(--c, var(--brand)); margin-left: 2px; }
+.pv-chip.lbl { border-color: var(--c, var(--brand)); }
+.pv-chip-x { margin-left: 4px; padding: 0 3px; border-radius: 4px; color: var(--faint); }
+.pv-chip-x:hover { color: var(--neg); background: color-mix(in srgb, var(--neg) 12%, transparent); }
+.pv-hint { color: var(--faint); font-weight: 500; }

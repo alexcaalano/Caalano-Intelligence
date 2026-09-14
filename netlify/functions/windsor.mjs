@@ -10,7 +10,7 @@
 // debug call; they live in one place (FIELDS) so they are trivial to correct.
 
 import { createHash } from 'node:crypto'
-import { buildAttribution, sampleAttribution, sampleChannels, buildCrm, auditLocation, isConnected, bookedTrends, crmTrends, attributionCoverage, wonInPeriod, monthlyDeals, oppTimestampFields, socialDMs, tagAudit, locationTimezone, locationProfile, periodBounds, listCalendars, listPipelines, ghlOpportunityRows, ghlPipelineRows, ghlUserRows, listLocations, checkLocationAccess, ghlRepRows, customClients, deletedClients, sampleForms, buildForms, buildSpeedToLead, speedLeadList, speedScanChunk, finalizeSpeed, buildAppointmentInsights, buildUserPerformance, buildUserPerformanceCombos, buildCreativePerf, buildUpdateExtra, fetchOppNotes, deriveBusinessHours, isQualified, buildCohorts as ghlCohorts, buildCcDrill, buildKeyPeople, buildStageTiming, buildEnquiryTimes, buildUserCalls, buildCallCohort, buildClinic, warmOppSnapshot, resilientFetch, startRequestBudget, buildCalPerf, clinicConfig, dayListBetween, buildActions, applyAction, ghlUserIdForEmail, buildRepCard, contactNotes, contactConversation, buildSalesHub } from '../lib/ghl.mjs'
+import { buildAttribution, sampleAttribution, sampleChannels, buildCrm, auditLocation, isConnected, bookedTrends, crmTrends, wonClosedRows, attributionCoverage, wonInPeriod, monthlyDeals, oppTimestampFields, socialDMs, tagAudit, locationTimezone, locationProfile, periodBounds, listCalendars, listPipelines, ghlOpportunityRows, ghlPipelineRows, ghlUserRows, listLocations, checkLocationAccess, ghlRepRows, customClients, deletedClients, sampleForms, buildForms, buildSpeedToLead, speedLeadList, speedScanChunk, finalizeSpeed, buildAppointmentInsights, buildUserPerformance, buildUserPerformanceCombos, buildCreativePerf, buildUpdateExtra, fetchOppNotes, deriveBusinessHours, isQualified, buildCohorts as ghlCohorts, buildCcDrill, buildKeyPeople, buildStageTiming, buildEnquiryTimes, buildUserCalls, buildCallCohort, buildClinic, warmOppSnapshot, resilientFetch, startRequestBudget, buildCalPerf, clinicConfig, dayListBetween, buildActions, applyAction, ghlUserIdForEmail, buildRepCard, contactNotes, contactConversation, buildSalesHub } from '../lib/ghl.mjs'
 import { DEMO_CLIENT_ID, demoWindsor } from '../lib/demo.mjs'
 import { BUILTIN_CLIENTS } from '../lib/clients.mjs'
 import { mirror } from '../lib/mirror.mjs'
@@ -4210,6 +4210,14 @@ export default async (req) => {
     if (!cc || !canView(client)) return json({ error: `unknown client ${client}` }, 404)
     if (!from || !to) return json({ error: 'from/to required' }, 400)
     const by = ['day', 'week', 'month', 'quarter', 'year'].includes(url.searchParams.get('by')) ? url.searchParams.get('by') : 'month'
+    // `src` lets the app build a long range in parts that each fit the function's
+    // time budget and the CRM's paging cap: `closed` is one call for the whole
+    // range (the bucket skeleton, plus wins by close date from the won snapshot);
+    // `crm` and `ads` are read a calendar month at a time. Every base figure is a
+    // sum, so the parts add up per bucket - and a month is always small enough to
+    // page in full, which is what lets a client's whole history come back rather
+    // than the newest 1,500 opportunities.
+    const src = ['ads', 'crm', 'closed'].includes(url.searchParams.get('src')) ? url.searchParams.get('src') : 'all'
     const d0 = new Date(from + 'T00:00:00Z'), d1 = new Date(to + 'T00:00:00Z')
     if (!isFinite(d0) || !isFinite(d1) || d1 < d0) return json({ error: 'bad range' }, 400)
     const spanDays = Math.round((d1 - d0) / 86400000) + 1
@@ -4233,7 +4241,7 @@ export default async (req) => {
       return k
     }
     const buckets = new Map()
-    const mkB = () => ({ meta: { spend: 0, impressions: 0, clicks: 0, linkClicks: 0, results: 0 }, google: { cost: 0, impressions: 0, clicks: 0, conversions: 0 }, crm: null })
+    const mkB = () => ({ meta: { spend: 0, impressions: 0, clicks: 0, linkClicks: 0, results: 0, reach: 0 }, google: { cost: 0, impressions: 0, clicks: 0, conversions: 0 }, crm: null })
     for (let d = new Date(d0); d <= d1; d.setUTCDate(d.getUTCDate() + 1)) {
       const ds = isod(d), k = keyOf(ds)
       let b = buckets.get(k)
@@ -4244,7 +4252,7 @@ export default async (req) => {
     let metaOk = true, googleOk = true, crmOk = true, crmErr = null
     let resultType = 'Leads'
     const jobs = []
-    if (cc.meta) jobs.push((async () => {
+    if (cc.meta && src !== 'crm') jobs.push((async () => {
       const fallback = await readMetaPrimary(client).catch(() => null)
       const fields = fallback && fallback.fields ? fallback.fields : null
       const std = fields ? fields.filter((f) => !isCustomConvField(f)) : []
@@ -4257,6 +4265,14 @@ export default async (req) => {
           const b = bucketOf(String(r.date || '').slice(0, 10)); if (!b) continue
           b.meta.spend += num(r.spend); b.meta.impressions += num(r.impressions); b.meta.clicks += num(r.clicks); b.meta.linkClicks += num(r.inline_link_clicks)
           b.meta.results += std.length ? std.reduce((s, f) => s + num(r[f]), 0) : fbLeads(r)
+        }
+        // Reach does not add up across days, so it is read once for the range with
+        // no date dimension and kept on the bucket the whole range sits in (a
+        // month, when the app reads a month at a time). Frequency = impressions ÷ reach.
+        if (buckets.size === 1) {
+          const b = [...buckets.values()][0]
+          const rr = await windsorFetch('facebook', ['account_id', 'reach'], from, to, null, key, { accounts: cc.meta }).catch(() => [])
+          for (const r of rr) if (!r.account_id || acctEq(r.account_id, cc.meta)) b.meta.reach += num(r.reach)
         }
         // A custom-conversion primary is served by Windsor's Custom Conversions
         // table, by day, so it is added the same way Daily Performance adds it.
@@ -4272,7 +4288,7 @@ export default async (req) => {
         }
       } catch { metaOk = false }
     })())
-    if (cc.google) jobs.push((async () => {
+    if (cc.google && src !== 'crm') jobs.push((async () => {
       try {
         const rows = await windsorFetch('google_ads', ['account_id', 'date', 'spend', 'impressions', 'clicks', 'conversions'], from, to, null, key, { accounts: cc.google })
         for (const r of rows) {
@@ -4283,40 +4299,52 @@ export default async (req) => {
       } catch { googleOk = false }
     })())
     let stagePos = {}
-    if (cc.ghl) jobs.push((async () => {
+    let closedTruncated = false
+    if (cc.ghl && src !== 'ads') jobs.push((async () => {
       try {
         const ghlOK = await isConnected().catch(() => false)
         if (!ghlOK && client !== DEMO_CLIENT_ID) { crmOk = false; crmErr = 'CRM not connected'; return }
-        const CH = ['all', 'meta', 'google', 'other']
         const bun = () => ({ all: 0, meta: 0, google: 0, other: 0 })
-        const mkC = () => ({ leads: bun(), booked: bun(), won: bun(), lost: bun(), revenue: bun(), wonClosed: bun(), revenueClosed: bun(), reach: { all: {}, meta: {}, google: {}, other: {} } })
+        const mkC = () => ({ leads: bun(), booked: bun(), won: bun(), lost: bun(), revenue: bun(), cash: bun(), wonClosed: bun(), revenueClosed: bun(), cashClosed: bun(), reach: { all: {}, meta: {}, google: {}, other: {} } })
         for (const b of buckets.values()) b.crm = mkC()
-        // Closed-basis wins need leads created well before the range.
-        const back = new Date(d0); back.setUTCDate(back.getUTCDate() - 400)
-        const [rows, pipes] = await Promise.all([crmTrends(cc.ghl, isod(back), to), ghlPipelineRows(cc.ghl).catch(() => [])])
-        const idx = stageIndex(pipes)
-        for (const [pid, pinfo] of idx) for (const sid in pinfo.byId) { const st = pinfo.byId[sid]; if (stagePos[st.name] == null || st.pos < stagePos[st.name]) stagePos[st.name] = st.pos; stagePos[pid + '::' + st.name] = st.pos }
-        for (const r of rows) {
-          const ch = r.channel === 'meta' ? 'meta' : r.channel === 'google' ? 'google' : 'other'
-          const val = num(r.value)
-          const bc = r.statusDate ? bucketOf(r.statusDate) : null
-          if (bc && r.won) { bc.crm.wonClosed.all++; bc.crm.wonClosed[ch]++; bc.crm.revenueClosed.all += val; bc.crm.revenueClosed[ch] += val }
-          const b = bucketOf(r.date); if (!b) continue
-          const c = b.crm
-          c.leads.all++; c.leads[ch]++
-          if (r.booked) { c.booked.all++; c.booked[ch]++ }
-          if (r.won) { c.won.all++; c.won[ch]++; c.revenue.all += val; c.revenue[ch] += val }
-          if (r.lost) { c.lost.all++; c.lost[ch]++ }
-          for (const nm of r.reached) for (const k of [nm, r.pipelineId + '::' + nm]) { c.reach.all[k] = (c.reach.all[k] || 0) + 1; c.reach[ch][k] = (c.reach[ch][k] || 0) + 1 }
-        }
-        void CH
+        const chOf = (r) => (r.channel === 'meta' ? 'meta' : r.channel === 'google' ? 'google' : 'other')
+        const jobs2 = [ghlPipelineRows(cc.ghl).catch(() => []).then((pipes) => {
+          const idx = stageIndex(pipes)
+          for (const [pid, pinfo] of idx) for (const sid in pinfo.byId) { const st = pinfo.byId[sid]; if (stagePos[st.name] == null || st.pos < stagePos[st.name]) stagePos[st.name] = st.pos; stagePos[pid + '::' + st.name] = st.pos }
+        })]
+        // Created basis: every opportunity whose lead arrived in the range. A
+        // month-sized range pages in full; the whole-range `all` build keeps the
+        // reader's cap and is what the demo and tests use.
+        if (src !== 'closed') jobs2.push(crmTrends(cc.ghl, from, to, { cap: spanDays <= 62 ? 6000 : 1500 }).then((rows) => {
+          for (const r of rows) {
+            const ch = chOf(r), val = num(r.value)
+            const b = bucketOf(r.date); if (!b) continue
+            const c = b.crm
+            c.leads.all++; c.leads[ch]++
+            if (r.booked) { c.booked.all++; c.booked[ch]++ }
+            if (r.won) { c.won.all++; c.won[ch]++; c.revenue.all += val; c.revenue[ch] += val; if (r.cash != null) { c.cash.all += r.cash; c.cash[ch] += r.cash } }
+            if (r.lost) { c.lost.all++; c.lost[ch]++ }
+            for (const nm of r.reached) for (const k of [nm, r.pipelineId + '::' + nm]) { c.reach.all[k] = (c.reach.all[k] || 0) + 1; c.reach[ch][k] = (c.reach[ch][k] || 0) + 1 }
+          }
+        }))
+        // Closed basis: deals won on a day in the range, from the won snapshot.
+        if (src !== 'crm') jobs2.push(wonClosedRows(cc.ghl, from, to).then(({ rows, truncated }) => {
+          closedTruncated = truncated
+          for (const r of rows) {
+            const bc = bucketOf(r.statusDate); if (!bc) continue
+            const ch = chOf(r), val = num(r.value), c = bc.crm
+            c.wonClosed.all++; c.wonClosed[ch]++; c.revenueClosed.all += val; c.revenueClosed[ch] += val
+            if (r.cash != null) { c.cashClosed.all += r.cash; c.cashClosed[ch] += r.cash }
+          }
+        }))
+        await Promise.all(jobs2)
       } catch (e) { crmOk = false; crmErr = String((e && e.message) || e).slice(0, 140) }
     })())
     await Promise.all(jobs)
     const r2 = (v) => Math.round(v * 100) / 100
     const out = [...buckets.values()].map((b) => ({ ...b, meta: { ...b.meta, spend: r2(b.meta.spend) }, google: { ...b.google, cost: r2(b.google.cost), conversions: r2(b.google.conversions) } }))
     const complete = metaOk && googleOk && crmOk
-    return json({ scope: 'pivot', client, by, from, to, hasMeta: !!cc.meta, hasGoogle: !!cc.google, hasCrm: !!cc.ghl, resultType, metaOk, googleOk, crmOk, crmErr, stagePos, buckets: out }, 200, !filtered && complete)
+    return json({ scope: 'pivot', client, by, from, to, src, hasMeta: !!cc.meta, hasGoogle: !!cc.google, hasCrm: !!cc.ghl, resultType, metaOk, googleOk, crmOk, crmErr, closedTruncated, stagePos, buckets: out }, 200, !filtered && complete)
   }
 
   if (url.searchParams.get('scope') === 'trends') {

@@ -36,7 +36,7 @@ const lazyView = (load, name) => {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-export const APP_VERSION = '3.640.0'
+export const APP_VERSION = '3.641.0'
 // The business clock. Every server window is cut on the client's local day
 // (Caalano Systems location timezone), so any day the app derives on its own -
 // preset ranges, "today", CSV dates - must use the same clock rather than the
@@ -1449,32 +1449,42 @@ const GOOGLE_DRILL_COLS = [
 ]
 // Meta: campaigns → ad sets, each reporting the event it optimises for (the
 // result type), so what a row calls a result is what Ads Manager calls it.
-function MetaDrill({ clientId, days, money }) {
+// Which campaigns a pipeline tile owns: the saved campaign -> pipeline link,
+// else the name match - the same rule the tile's own spend was routed by. The
+// Unlinked tile owns every campaign that resolves to nothing.
+const campInPipe = (clientId, pipeId, pipes) => (name) => {
+  if (!pipeId || pipeId === 'all') return true
+  const pid = pipeOfCampaign(clientId, name, pipes)
+  return pipeId === '_unlinked' ? pid == null : pid === pipeId
+}
+function MetaDrill({ clientId, days, money, pipeId, pipes }) {
   const st = useChannelFeed(clientId, 'meta', days)
   if (st.status === 'loading') return <div className="tr-src-drillbox"><Spinner label="Loading Meta campaigns…" /></div>
   if (st.status === 'err' || !st.data) return <div className="tr-src-drillbox"><span className="cap">Couldn’t load Meta campaigns.</span></div>
-  const camps = (st.data.campaigns || []).filter((c) => (c.spend || 0) > 0 || (c.results || 0) > 0)
+  const keep = campInPipe(clientId, pipeId, pipes)
+  const camps = (st.data.campaigns || []).filter((c) => keep(c.name) && ((c.spend || 0) > 0 || (c.results || 0) > 0))
   const adsets = st.data.adsets || []
   const kidsOf = (c) => adsets.filter((a) => a.campaign === c.name && ((a.spend || 0) > 0 || (a.results || 0) > 0))
   return (
     <div className="tr-src-drillbox">
-      <DrillCampaigns rows={camps} kidsOf={kidsOf} cols={META_DRILL_COLS} kidLabel="ad sets" money={money} empty={`No Meta campaign spend in the last ${days} days.`} />
+      <DrillCampaigns rows={camps} kidsOf={kidsOf} cols={META_DRILL_COLS} kidLabel="ad sets" money={money} empty={pipeId && pipeId !== 'all' ? `No Meta campaign linked to this pipeline spent in the last ${days} days.` : `No Meta campaign spend in the last ${days} days.`} />
       <p className="tr-brk-note cap">Results are each row's own optimisation event (the result type), as Ads Manager reports them. Click a campaign for its ad sets. Account-wide over the last {days} days to yesterday.</p>
     </div>
   )
 }
 // Google: campaigns → ad groups, then the conversion actions that make up the
 // Conversions number underneath.
-function GoogleDrill({ clientId, days, money, showActions = true }) {
+function GoogleDrill({ clientId, days, money, showActions = true, pipeId, pipes }) {
   const st = useChannelFeed(clientId, 'google', days)
   if (st.status === 'loading') return <div className="tr-src-drillbox"><Spinner label="Loading Google campaigns…" /></div>
   if (st.status === 'err' || !st.data) return <div className="tr-src-drillbox"><span className="cap">Couldn’t load Google campaigns.</span></div>
-  const camps = st.data.campaigns || []
+  const keep = campInPipe(clientId, pipeId, pipes)
+  const camps = (st.data.campaigns || []).filter((c) => keep(c.name))
   const groups = st.data.adGroups || []
   const kidsOf = (c) => groups.filter((g) => g.campaign === c.name)
   const acts = {}
-  for (const r of (st.data.conversionActions || [])) { const e = acts[r.name] = acts[r.name] || { name: r.name, category: r.category, conv: 0, all: 0, pconv: null, pall: null }; e.conv += r.conversions || 0; e.all += r.allConversions || 0 }
-  for (const r of (st.data.conversionActionsPrev || [])) { const e = acts[r.name]; if (!e) continue; e.pconv = (e.pconv || 0) + (r.conversions || 0); e.pall = (e.pall || 0) + (r.allConversions || 0) }
+  for (const r of (st.data.conversionActions || []).filter((r) => keep(r.campaign))) { const e = acts[r.name] = acts[r.name] || { name: r.name, category: r.category, conv: 0, all: 0, pconv: null, pall: null }; e.conv += r.conversions || 0; e.all += r.allConversions || 0 }
+  for (const r of (st.data.conversionActionsPrev || []).filter((r) => keep(r.campaign))) { const e = acts[r.name]; if (!e) continue; e.pconv = (e.pconv || 0) + (r.conversions || 0); e.pall = (e.pall || 0) + (r.allConversions || 0) }
   const rows = Object.values(acts).sort((a, b) => (b.conv - a.conv) || (b.all - a.all))
   const totConv = rows.reduce((s, r) => s + r.conv, 0)
   const totAll = rows.reduce((s, r) => s + r.all, 0)
@@ -1484,7 +1494,7 @@ function GoogleDrill({ clientId, days, money, showActions = true }) {
   const r1 = (v) => fmtNumber(Math.round(v * 10) / 10)
   return (
     <div className="tr-src-drillbox">
-      <DrillCampaigns rows={camps} kidsOf={kidsOf} cols={GOOGLE_DRILL_COLS} kidLabel="ad groups" money={money} empty={`No Google campaign spend in the last ${days} days.`} />
+      <DrillCampaigns rows={camps} kidsOf={kidsOf} cols={GOOGLE_DRILL_COLS} kidLabel="ad groups" money={money} empty={pipeId && pipeId !== 'all' ? `No Google campaign linked to this pipeline spent in the last ${days} days.` : `No Google campaign spend in the last ${days} days.`} />
       {showActions ? <>
         <div className="tr-brk-lab tr-camp-sub">Conversion actions</div>
         {rows.length ? <table className="mini-tbl tr-brk-tbl">
@@ -1499,11 +1509,12 @@ function GoogleDrill({ clientId, days, money, showActions = true }) {
     </div>
   )
 }
-function TrendSource({ w28, row, money, clientId, pipeId }) {
+function TrendSource({ w28, row, money, clientId, pipeId, pipes }) {
   const [open, setOpen] = useState(null) // 'google' | 'meta' | null
   if (!w28) return null
-  // Account-wide drills only: the channel feeds are not pipeline-scoped.
-  const canDrill = !!(clientId && (!pipeId || pipeId === 'all'))
+  // The channel feeds are account-wide; a pipeline tile's drill keeps the
+  // campaigns linked to that pipeline (the same rule its spend was routed by).
+  const canDrill = !!clientId
   const rows = []
   if (row.hasGoogle) rows.push({ key: 'google', src: 'Google', cost: w28.google.spend, leads: w28.google.results, costP: w28.google.spendPrev, leadsP: w28.google.resultsPrev, drill: canDrill, more: 'campaigns · ad groups · conversion actions' })
   if (row.hasMeta) rows.push({ key: 'meta', src: 'Meta', cost: w28.meta.spend, leads: w28.meta.results, costP: w28.meta.spendPrev, leadsP: w28.meta.resultsPrev, drill: canDrill, more: 'campaigns · ad sets' })
@@ -1519,14 +1530,14 @@ function TrendSource({ w28, row, money, clientId, pipeId }) {
             <tr key={r.key} className={r.drill ? `tr-src-click${open === r.key ? ' on' : ''}` : ''} onClick={r.drill ? () => setOpen((o) => (o === r.key ? null : r.key)) : undefined} title={r.drill ? `Click to see the ${r.more} behind this number` : undefined}>
               <td className="lft">{r.drill ? <span className="tr-src-chev">{open === r.key ? '▾' : '▸'}</span> : null}{r.src}</td>
               <td><DCell v={money(r.cost)} cur={r.cost} prev={r.costP} good="neu" /></td>
-              <td><DCell v={fmtNumber(Math.round(r.leads))} cur={r.leads} prev={r.leadsP} /></td>
+              <td><DCell v={fmtNumber(Math.round(r.leads * 10) / 10)} cur={r.leads} prev={r.leadsP} /></td>
               <td><DCell v={cpl(r.cost, r.leads)} cur={cplN(r.cost, r.leads)} prev={cplN(r.costP, r.leadsP)} good="down" /></td>
             </tr>
           ))}
-            <tr className="tr-src-tot"><td className="lft">Grand total</td><td>{money(tot.cost)}</td><td>{fmtNumber(Math.round(tot.leads))}</td><td>{cpl(tot.cost, tot.leads)}</td></tr></tbody>
+            <tr className="tr-src-tot"><td className="lft">Grand total</td><td>{money(tot.cost)}</td><td>{fmtNumber(Math.round(tot.leads * 10) / 10)}</td><td>{cpl(tot.cost, tot.leads)}</td></tr></tbody>
         </table>
       </div>
-      {openRow ? <div className="tr-brk-convdrill tr-src-under"><div className="tr-brk-lab">{openRow.src} · {openRow.more} · last 28 days</div>{openRow.key === 'google' ? <GoogleDrill clientId={clientId} days={28} money={money} /> : <MetaDrill clientId={clientId} days={28} money={money} />}</div> : null}
+      {openRow ? <div className="tr-brk-convdrill tr-src-under"><div className="tr-brk-lab">{openRow.src} · {openRow.more} · last 28 days</div>{openRow.key === 'google' ? <GoogleDrill clientId={clientId} days={28} money={money} pipeId={pipeId} pipes={pipes} /> : <MetaDrill clientId={clientId} days={28} money={money} pipeId={pipeId} pipes={pipes} />}</div> : null}
     </>
   )
 }
@@ -1537,7 +1548,7 @@ function TrendSource({ w28, row, money, clientId, pipeId }) {
 // Key-event source segments for the breakdown: which lead source each key event was
 // attributed to. Paid = Meta+Google, Non-paid = organic/referral/direct, All = total CRM.
 const KE_SRC = [['all', 'All CRM'], ['paid', 'Paid'], ['nonpaid', 'Non-paid'], ['meta', 'Meta'], ['google', 'Google']]
-function WindowBreakdown({ w, clientId, pipeId, stagePos, currency }) {
+function WindowBreakdown({ w, clientId, pipeId, stagePos, currency, pipes }) {
   const money = (v) => fmtCurrency(v, currency)
   const b = w.blended || {}
   const totalSpend = b.spend || 0
@@ -1581,7 +1592,7 @@ function WindowBreakdown({ w, clientId, pipeId, stagePos, currency }) {
   // Google conversion-actions drill for THIS window (account tiles only - the actions
   // feed is account-wide, so it wouldn't match a pipeline tile's scoped Google results).
   const [chanOpen, setChanOpen] = useState(null) // 'Meta' | 'Google' | null
-  const canChanDrill = !!(clientId && (!pipeId || pipeId === 'all'))
+  const canChanDrill = !!clientId
   const drillMore = { Meta: 'campaigns · ad sets', Google: 'campaigns · ad groups · conversion actions' }
   return (
     <div className="tr-brk">
@@ -1599,7 +1610,7 @@ function WindowBreakdown({ w, clientId, pipeId, stagePos, currency }) {
                     <tr className={can ? `tr-src-click${on ? ' on' : ''}` : ''} onClick={can ? () => setChanOpen((o) => (o === r.label ? null : r.label)) : undefined} title={can ? `Click for the ${drillMore[r.label]} in this window` : undefined}>
                       <td className="lft">{can ? <span className="tr-src-chev">{on ? '▾' : '▸'}</span> : null}{r.label}</td>
                       <td><DCell v={money(r.spend)} cur={r.spend} prev={r.spendP} good="neu" /></td>
-                      <td><DCell v={fmtNumber(r.results)} cur={r.results} prev={r.resultsP} /></td>
+                      <td><DCell v={fmtNumber(Math.round(r.results * 10) / 10)} cur={r.results} prev={r.resultsP} /></td>
                       <td><DCell v={cpr(r.spend, r.results)} cur={cprN(r.spend, r.results)} prev={cprN(r.spendP, r.resultsP)} good="down" /></td>
                     </tr>
                   </React.Fragment>
@@ -1639,13 +1650,13 @@ function WindowBreakdown({ w, clientId, pipeId, stagePos, currency }) {
       {/* Google conversion-actions drill renders full-width BELOW the two-column grid -
           its wide table won't fit a half-width cell (it used to overlap the key-events
           column). */}
-      {canChanDrill && chanOpen === 'Meta' ? <div className="tr-brk-convdrill"><div className="tr-brk-lab">Meta campaigns and ad sets · last {w.n} days</div><MetaDrill clientId={clientId} days={w.n} money={money} /></div> : null}
-      {canChanDrill && chanOpen === 'Google' ? <div className="tr-brk-convdrill"><div className="tr-brk-lab">Google campaigns, ad groups and conversion actions · last {w.n} days</div><GoogleDrill clientId={clientId} days={w.n} money={money} /></div> : null}
+      {canChanDrill && chanOpen === 'Meta' ? <div className="tr-brk-convdrill"><div className="tr-brk-lab">Meta campaigns and ad sets · last {w.n} days</div><MetaDrill clientId={clientId} days={w.n} money={money} pipeId={pipeId} pipes={pipes} /></div> : null}
+      {canChanDrill && chanOpen === 'Google' ? <div className="tr-brk-convdrill"><div className="tr-brk-lab">Google campaigns, ad groups and conversion actions · last {w.n} days</div><GoogleDrill clientId={clientId} days={w.n} money={money} pipeId={pipeId} pipes={pipes} /></div> : null}
       {drill ? <KeyPeopleModal event={{ ...drill, pipeline: drill.pipeline || (pipeId && pipeId !== 'all' ? pipeId : null) }} clientId={clientId} channel={src} range={winRange} currency={currency} onClose={() => setDrill(null)} /> : null}
     </div>
   )
 }
-function ClientTrend({ row, tr, currency, onPick, domId, clientId, pipeId, stagePos }) {
+function ClientTrend({ row, tr, currency, onPick, domId, clientId, pipeId, stagePos, pipes }) {
   // Channels this client runs, plus a blended view when they run both. Shown as
   // a toggle so Google-only (and Meta-only) clients can still filter to theirs.
   const chanOpts = [['blended', 'Blended']]
@@ -1665,14 +1676,14 @@ function ClientTrend({ row, tr, currency, onPick, domId, clientId, pipeId, stage
         {chanOpts.length > 1 && <div className="chan-toggle sm">{chanOpts.map(([k, l]) => (<button key={k} className={chan === k ? 'on' : ''} onClick={() => setChan(k)}>{l}</button>))}</div>}
       </div>
       <div className="tr-grid">{wins.map((w) => { const d = w[eff]; const cpl = d.results ? d.spend / d.results : null; const cplP = d.resultsPrev ? d.spendPrev / d.resultsPrev : null; const br = d.results ? (d.booked / d.results) * 100 : null; const brP = d.resultsPrev ? ((d.bookedPrev || 0) / d.resultsPrev) * 100 : null; return <TrendCell key={w.n} label={WLABEL[w.n]} value={cpl != null ? money(cpl) : '-'} cur={cpl} prev={cplP} sub={tr.hasCrm && br != null ? <>{br.toFixed(1)}% booked <Dlt cur={br} prev={brP} pts dp={1} /></> : null} title={`${resultLabel} · vs the previous equal period · % = booking rate (booked ÷ leads) · click for the full breakdown`} onClick={() => setOpenWin(openWin === w.n ? null : w.n)} active={openWin === w.n} /> })}</div>
-      {openW ? <WindowBreakdown w={openW} clientId={clientId} pipeId={pipeId} stagePos={stagePos} currency={currency} /> : null}
+      {openW ? <WindowBreakdown w={openW} clientId={clientId} pipeId={pipeId} stagePos={stagePos} currency={currency} pipes={pipes} /> : null}
       {(() => {
         const mv = clientMovers(row, tr, 7).filter((m) => Math.abs(m.cplPct) >= 8)
         if (!mv.length) return null
         return <div className="tr-movers"><span className="tr-movers-lab">What moved · 7d</span>{mv.map((m, i) => <div className="tr-mover" key={i}><span className={`mov-badge sm ${m.cplPct > 0 ? 'bad' : 'good'}`}>{m.cplPct > 0 ? '▲' : '▼'} {Math.abs(m.cplPct).toFixed(0)}%</span> <b>{m.channel}</b> cost / {m.chan === 'google' ? 'conv.' : 'lead'} {money(m.cplP)} → {money(m.cpl)}: {moverReason(m)}</div>)}</div>
       })()}
       <TrendGraph daily={tr.daily} eff={eff} currency={currency} hasMeta={row.hasMeta} hasGoogle={row.hasGoogle} />
-      <TrendSource w28={wins.find((w) => w.n === 28)} row={row} money={money} clientId={clientId} pipeId={pipeId} />
+      <TrendSource w28={wins.find((w) => w.n === 28)} row={row} money={money} clientId={clientId} pipeId={pipeId} pipes={pipes} />
     </div>
   )
 }
@@ -2177,7 +2188,7 @@ function AgencyMovers({ rows, currency, nonce, onPick }) {
       <span className="cap">last {win} days vs the prior {win} · deals counted on the day they {basis === 'closed' ? 'closed' : 'came in as a lead'} · ranked by how much moved, not just the percentage · click one for the funnel behind it<span className="mov-swipe"> · swipe for more →</span></span>
     </div>
   )
-  if (tr.status === 'loading') return <div className="card mov-panel">{head}<Spinner label="Loading movers…" /></div>
+  if (tr.status === 'loading') return <div className="card mov-panel">{head}<Spinner big label="Loading movers…" /></div>
   if (tr.status === 'err' || !clients) return <div className="card mov-panel">{head}<p className="cap" style={{ margin: 0 }}>Couldn&rsquo;t load the trends feed movers are built from - try Refresh.</p></div>
   return (
     <div className="card mov-panel">
@@ -2227,7 +2238,7 @@ function AgencyMovers({ rows, currency, nonce, onPick }) {
 }
 function TrendsTab({ rows, currency, nonce, onPick }) {
   const tr = useTrends(nonce)
-  if (tr.status === 'loading') return <div className="tr-list"><TrendsLoadBar status={tr.status} partial={tr.partial} retry={tr.retry} of={tr.of} /><div className="card"><Spinner label={tr.retry ? `Meta results were slow - retrying (${tr.retry}/${tr.of})…` : 'Loading performance trends…'} /></div></div>
+  if (tr.status === 'loading') return <div className="tr-list"><div className="card"><Spinner big label={tr.retry ? `Meta results were slow - retrying (${tr.retry}/${tr.of})…` : 'Loading performance trends…'} /></div></div>
   if (tr.status === 'err' || !tr.data || !tr.data.clients) return <div className="tr-list"><TrendsLoadBar status={tr.status} partial={tr.partial} retry={tr.retry} of={tr.of} /><div className="card"><p className="cap" style={{ margin: 0 }}>Couldn't load trends - try Refresh.</p></div></div>
   const clients = tr.data.clients
   // Respect the per-client Daily Performance visibility toggles (Settings → Daily
@@ -2249,7 +2260,7 @@ function TrendsTab({ rows, currency, nonce, onPick }) {
           const vis = pipeOrder(t.pipelines).filter((p) => p.unlinked || dpPipeOn(r.id, p.id))
           return vis.map((p) => {
             const prow = { ...r, name: `${r.name} · ${p.name}`, hasMeta: !!p.hasMeta, hasGoogle: !!p.hasGoogle }
-            return <ClientTrend key={`${r.id}:${p.id}`} row={prow} tr={p} currency={currency} onPick={onPick} domId={trCardId(r.id, p.id)} clientId={r.id} pipeId={p.unlinked ? '_unlinked' : p.id} stagePos={t.stagePos} />
+            return <ClientTrend key={`${r.id}:${p.id}`} row={prow} tr={p} currency={currency} onPick={onPick} domId={trCardId(r.id, p.id)} clientId={r.id} pipeId={p.unlinked ? '_unlinked' : p.id} stagePos={t.stagePos} pipes={t.pipelines.filter((x) => !x.unlinked).map((x) => ({ id: x.id, name: x.name }))} />
           })
         }
         return [<ClientTrend key={r.id} row={r} tr={t} currency={currency} onPick={onPick} domId={trCardId(r.id)} clientId={r.id} pipeId="all" stagePos={t.stagePos} />]
@@ -17752,7 +17763,7 @@ export function TermsRegister() {
         <div className="set-head-a">
           <button className="btn-ghost sm" onClick={openPreview}>👁 Preview signing screen</button>
           <button className="btn-ghost sm" onClick={load}>Refresh</button>
-          <button className="btn-ghost sm" onClick={exportCsv} disabled={!st.rows.length}>⭳ CSV</button>
+          <button className="btn-ghost sm" onClick={exportCsv} disabled={!st.rows.length}>↓ CSV</button>
         </div>
       </div>
       {st.status === 'loading' ? <Spinner label="Loading the register…" />
@@ -18076,18 +18087,18 @@ const ClientUpdatePage = lazyView(() => import('./views/creative.jsx'), 'ClientU
 // ---- Monthly Report: src/views/monthly-report.jsx, loaded on first open ----
 const ClientReports = lazyView(() => import('./views/monthly-report.jsx'), 'ClientReports')
 const MonthlyReport = lazyView(() => import('./views/monthly-report.jsx'), 'MonthlyReport')
-// ---- Pivot report: src/views/pivot.jsx, loaded on first open ----
+// ---- Trend Report: src/views/pivot.jsx, loaded on first open ----
 const PivotReport = lazyView(() => import('./views/pivot.jsx'), 'PivotReport')
-// Reporting: the Monthly Report decks and the Pivot report, as tabs. The tab
-// rides in the URL (?s=pivot) so a shared link opens on the right one.
+// Reporting: the Monthly Report decks and the Trend Report, as tabs. The tab
+// rides in the URL (?s=trend; the older ?s=pivot still opens it).
 function ReportingPage({ clients, currency, authUser }) {
-  const [tab, setTabRaw] = useState(() => (readNavUrl().s === 'pivot' ? 'pivot' : 'monthly'))
-  const setTab = (t) => { setTabRaw(t); writeNavUrl({ s: t === 'pivot' ? 'pivot' : null, pp: null, pf: null, pt: null, pb: null, pm: null, pch: null, pd: null }, true) }
+  const [tab, setTabRaw] = useState(() => (['trend', 'pivot'].includes(readNavUrl().s) ? 'pivot' : 'monthly'))
+  const setTab = (t) => { setTabRaw(t); writeNavUrl({ s: t === 'pivot' ? 'trend' : null, pp: null, pf: null, pt: null, pb: null, pm: null, pch: null, pd: null }, true) }
   return (
     <>
       <div className="subtabs set-subtabs">
         <button className={tab === 'monthly' ? 'active' : ''} onClick={() => setTab('monthly')}>Monthly Report</button>
-        <button className={tab === 'pivot' ? 'active' : ''} onClick={() => setTab('pivot')}>Pivot report</button>
+        <button className={tab === 'pivot' ? 'active' : ''} onClick={() => setTab('pivot')}>Trend Report</button>
       </div>
       {tab === 'pivot' ? <PivotReport clients={clients} currency={currency} authUser={authUser} /> : <MonthlyReport clients={clients} currency={currency} authUser={authUser} />}
     </>
@@ -19182,9 +19193,9 @@ function Dashboard({ authUser, authEnabled, onLogout, realUser, onViewAs }) {
           {authUser && <div className="side-user"><span className="side-user-av">{(authUser.name || authUser.email || '?').trim().charAt(0).toUpperCase()}</span><div className="side-user-txt"><b>{authUser.name || authUser.email}</b><span>{roleLabelOf(authUser)}</span></div><button className="side-user-out" onClick={onLogout} title="Sign out">Sign out</button></div>}
           {/* Two deliberate lines rather than one that wraps mid-timestamp - the
               sidebar is too narrow to hold version, date and commit on one row. */}
-          {/* The deploy time is the owner's: everyone else sees the version and commit. */}
-          <div className="foot-build" title={`Caalano360 v${APP_VERSION}${__COMMIT_REF__ ? ` · commit ${__COMMIT_REF__}` : ''}${authUser && authUser.role === 'superadmin' ? ` · Build ${__BUILD_TIME__}` : ''} · see CHANGELOG.md`}>
-            <span className="fb-ver"><b>v{APP_VERSION}</b>{__COMMIT_REF__ ? <em>{__COMMIT_REF__}</em> : null}</span>
+          {/* The commit and deploy time are the owner's: everyone else sees the version. */}
+          <div className="foot-build" title={authUser && authUser.role === 'superadmin' ? `Caalano360 v${APP_VERSION}${__COMMIT_REF__ ? ` · commit ${__COMMIT_REF__}` : ''} · Build ${__BUILD_TIME__} · see CHANGELOG.md` : `Caalano360 v${APP_VERSION}`}>
+            <span className="fb-ver"><b>v{APP_VERSION}</b>{__COMMIT_REF__ && authUser && authUser.role === 'superadmin' ? <em>{__COMMIT_REF__}</em> : null}</span>
             {authUser && authUser.role === 'superadmin' ? <span className="fb-when">deployed {fmtBuildTime(__BUILD_TIME__)}</span> : null}
           </div>
           {/* Standing notice. People forget what they signed on day one, so the
@@ -19212,13 +19223,16 @@ function Dashboard({ authUser, authEnabled, onLogout, realUser, onViewAs }) {
         <div className="head">
           <div>
             <h2>{curView === 'overview' ? 'Agency Overview' : curView === 'trends' ? 'Daily Performance' : curView === 'weekly' ? 'Weekly Traffic Light' : curView === 'forecast' ? 'Funnel Forecaster' : curView === 'cockpit' ? 'Creative Cockpit' : curView === 'curator' ? 'Creative Curator' : curView === 'insights' ? 'Meta Insights' : curView === 'update' ? 'Client Update' : curView === 'monthly' ? 'Reporting' : curView === 'social' ? 'Organic Social Media' : curView === 'reports' ? 'Monthly Reports' : curView === 'settings' ? 'Settings' : isViewer ? 'Your report' : 'Clients'}</h2>
-            <p>{curView === 'overview' ? 'Blended paid performance across all clients, live for the selected range.' : curView === 'trends' ? 'Rolling 3 / 7 / 14 / 21 / 28-day performance per client, each vs the prior equal window.' : curView === 'weekly' ? 'One client at a time, reported Monday-Sunday by ISO week - spend pacing, leads, appointments and wins vs KPI.' : curView === 'forecast' ? 'What a month of spend should turn into, stage by stage - from each client\u2019s own last 90 days, or a scenario you build.' : curView === 'cockpit' ? 'Every creative for a client, with performance, categorisation and AI strategy.' : curView === 'curator' ? 'Strategise new creatives to make: pick Format, Style, CTA, Audience and Angle for instant or AI concept ideas, and save the best to a board.' : curView === 'insights' ? 'Everything Meta-derived in one place - delivery health, creative fatigue and more, across every active Meta client.' : curView === 'update' ? 'Generate a client-ready account update (WhatsApp + email) for the selected range.' : curView === 'monthly' ? 'Monthly Report decks, and the Pivot report: any metric, any period, by day, week, month, quarter or year.' : curView === 'social' ? 'Organic Instagram + Facebook Page performance per client - followers, reach, engagement, best posts and audience, for the selected range.' : curView === 'reports' ? 'Your published monthly reports - frozen snapshots you can read on screen or download as a PDF.' : curView === 'settings' ? (isViewer ? 'Your account.' : 'Clients, key events, KPI targets and campaign links - saved to the server and shared across your team.') : isViewer ? 'Your live reporting for the selected range.' : 'Open any client for their Overall, CRM, Meta and Google workspace.'}</p>
+            <p>{curView === 'overview' ? 'Blended paid performance across all clients, live for the selected range.' : curView === 'trends' ? 'Rolling 3 / 7 / 14 / 21 / 28-day performance per client, each vs the prior equal window.' : curView === 'weekly' ? 'One client at a time, reported Monday-Sunday by ISO week - spend pacing, leads, appointments and wins vs KPI.' : curView === 'forecast' ? 'What a month of spend should turn into, stage by stage - from each client\u2019s own last 90 days, or a scenario you build.' : curView === 'cockpit' ? 'Every creative for a client, with performance, categorisation and AI strategy.' : curView === 'curator' ? 'Strategise new creatives to make: pick Format, Style, CTA, Audience and Angle for instant or AI concept ideas, and save the best to a board.' : curView === 'insights' ? 'Everything Meta-derived in one place - delivery health, creative fatigue and more, across every active Meta client.' : curView === 'update' ? 'Generate a client-ready account update (WhatsApp + email) for the selected range.' : curView === 'monthly' ? 'Monthly Report decks, and the Trend Report: any metric, any period, by day, week, month, quarter or year.' : curView === 'social' ? 'Organic Instagram + Facebook Page performance per client - followers, reach, engagement, best posts and audience, for the selected range.' : curView === 'reports' ? 'Your published monthly reports - frozen snapshots you can read on screen or download as a PDF.' : curView === 'settings' ? (isViewer ? 'Your account.' : 'Clients, key events, KPI targets and campaign links - saved to the server and shared across your team.') : isViewer ? 'Your live reporting for the selected range.' : 'Open any client for their Overall, CRM, Meta and Google workspace.'}</p>
           </div>
           <div className="spacer" />
           {curView !== 'settings' && curView !== 'monthly' && curView !== 'reports' && curView !== 'trends' && <DateRange range={range} onChange={setRange} busy={agency.status === 'loading'} />}
           {(curView === 'overview' || curView === 'weekly' || (curView === 'clients' && curPicked)) && <WonBasisToggle value={wonBasis} onChange={setWonBasis} />}
           {curView !== 'monthly' && curView !== 'reports' && <button className="refresh-btn" title="Refresh live data" onClick={() => setRefreshKey((k) => k + 1)}><span className={agency.status === 'loading' ? 'spin sm' : ''} style={{ display: 'inline-block' }}>⟳</span> Refresh</button>}
         </div>
+        {/* A client who follows an agency-only link (Reporting, Daily Performance…)
+            lands on their own dashboard; say so rather than looking like the link broke. */}
+        {isViewer && AGENCY_VIEWS.includes(view) ? <div className="card pv-note"><p className="cap" style={{ margin: 0 }}>That link is for agency users, so here is your dashboard instead.</p></div> : null}
         <ErrorBoundary key={curView + '|' + (curPicked && curPicked.id || '')} onHome={() => go(isViewer ? 'clients' : 'overview')}>
           {curView === 'overview' && !isViewer && <Overview rows={rows} currency={data.currency} periodLabel={rangeLabel(range)} live={agency.status === 'ok'} alerts={agency.data && agency.data.alerts} range={range} nonce={refreshKey} wonBasis={wonBasis} onPick={openClient} />}
           {curView === 'trends' && !isViewer && <TrendsTab rows={rows} currency={data.currency} nonce={refreshKey} onPick={openClient} />}

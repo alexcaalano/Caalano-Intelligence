@@ -32,6 +32,19 @@ const d = await call(`scope=pivot&client=norwest-mdc&from=2026-09-01&to=2026-09-
 assert.equal(d.status, 200); assert.equal(d.body.buckets.length, 7)
 const q = await call(`scope=pivot&client=norwest-mdc&from=2026-01-01&to=2026-09-14&by=quarter`)
 assert.deepEqual(q.body.buckets.map((b) => b.key), ['2026-Q1', '2026-Q2', '2026-Q3'])
+// Parts: the CRM alone, and the ad platforms alone for one month; their buckets add up.
+const crm = await call(`scope=pivot&client=norwest-mdc&from=${iso(from)}&to=${iso(now)}&by=month&src=crm`)
+assert.equal(crm.status, 200); assert.ok(crm.body.buckets.every((b) => b.meta.spend === 0 && b.google.cost === 0), 'crm part carries no ad figures'); assert.ok(crm.body.buckets.some((b) => b.crm && b.crm.leads.all > 0))
+const ads = await call(`scope=pivot&client=norwest-mdc&from=${lead.from}&to=${lead.to}&by=month&src=ads`)
+assert.equal(ads.status, 200); assert.equal(ads.body.buckets.length, 1); assert.ok(ads.body.buckets[0].crm == null, 'ads part carries no CRM'); assert.equal(ads.body.buckets[0].meta.spend, lead.meta.spend, 'one month of Meta alone equals that month in the full build')
+// The skeleton call: every bucket, stage positions, wins by close date, no created-basis figures.
+const sk = await call(`scope=pivot&client=norwest-mdc&from=${iso(from)}&to=${iso(now)}&by=month&src=closed`)
+assert.equal(sk.status, 200); assert.equal(sk.body.buckets.length, 6); assert.ok(sk.body.buckets.every((b) => b.crm && b.crm.leads.all === 0), 'closed part carries no created-basis leads')
+assert.ok(sk.body.buckets.some((b) => b.crm.wonClosed.all > 0), 'wins by close date come from the won snapshot')
+assert.ok(Object.keys(sk.body.stagePos).length > 0)
+// Cash collected rides along when the CRM records it (the demo does).
+assert.ok(m.body.buckets.some((b) => b.crm && b.crm.cash.all > 0), 'cash collected by created date')
+assert.ok(sk.body.buckets.some((b) => b.crm.cashClosed.all > 0), 'cash collected by closed date')
 // Guard rails.
 assert.equal((await call('scope=pivot&client=norwest-mdc&from=2020-01-01&to=2026-09-14&by=month')).status, 400, 'three years max')
 assert.equal((await call('scope=pivot&client=nope&from=2026-01-01&to=2026-02-01&by=month')).status, 404)

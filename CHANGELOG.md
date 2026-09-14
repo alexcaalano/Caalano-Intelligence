@@ -18,6 +18,40 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.641.0 - 2026-09-14 (commit PENDING)
+
+### Trend Report: key events by source, client defaults, long ranges that finish
+
+**Pivot report is now the Trend Report.** Old links with `?s=pivot` still open it.
+
+**Key events by lead source** - every key event is offered for All, Paid, Meta, Google and Non-paid, each as a count and (except non-paid) a cost per event on that source's own spend, so "Booked showroom visit · Meta" sits beside "Booked showroom visit · Google" and "· Paid". The picker shows them as a grid: one row per event, one column per source, # for the count and $ for the cost. Leads by source read the same way. Source tags use the platform's colours: Meta blue, Google green, Paid purple, Non-paid amber, All grey.
+
+**Wording** - "by lead date" reads "by created date"; "by close date" reads "by closed date".
+
+**Client defaults and saved views** - **Save as client default** keeps the current metrics, chart, period and grouping as what that client opens on; Use default and ✕ put it back or remove it. Saved views are now layouts: loading one keeps the client you have open and applies its set-up, so one layout serves every client.
+
+**Long ranges** - a twelve-month build no longer fails with "Meta did not answer". The report is read in parts: the CRM in one call, the ad platforms a calendar month at a time, three in flight, each part retried up to five times with a growing pause and kept once it lands, so the next open is quick. A progress bar shows which month is loading and any retry. Only a part that fails all five times is reported, by month.
+
+**Sections stay together** - a newly ticked metric joins the end of its own section (Meta, Google, Blended, CRM, Key events) instead of the bottom of the table; the handles still move it anywhere.
+
+**Periods** in order, shortest to longest: last 30 / 60 / 90 days, this quarter, last quarter, calendar year to date, financial year to date (from 1 July), last 12 months, last 12 full months, last calendar year, last financial year, last 2 years, custom.
+
+**The whole history, not the newest 1,500** - the CRM was read in one call with the reader's cap, so a busy account only showed its most recent months (Nexia stopped at June). The CRM is now read a calendar month at a time, so every month pages in full, and wins by closed date come from the won-deal snapshot in one read. The report is held back until every part is in - a table with zeros for a month that had not answered would read as real figures - and each part is retried up to twelve times with a growing pause. A part that lands is cached, so a refresh only fetches what is missing.
+
+**More metrics** - Meta: conversion rate (results ÷ link clicks), link CTR and CTR on all clicks, clicks (all), reach and frequency (impressions ÷ reach; month grouping, since reach does not add up across days). CRM: cash collected by created date and by closed date, offered when the client records it.
+
+**Graph labels** - click a series chip above the graph to show its value on every point; only the ✕ removes a series. Labels ride in the link and in saved layouts.
+
+**Dates** read dd/mm/yyyy. Daily Performance and the Trend Report load behind the Caalano360 loading screen.
+
+**Daily Performance pipeline tiles drill down** - on a client split into pipeline tiles, Meta and Google now open their campaigns, ad sets and ad groups (and Google's conversion actions) for the campaigns linked to that pipeline - the same saved link or name match the tile's own spend is routed by - both in a window tile and in the 28-day Channel table. The Unlinked tile opens the campaigns that resolve to no pipeline.
+
+**Daily Performance columns are centred** - the figure, its move and the Grand total sit under the column heading. Google results show a tenth when Google reports a fraction (it does), so a cost per result can be checked against the figures beside it: $5,700 ÷ 141.4 is $40.29, not $40.43.
+
+**Small fixes** - the Refresh button matches the rest of the app; the CSV button's arrow renders everywhere; Copy link explains on hover that the link is for agency users (a client who follows an agency-only link now lands on their own dashboard with a one-line note, rather than a blank page); the sidebar shows only the version to everyone except the Super Admin, who also sees the commit and deploy time.
+
+---
+
 ## v3.640.0 - 2026-09-14 (commit 7b0a919)
 
 ### Reporting: the Pivot report

@@ -1468,8 +1468,8 @@ export function LogsPanel({ clients }) {
             <div className="set-head-a">
               <div className="chan-toggle">{[1, 3, 7, 14].map((d) => <button key={d} className={days === d ? 'on' : ''} onClick={() => setDays(d)}>{d}d</button>)}</div>
               <button className="set-add" onClick={loadLog}>↻ Refresh</button>
-              <button className="set-add" onClick={() => exportLog('json')} disabled={!canExport} title={canExport ? 'Download the log as JSON (best for sharing / diagnosis)' : 'Nothing to export yet'}>⭳ Export JSON</button>
-              <button className="set-add" onClick={() => exportLog('csv')} disabled={!canExport} title={canExport ? 'Download the log as CSV (opens in Excel/Sheets)' : 'Nothing to export yet'}>⭳ CSV</button>
+              <button className="set-add" onClick={() => exportLog('json')} disabled={!canExport} title={canExport ? 'Download the log as JSON (best for sharing / diagnosis)' : 'Nothing to export yet'}>↓ Export JSON</button>
+              <button className="set-add" onClick={() => exportLog('csv')} disabled={!canExport} title={canExport ? 'Download the log as CSV (opens in Excel/Sheets)' : 'Nothing to export yet'}>↓ CSV</button>
             </div>
           </div>
           {log.status === 'loading' && <Spinner label="Loading reliability log…" />}

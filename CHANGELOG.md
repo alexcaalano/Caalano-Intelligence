@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.625.0 - 2026-09-14 (commit PENDING)
+## v3.625.0 - 2026-09-14 (commit f337201)
 
 ### Daily performance: two-level drill on each channel
 

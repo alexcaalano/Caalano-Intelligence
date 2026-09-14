@@ -18,6 +18,22 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.639.0 - 2026-09-14 (commit PENDING)
+
+### Agency Overview leaderboard fix; Daily Performance on a phone; less text
+
+**Fix: leaderboard columns** - v3.638.0 broke the Client leaderboard on Agency Overview: Spend, Results and Cost / result collapsed into one cell and every column after them shifted left. The Daily Performance delta cell had been given the same name as the leaderboard's own cell and swept it up in a rename. Restored.
+
+**Daily Performance fits a phone without sideways scrolling** - the window tables, key events, the 28-day Source table and every drill (campaigns, ad sets, ad groups, conversion actions) share the width they have: each figure's move stacks under it, names wrap, and the channel column takes a third. The sideways-scroll containers are gone at phone width.
+
+**Less text on the card** - the "Cost / Result · vs previous equal period · % = booking rate · click a tile" line and the "28-day daily · Spend, Results & Cost per Result · …" line are gone (the tile's hover still explains it); the orange key-event marker sits in the graph legend as "Key events (booked)". The Source table's first column reads Channel with rows Meta and Google (was Facebook Ads / Google Ads), and the "last 28 days vs previous 28" note hides on a phone. The booking rate under each tile now carries its move in points against the previous window.
+
+**Controls** - the fade at the trailing edge of the Meta / Google toggle, the Biggest movers window selector and the tab strips on a phone is gone. The date range picker is hidden on Daily Performance, where the rolling windows ignore it.
+
+**Deploy time is owner-only** - the sidebar shows the version and commit to everyone; the "deployed …" time only to the Super Admin.
+
+---
+
 ## v3.638.0 - 2026-09-14 (commit 5efdf0b)
 
 ### Daily Performance: every figure shows its move against the period before

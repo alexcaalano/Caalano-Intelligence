@@ -1084,6 +1084,9 @@ th.c360-col { color: #12b886; font-size: 10.5px; }
 
 /* Client performance trends */
 .tr-list { display: flex; flex-direction: column; gap: 16px; max-width: 1180px; }
+/* Column headers with a short form for phones. */
+.th-short { display: none; }
+@media (max-width: 640px) { .th-short { display: inline; } }
 /* Every figure in the Daily Performance tables carries its move against the
    equal period before: green good, red not, grey for spend, faint when flat. */
 .tr-cell { display: inline-flex; align-items: baseline; justify-content: flex-end; gap: 7px; white-space: nowrap; }
@@ -5078,9 +5081,6 @@ td.lm-ker-n { font-weight: 600; color: var(--muted); font-variant-numeric: tabul
   .logs-verrow { grid-template-columns: 1fr; gap: 6px; }
   .logs-vermeta { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 8px; }
 
-  /* Strips that scroll sideways say so: a fade at the trailing edge. */
-  .subtabs, .set-sections, .chan-toggle { -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 26px), transparent); mask-image: linear-gradient(to right, #000 calc(100% - 26px), transparent); }
-  .subtabs.at-end, .set-sections.at-end, .chan-toggle.at-end { -webkit-mask-image: none; mask-image: none; }
 
   /* Touch targets: 40px-plus for anything tapped often. */
   .nav button, .settings-btn { padding: 12px 12px; min-height: 44px; }
@@ -5636,11 +5636,22 @@ body.hub-tv-on { overflow: hidden; }
   .tr-card { padding: 14px 13px 16px; }
   .tr-brk { padding: 10px 11px; }
   .tr-brk-grid { grid-template-columns: 1fr; }
-  .tr-brk-grid > div { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 }
 @media (max-width: 640px) {
-  .tr-src th, .tr-src td, .tr-brk-tbl th, .tr-brk-tbl td { padding: 6px 6px; font-size: 11.5px; }
-  .tr-src th.lft, .tr-src td.lft { padding-left: 4px; }
+  /* Nothing scrolls sideways: every table shares the width it has. Values
+     stack their move underneath, names wrap, the first column takes a third. */
+  .tr-src-wrap, .tr-brk-grid > div, .tr-src-drillbox { overflow-x: visible; }
+  .tr-src-drillbox > table { min-width: 0; }
+  .tr-src, .tr-brk-tbl, .tr-camp { width: 100%; table-layout: fixed; }
+  .tr-src th, .tr-src td, .tr-brk-tbl th, .tr-brk-tbl td { padding: 6px 4px; font-size: 11px; white-space: normal; overflow-wrap: anywhere; }
+  .tr-src th.lft, .tr-src td.lft, .tr-brk-tbl th.lft, .tr-brk-tbl td.lft { padding-left: 2px; }
+  .tr-src th.lft:first-child, .tr-brk-tbl th.lft:first-child { width: 33%; }
+  .tr-brk-tbl thead th, .tr-src thead th { font-size: 9px; line-height: 1.2; }
+  .tr-cell { flex-direction: column; align-items: flex-end; gap: 1px; white-space: normal; line-height: 1.15; }
+  .tr-dl { font-size: 9.5px; }
+  .tr-th-sub { display: none; }
+  .th-long { display: none; }
+  .tr-camp-caption .tr-cell { flex-direction: row; gap: 4px; }
   .tr-src-more { display: block; margin: 2px 0 0; }
   /* Drill tables: secondary columns drop into a caption under the name. */
   .tr-camp .col-sub { display: none; }

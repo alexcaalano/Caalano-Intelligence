@@ -36,7 +36,7 @@ const lazyView = (load, name) => {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-export const APP_VERSION = '3.638.0'
+export const APP_VERSION = '3.639.0'
 // The business clock. Every server window is cut on the client's local day
 // (Caalano Systems location timezone), so any day the app derives on its own -
 // preset ranges, "today", CSV dates - must use the same clock rather than the
@@ -1222,9 +1222,9 @@ function AgencyComparison({ rows, currency, range, onPick, ov }) {
           return (
             <tr key={r.id} onClick={() => onPick(r.c)}>
               <td className="ov-name"><div className="client-cell"><Avatar id={r.id} name={r.name} i={r.i} /><div><span className="ov-name-row">{r.name}<MaturityBadge clientId={r.id} crmAvg={ok ? o.cur.avgCloseDays : null} sample={ok ? o.cur.avgCloseSample : 0} range={range} size="sm" /></span><small>{r.industry}</small></div></div></td>
-              <DCell v={paidView ? <SpendPop r={r} currency={currency}>{money(spendF)}</SpendPop> : '-'} cur={paidView ? spendF : null} prev={paidView ? pSpendF : null} neutral dash={!paidView} />
-              <DCell v={paidView ? <ResultsPop r={r} currency={currency}>{fmtNumber(resF)}</ResultsPop> : '-'} cur={paidView ? resF : null} prev={paidView ? pResF : null} dash={!paidView} />
-              <DCell v={paidView && resF ? <ResultsPop r={r} currency={currency}>{money(spendF / resF)}</ResultsPop> : '-'} cur={paidView && resF ? spendF / resF : null} prev={paidView && pResF ? pSpendF / pResF : null} gd dash={!paidView || !resF} />
+              <Cell v={paidView ? <SpendPop r={r} currency={currency}>{money(spendF)}</SpendPop> : '-'} cur={paidView ? spendF : null} prev={paidView ? pSpendF : null} neutral dash={!paidView} />
+              <Cell v={paidView ? <ResultsPop r={r} currency={currency}>{fmtNumber(resF)}</ResultsPop> : '-'} cur={paidView ? resF : null} prev={paidView ? pResF : null} dash={!paidView} />
+              <Cell v={paidView && resF ? <ResultsPop r={r} currency={currency}>{money(spendF / resF)}</ResultsPop> : '-'} cur={paidView && resF ? spendF / resF : null} prev={paidView && pResF ? pSpendF / pResF : null} gd dash={!paidView || !resF} />
               {errored
                 ? <td className="ov-td"><span className="ov-rowerr" title={`Couldn't load CRM data: ${o?.err || 'failed'}`}>⚠</span></td>
                 : <Cell {...g(cur ? fmtNumber(cur.opps) : '-', cur?.opps, prev?.opps)} />}
@@ -1292,12 +1292,12 @@ function TrendsLoadBar({ status, partial, retry, of }) {
 }
 const WLABEL = { 3: 'Last 3 days', 7: 'Last 7 days', 14: 'Last 14 days', 21: 'Last 21 days', 28: 'Last 28 days' }
 // One scorecard: value + % change vs the prior equal window (lower cost = good).
-function TrendCell({ label, value, cur, prev, goodWhenDown = true, sub, onClick, active }) {
+function TrendCell({ label, value, cur, prev, goodWhenDown = true, sub, onClick, active, title }) {
   const has = prev != null && prev > 0 && cur != null
   const pct = has ? ((cur - prev) / prev) * 100 : null
   const dir = pct == null ? 'flat' : (goodWhenDown ? (pct <= 0 ? 'up' : 'down') : (pct >= 0 ? 'up' : 'down'))
   return (
-    <div className={`tr-sc${onClick ? ' tr-sc-click' : ''}${active ? ' tr-sc-active' : ''}`} onClick={onClick} title={onClick ? 'Click for the spend, results & key-event breakdown' : undefined}>
+    <div className={`tr-sc${onClick ? ' tr-sc-click' : ''}${active ? ' tr-sc-active' : ''}`} onClick={onClick} title={title || (onClick ? 'Click for the spend, results & key-event breakdown' : undefined)}>
       <div className="tr-lab">{label}{onClick ? <span className="tr-sc-more">{active ? '▾' : '▸'}</span> : null}</div>
       <div className="tr-val">{value}</div>
       {pct != null ? <div className={`tr-d ${dir}`}>{pct > 0 ? '▲' : pct < 0 ? '▼' : '■'} {Math.abs(pct).toFixed(0)}%</div> : <div className="tr-d flat">no prior</div>}
@@ -1355,7 +1355,7 @@ function TrendGraph({ daily, eff, currency, hasMeta, hasGoogle }) {
           ] : <Bar yAxisId="l" dataKey="results" name="Results" fill="#4f7cff" radius={[3, 3, 0, 0]} maxBarSize={16} />}
           <Line yAxisId="r" dataKey="spend" name="Spend" stroke="#12b886" strokeWidth={2} dot={false} />
           <Line yAxisId="r" dataKey="cpl" name="Cost / result" stroke="#ec4899" strokeWidth={2} dot={false} />
-          {anyKe ? <Line yAxisId="l" dataKey="booked" name="Booked (key event)" stroke="transparent" legendType="circle" isAnimationActive={false} activeDot={false} dot={keDot} /> : null}
+          {anyKe ? <Line yAxisId="l" dataKey="booked" name="Key events (booked)" stroke="#f59e0b" strokeWidth={0} legendType="circle" isAnimationActive={false} activeDot={false} dot={keDot} /> : null}
         </ComposedChart>
       </ResponsiveContainer>
     </div>
@@ -1382,7 +1382,7 @@ function useChannelFeed(clientId, channel, days) {
 // spend (more or less spend is neither). Rates compare in points. Nothing is
 // shown when there is no prior figure to compare to.
 export function Dlt({ cur, prev, good = 'up', pts = false, dp = 0 }) {
-  if (cur == null || prev == null) return null
+  if (cur == null || prev == null || (!cur && !prev)) return null
   let d, txt
   if (pts) { d = cur - prev; if (!isFinite(d)) return null; txt = `${Math.abs(d).toFixed(dp)} pts` }
   else { if (!(prev > 0)) return null; d = ((cur - prev) / prev) * 100; if (!isFinite(d)) return null; txt = `${Math.abs(d).toFixed(dp)}%` }
@@ -1443,7 +1443,7 @@ const GOOGLE_DRILL_COLS = [
   { key: 'name', label: 'Campaign', left: true },
   { key: 'cost', label: 'Spend', render: (r, money) => <DCell v={money(r.cost || 0)} cur={r.cost || 0} prev={prevOf(r, 'cost')} good="neu" /> },
   { key: 'clicks', label: 'Clicks', sub: true, render: (r) => <DCell v={drillNum(r.clicks)} cur={r.clicks || 0} prev={prevOf(r, 'clicks')} /> },
-  { key: 'conv', label: 'Conversions', render: (r) => <DCell v={drillNum(r.conversions, 1)} cur={r.conversions || 0} prev={prevOf(r, 'conversions')} /> },
+  { key: 'conv', label: <><span className="th-long">Conversions</span><span className="th-short">Conv.</span></>, render: (r) => <DCell v={drillNum(r.conversions, 1)} cur={r.conversions || 0} prev={prevOf(r, 'conversions')} /> },
   { key: 'cvr', label: 'Conv. rate', sub: true, render: (r) => <DCell v={gRate(r) != null ? fmtPct(gRate(r), 1) : '-'} cur={gRate(r)} prev={gRate(r.prev)} pts dp={1} /> },
   { key: 'cpc', label: 'Cost / conv.', render: (r, money) => <DCell v={gCpc(r) != null ? money(gCpc(r)) : '-'} cur={gCpc(r)} prev={gCpc(r.prev)} good="down" /> },
 ]
@@ -1505,8 +1505,8 @@ function TrendSource({ w28, row, money, clientId, pipeId }) {
   // Account-wide drills only: the channel feeds are not pipeline-scoped.
   const canDrill = !!(clientId && (!pipeId || pipeId === 'all'))
   const rows = []
-  if (row.hasGoogle) rows.push({ key: 'google', src: 'Google Ads', cost: w28.google.spend, leads: w28.google.results, costP: w28.google.spendPrev, leadsP: w28.google.resultsPrev, drill: canDrill, more: 'campaigns · ad groups · conversion actions' })
-  if (row.hasMeta) rows.push({ key: 'meta', src: 'Facebook Ads', cost: w28.meta.spend, leads: w28.meta.results, costP: w28.meta.spendPrev, leadsP: w28.meta.resultsPrev, drill: canDrill, more: 'campaigns · ad sets' })
+  if (row.hasGoogle) rows.push({ key: 'google', src: 'Google', cost: w28.google.spend, leads: w28.google.results, costP: w28.google.spendPrev, leadsP: w28.google.resultsPrev, drill: canDrill, more: 'campaigns · ad groups · conversion actions' })
+  if (row.hasMeta) rows.push({ key: 'meta', src: 'Meta', cost: w28.meta.spend, leads: w28.meta.results, costP: w28.meta.spendPrev, leadsP: w28.meta.resultsPrev, drill: canDrill, more: 'campaigns · ad sets' })
   const tot = rows.reduce((a, r) => ({ cost: a.cost + r.cost, leads: a.leads + r.leads }), { cost: 0, leads: 0 })
   const cplN = (c, l) => (l ? c / l : null)
   const cpl = (c, l) => (l ? money(c / l) : '-')
@@ -1514,7 +1514,7 @@ function TrendSource({ w28, row, money, clientId, pipeId }) {
   return (
     <>
       <div className="tr-src-wrap">
-        <table className="mini-tbl tr-src tr-dl-tbl"><thead><tr><th className="lft">Source · last 28 days <span className="tr-th-sub">vs previous 28</span></th><th>Spend</th><th>Results</th><th>Cost / result</th></tr></thead>
+        <table className="mini-tbl tr-src tr-dl-tbl"><thead><tr><th className="lft">Channel <span className="tr-th-sub">· last 28 days vs previous 28</span></th><th>Spend</th><th>Results</th><th>Cost / result</th></tr></thead>
           <tbody>{rows.map((r) => (
             <tr key={r.key} className={r.drill ? `tr-src-click${open === r.key ? ' on' : ''}` : ''} onClick={r.drill ? () => setOpen((o) => (o === r.key ? null : r.key)) : undefined} title={r.drill ? `Click to see the ${r.more} behind this number` : undefined}>
               <td className="lft">{r.drill ? <span className="tr-src-chev">{open === r.key ? '▾' : '▸'}</span> : null}{r.src}</td>
@@ -1664,15 +1664,13 @@ function ClientTrend({ row, tr, currency, onPick, domId, clientId, pipeId, stage
         <button className="tr-name" onClick={() => onPick(row.c)} title="Open client workspace">{row.name} <span className="tr-open">↗</span></button>
         {chanOpts.length > 1 && <div className="chan-toggle sm">{chanOpts.map(([k, l]) => (<button key={k} className={chan === k ? 'on' : ''} onClick={() => setChan(k)}>{l}</button>))}</div>}
       </div>
-      <div className="tr-row-lab">{resultLabel} <span className="sub">· vs previous equal period{tr.hasCrm ? ' · % = booking rate (booked ÷ leads)' : ''} · click a tile for the full breakdown</span></div>
-      <div className="tr-grid">{wins.map((w) => { const d = w[eff]; const cpl = d.results ? d.spend / d.results : null; const cplP = d.resultsPrev ? d.spendPrev / d.resultsPrev : null; const br = d.results ? (d.booked / d.results) * 100 : null; return <TrendCell key={w.n} label={WLABEL[w.n]} value={cpl != null ? money(cpl) : '-'} cur={cpl} prev={cplP} sub={tr.hasCrm && br != null ? `${br.toFixed(1)}% booked` : null} onClick={() => setOpenWin(openWin === w.n ? null : w.n)} active={openWin === w.n} /> })}</div>
+      <div className="tr-grid">{wins.map((w) => { const d = w[eff]; const cpl = d.results ? d.spend / d.results : null; const cplP = d.resultsPrev ? d.spendPrev / d.resultsPrev : null; const br = d.results ? (d.booked / d.results) * 100 : null; const brP = d.resultsPrev ? ((d.bookedPrev || 0) / d.resultsPrev) * 100 : null; return <TrendCell key={w.n} label={WLABEL[w.n]} value={cpl != null ? money(cpl) : '-'} cur={cpl} prev={cplP} sub={tr.hasCrm && br != null ? <>{br.toFixed(1)}% booked <Dlt cur={br} prev={brP} pts dp={1} /></> : null} title={`${resultLabel} · vs the previous equal period · % = booking rate (booked ÷ leads) · click for the full breakdown`} onClick={() => setOpenWin(openWin === w.n ? null : w.n)} active={openWin === w.n} /> })}</div>
       {openW ? <WindowBreakdown w={openW} clientId={clientId} pipeId={pipeId} stagePos={stagePos} currency={currency} /> : null}
       {(() => {
         const mv = clientMovers(row, tr, 7).filter((m) => Math.abs(m.cplPct) >= 8)
         if (!mv.length) return null
         return <div className="tr-movers"><span className="tr-movers-lab">What moved · 7d</span>{mv.map((m, i) => <div className="tr-mover" key={i}><span className={`mov-badge sm ${m.cplPct > 0 ? 'bad' : 'good'}`}>{m.cplPct > 0 ? '▲' : '▼'} {Math.abs(m.cplPct).toFixed(0)}%</span> <b>{m.channel}</b> cost / {m.chan === 'google' ? 'conv.' : 'lead'} {money(m.cplP)} → {money(m.cpl)}: {moverReason(m)}</div>)}</div>
       })()}
-      <div className="tr-row-lab" style={{ marginTop: 12 }}>28-day daily · Spend, Results &amp; Cost per Result <span className="sub">· {eff === 'blended' ? 'Meta + Google' : eff === 'meta' ? 'Meta' : 'Google'} · ad-reported{tr.hasCrm ? ' · 🟠 key events (booked) marked by day' : ''}</span></div>
       <TrendGraph daily={tr.daily} eff={eff} currency={currency} hasMeta={row.hasMeta} hasGoogle={row.hasGoogle} />
       <TrendSource w28={wins.find((w) => w.n === 28)} row={row} money={money} clientId={clientId} pipeId={pipeId} />
     </div>
@@ -19167,9 +19165,10 @@ function Dashboard({ authUser, authEnabled, onLogout, realUser, onViewAs }) {
           {authUser && <div className="side-user"><span className="side-user-av">{(authUser.name || authUser.email || '?').trim().charAt(0).toUpperCase()}</span><div className="side-user-txt"><b>{authUser.name || authUser.email}</b><span>{roleLabelOf(authUser)}</span></div><button className="side-user-out" onClick={onLogout} title="Sign out">Sign out</button></div>}
           {/* Two deliberate lines rather than one that wraps mid-timestamp - the
               sidebar is too narrow to hold version, date and commit on one row. */}
-          <div className="foot-build" title={`Caalano360 v${APP_VERSION} · Build ${__BUILD_TIME__}${__COMMIT_REF__ ? ` · commit ${__COMMIT_REF__}` : ''} · see CHANGELOG.md`}>
+          {/* The deploy time is the owner's: everyone else sees the version and commit. */}
+          <div className="foot-build" title={`Caalano360 v${APP_VERSION}${__COMMIT_REF__ ? ` · commit ${__COMMIT_REF__}` : ''}${authUser && authUser.role === 'superadmin' ? ` · Build ${__BUILD_TIME__}` : ''} · see CHANGELOG.md`}>
             <span className="fb-ver"><b>v{APP_VERSION}</b>{__COMMIT_REF__ ? <em>{__COMMIT_REF__}</em> : null}</span>
-            <span className="fb-when">deployed {fmtBuildTime(__BUILD_TIME__)}</span>
+            {authUser && authUser.role === 'superadmin' ? <span className="fb-when">deployed {fmtBuildTime(__BUILD_TIME__)}</span> : null}
           </div>
           {/* Standing notice. People forget what they signed on day one, so the
               claim sits where they work rather than only in a document. */}
@@ -19199,7 +19198,7 @@ function Dashboard({ authUser, authEnabled, onLogout, realUser, onViewAs }) {
             <p>{curView === 'overview' ? 'Blended paid performance across all clients, live for the selected range.' : curView === 'trends' ? 'Rolling 3 / 7 / 14 / 21 / 28-day performance per client, each vs the prior equal window.' : curView === 'weekly' ? 'One client at a time, reported Monday-Sunday by ISO week - spend pacing, leads, appointments and wins vs KPI.' : curView === 'forecast' ? 'What a month of spend should turn into, stage by stage - from each client\u2019s own last 90 days, or a scenario you build.' : curView === 'cockpit' ? 'Every creative for a client, with performance, categorisation and AI strategy.' : curView === 'curator' ? 'Strategise new creatives to make: pick Format, Style, CTA, Audience and Angle for instant or AI concept ideas, and save the best to a board.' : curView === 'insights' ? 'Everything Meta-derived in one place - delivery health, creative fatigue and more, across every active Meta client.' : curView === 'update' ? 'Generate a client-ready account update (WhatsApp + email) for the selected range.' : curView === 'monthly' ? 'Build a frozen, slide-based monthly report for one client - campaign → ad set → creative → Google → Caalano360 → team → ROI. Export to PDF.' : curView === 'social' ? 'Organic Instagram + Facebook Page performance per client - followers, reach, engagement, best posts and audience, for the selected range.' : curView === 'reports' ? 'Your published monthly reports - frozen snapshots you can read on screen or download as a PDF.' : curView === 'settings' ? (isViewer ? 'Your account.' : 'Clients, key events, KPI targets and campaign links - saved to the server and shared across your team.') : isViewer ? 'Your live reporting for the selected range.' : 'Open any client for their Overall, CRM, Meta and Google workspace.'}</p>
           </div>
           <div className="spacer" />
-          {curView !== 'settings' && curView !== 'monthly' && curView !== 'reports' && <DateRange range={range} onChange={setRange} busy={agency.status === 'loading'} />}
+          {curView !== 'settings' && curView !== 'monthly' && curView !== 'reports' && curView !== 'trends' && <DateRange range={range} onChange={setRange} busy={agency.status === 'loading'} />}
           {(curView === 'overview' || curView === 'weekly' || (curView === 'clients' && curPicked)) && <WonBasisToggle value={wonBasis} onChange={setWonBasis} />}
           {curView !== 'monthly' && curView !== 'reports' && <button className="refresh-btn" title="Refresh live data" onClick={() => setRefreshKey((k) => k + 1)}><span className={agency.status === 'loading' ? 'spin sm' : ''} style={{ display: 'inline-block' }}>⟳</span> Refresh</button>}
         </div>

@@ -36,7 +36,7 @@ const lazyView = (load, name) => {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-export const APP_VERSION = '3.642.0'
+export const APP_VERSION = '3.643.0'
 // The business clock. Every server window is cut on the client's local day
 // (Caalano Systems location timezone), so any day the app derives on its own -
 // preset ranges, "today", CSV dates - must use the same clock rather than the
@@ -16954,33 +16954,37 @@ function AllocationEditor({ value, clients, onChange, actorRole }) {
   const opts = [['user', 'Agency User - agency staff, dashboards for allowed accounts'], ['account_admin', 'Account Admin - the client: ticked accounts; tabs set under Visibility'], ['account_user', 'Account User - the client\'s rep: Deals & Actions only, updates their own deals']]
   if (isSuper) opts.unshift(['superadmin', 'Super Admin - owner control'], ['admin', 'Agency Admin - full control'])
   else if (isAdminishFE(v.role)) opts.unshift([v.role, ROLE_LABEL[v.role] + ' - (only a Super Admin can change this)'])
+  const roleNote = v.role === 'superadmin' ? 'Owner-level: everything an Admin can do, plus manage Admins, add or remove client accounts and the system panel.'
+    : v.role === 'admin' ? 'Full access to every client, every tab and all settings, apart from the Super Admin areas.'
+    : v.role === 'user' ? 'Agency staff: dashboards for the accounts allowed below; cannot manage people or settings.'
+    : v.role === 'account_user' ? 'An employee of the Account Admin. Deals & Actions only: their own deals, action list and results, and they can update their own deals and appointments. Their login e-mail must match their user in the CRM.'
+    : 'The client. Only the ticked clients, the tabs Visibility leaves on, and no agency-wide views. Which tabs they see is set under the Visibility tab → By client.'
   return (
-    <div className="alloc">
-      <label className="alloc-role">Role
-        <select value={v.role} onChange={(e) => onChange({ ...v, role: e.target.value })} disabled={!isSuper && isAdminishFE(v.role)}>
+    <>
+      <div className="set-row"><div className="set-row-l"><span className="set-row-lab">Role<InfoTip>{roleNote}</InfoTip></span><span className="set-row-hint">{(ROLE_LABEL[v.role] || v.role)}</span></div><div className="set-row-c">
+        <select className="alloc-sel" value={v.role} onChange={(e) => onChange({ ...v, role: e.target.value })} disabled={!isSuper && isAdminishFE(v.role)}>
           {opts.map(([val, lbl]) => <option key={val} value={val}>{lbl}</option>)}
         </select>
-      </label>
-      {v.role === 'superadmin' && <p className="alloc-note">Owner-level: everything an Admin can do, plus manage Admins, add/remove client accounts and the system panel.</p>}
-      {v.role === 'admin' && <p className="alloc-note">Agency Admin - full access to every client, every tab and all settings (not the Super-Admin-only areas).</p>}
-      {v.role === 'user' && (<>
-        <label className="alloc-check"><input type="checkbox" checked={v.allClients !== false} onChange={(e) => onChange({ ...v, allClients: e.target.checked })} /> Can see all client accounts</label>
-        {v.allClients === false && (<><div className="alloc-lab">Allowed accounts</div><ClientPicker clients={clients} selected={v.clients || []} onToggle={toggleClient} /></>)}
-        <p className="alloc-note">Agency staff - sees dashboards for the accounts above, but can’t manage users or settings.</p>
-      </>)}
+      </div></div>
+      {v.role === 'user' && (
+        <div className="set-row wide"><div className="set-row-l"><span className="set-row-lab">Accounts</span></div><div className="set-row-c alloc-col">
+          <label className="alloc-check"><input type="checkbox" checked={v.allClients !== false} onChange={(e) => onChange({ ...v, allClients: e.target.checked })} /><span>Can see all client accounts</span></label>
+          {v.allClients === false && <ClientPicker clients={clients} selected={v.clients || []} onToggle={toggleClient} />}
+        </div></div>
+      )}
       {isClientRoleFE(v.role) && (<>
-        <div className="alloc-lab">{v.role === 'account_user' ? 'Which account do they work in?' : 'Which clients can they see?'}</div>
-        <ClientPicker clients={clients} selected={v.clients || []} onToggle={toggleClient} />
+        <div className="set-row wide"><div className="set-row-l"><span className="set-row-lab">{v.role === 'account_user' ? 'Which account do they work in?' : 'Which clients can they see?'}</span></div><div className="set-row-c">
+          <ClientPicker clients={clients} selected={v.clients || []} onToggle={toggleClient} />
+        </div></div>
         <CrmUserLinks v={v} clients={clients} onChange={onChange} />
-        {v.role === 'account_user' ? <p className="alloc-note"><b>Account User</b> - an employee of the Account Admin. Holds <b>Deals &amp; Actions</b> only: their own deals, action list and results, and can update their own deals and appointments. Their login e-mail must match their user in the CRM.</p> : <>
-        <p className="alloc-note">Which tabs they see is set under the <b>Visibility</b> tab → <b>By client</b> (the Account Admin default, or their own set).</p>
-        <div className="alloc-lab" style={{ marginTop: 10 }}>Extra access</div>
-        <label className="alloc-check"><input type="checkbox" checked={v.crm === true} onChange={(e) => onChange({ ...v, crm: e.target.checked })} /> <b>CRM updates</b> - can fix things from the <b>Deals &amp; Actions</b> tab (result appointments, set deal values and lost reasons, move stages, add notes)</label>
-        <label className="alloc-check"><input type="checkbox" checked={v.reports === true} onChange={(e) => onChange({ ...v, reports: e.target.checked })} /> <b>Monthly Reports</b> - can view the <b>published</b> monthly reports for the clients above</label>
-        <p className="alloc-note"><b>Account Admin</b> - the client. Only the ticked clients, the tabs Visibility leaves on, and no agency-wide views. Monthly Reports shows only reports you've <b>published</b> (frozen snapshots), and can be granted on its own.</p>
-        </>}
+        {v.role !== 'account_user' && (
+          <div className="set-row wide"><div className="set-row-l"><span className="set-row-lab">Extra access</span></div><div className="set-row-c alloc-col">
+            <label className="alloc-check"><input type="checkbox" checked={v.crm === true} onChange={(e) => onChange({ ...v, crm: e.target.checked })} /><span><b>CRM updates</b><InfoTip>Can fix things from the Deals &amp; Actions tab: result appointments, set deal values and lost reasons, move stages, add notes.</InfoTip></span></label>
+            <label className="alloc-check"><input type="checkbox" checked={v.reports === true} onChange={(e) => onChange({ ...v, reports: e.target.checked })} /><span><b>Monthly Reports</b><InfoTip>Can open the published monthly reports (frozen snapshots) for the clients above. Can be granted on its own.</InfoTip></span></label>
+          </div></div>
+        )}
       </>)}
-    </div>
+    </>
   )
 }
 // Link a person to their user in the CRM, per ticked client, so Deals &
@@ -17003,8 +17007,7 @@ function CrmUserLinks({ v, clients, onChange }) {
   if (!ticked.length) return null
   const links = v.crmUsers || {}
   return (
-    <div className="alloc-links">
-      <div className="alloc-lab">Link to their CRM user</div>
+    <div className="set-row wide"><div className="set-row-l"><span className="set-row-lab">Link to their CRM user<InfoTip>Tells Deals &amp; Actions which deals, appointments and results are theirs, per ticked client. Leave unlinked to match on e-mail.</InfoTip></span></div><div className="set-row-c alloc-links">
       {ticked.map((c) => {
         const l = lists[c.id] || { status: 'loading', users: [] }
         return (
@@ -17016,8 +17019,7 @@ function CrmUserLinks({ v, clients, onChange }) {
           </label>
         )
       })}
-      <p className="alloc-note">Tells Deals &amp; Actions which deals, appointments and results are theirs. Leave unlinked to match on e-mail.</p>
-    </div>
+    </div></div>
   )
 }
 function PendingRow({ u, clients, onApprove, onReject, actorRole }) {
@@ -17091,35 +17093,34 @@ function UserAccessModal({ user, clients, authUser, onClose, onChanged }) {
     <div className="modal-bg" onClick={onClose}>
       <div className="modal u-modal" onClick={(e) => e.stopPropagation()}>
         <div className="m-head"><div><h3>{isInvite ? 'Invite a person' : `Edit access - ${user.name || user.email}`}</h3><span className="cap">{isInvite ? 'Set their role and exactly what they can see' : user.email}</span></div><button className="icon-btn" onClick={onClose}>✕</button></div>
-        {!isInvite && (
-          <div className="u-revoke">
-            <div>
-              <b>Signed-in devices</b>
-              <span className="cap">Their session lasts 14 days. End every one of them now - use this when someone leaves, or if you think their account has been used by someone else.</span>
-            </div>
-            <button type="button" className="btn-ghost sm" onClick={async () => {
-              if (!window.confirm(`Sign ${user.name || user.email} out of every device?\n\nThey'll need to sign in again. Their access and password are unchanged.`)) return
-              const r = await authApi('revoke-sessions', { method: 'POST', body: JSON.stringify({ email: user.email }) })
-              window.alert(r && r.ok ? 'Signed out of all devices.' : ((r && r.error) || 'Couldn\u2019t sign them out.'))
-            }}>Sign out everywhere</button>
-          </div>
-        )}
         <div className="m-body">
           {self && <div className="auth-err" style={{ marginBottom: 12 }}>This is your own account - you can’t change your own role or access.</div>}
           <fieldset className="u-modal-fs" disabled={self}>
-            {isInvite ? (
-              <div className="u-invite" style={{ marginBottom: 12 }}>
-                <input placeholder="Name (optional)" value={name} onChange={(e) => setName(e.target.value)} />
-                <input type="email" placeholder="their@email.com" value={email} onChange={(e) => setEmail(e.target.value)} required />
-              </div>
-            ) : (
-              <div className="u-invite" style={{ marginBottom: 10 }}>
-                <input placeholder="First name" value={who.firstName} onChange={setW('firstName')} autoComplete="off" />
-                <input placeholder="Last name" value={who.lastName} onChange={setW('lastName')} autoComplete="off" />
-                <PhoneField value={who} onChange={(v) => setWho((w) => ({ ...w, ...v }))} required={false} />
-              </div>
-            )}
-            <AllocationEditor value={draft} clients={clients} onChange={setDraft} actorRole={authUser && authUser.role} />
+            <div className="set-rows u-modal-rows">
+              {isInvite ? (
+                <div className="set-row wide"><div className="set-row-l"><span className="set-row-lab">Who</span></div><div className="set-row-c u-details">
+                  <label className="u-fld"><span>Name <em>optional</em></span><input placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} /></label>
+                  <label className="u-fld u-fld-email"><span>Email</span><input type="email" placeholder="their@email.com" value={email} onChange={(e) => setEmail(e.target.value)} required /></label>
+                </div></div>
+              ) : (
+                <div className="set-row wide"><div className="set-row-l"><span className="set-row-lab">Details</span></div><div className="set-row-c u-details">
+                  <label className="u-fld"><span>First name</span><input placeholder="First name" value={who.firstName} onChange={setW('firstName')} autoComplete="off" /></label>
+                  <label className="u-fld"><span>Last name</span><input placeholder="Last name" value={who.lastName} onChange={setW('lastName')} autoComplete="off" /></label>
+                  <label className="u-fld u-fld-email"><span>Email</span><input type="email" value={user.email} readOnly title="The email they sign in with can’t be changed here." /></label>
+                  <label className="u-fld u-fld-phone"><span>Mobile</span><PhoneField value={who} onChange={(v) => setWho((w) => ({ ...w, ...v }))} required={false} /></label>
+                </div></div>
+              )}
+              {!isInvite && (
+                <div className="set-row"><div className="set-row-l"><span className="set-row-lab">Signed-in devices<InfoTip>Their session lasts 14 days. End every one of them now - use this when someone leaves, or if you think their account has been used by someone else. Their access and password are unchanged.</InfoTip></span></div><div className="set-row-c">
+                  <button type="button" className="btn-ghost sm" onClick={async () => {
+                    if (!window.confirm(`Sign ${user.name || user.email} out of every device?\n\nThey'll need to sign in again. Their access and password are unchanged.`)) return
+                    const r = await authApi('revoke-sessions', { method: 'POST', body: JSON.stringify({ email: user.email }) })
+                    window.alert(r && r.ok ? 'Signed out of all devices.' : ((r && r.error) || 'Couldn\u2019t sign them out.'))
+                  }}>Sign out everywhere</button>
+                </div></div>
+              )}
+              <AllocationEditor value={draft} clients={clients} onChange={setDraft} actorRole={authUser && authUser.role} />
+            </div>
           </fieldset>
           {err && <div className="auth-err" style={{ marginTop: 12 }}>{err}</div>}
           {link && (
@@ -18006,13 +18007,12 @@ export function YourDetailsCard({ user, onSaved, gate = false }) {
     else setMsg({ ok: false, t: r.error || 'Could not save your details.' })
   }
   return (
-    <form className="u-invite" onSubmit={submit} style={{ marginTop: 4, flexWrap: 'wrap' }}>
-      <input placeholder="First name" value={f.firstName} onChange={set('firstName')} autoComplete="given-name" required autoFocus={gate} />
-      <input placeholder="Last name" value={f.lastName} onChange={set('lastName')} autoComplete="family-name" required />
-      <input type="email" value={(user && user.email) || ''} readOnly title="The email you sign in with can’t be changed here." />
-      <PhoneField value={f} onChange={(v) => setF((s) => ({ ...s, ...v }))} />
-      <button className="btn-primary" disabled={busy}>{busy ? 'Saving…' : gate ? 'Save and continue' : 'Save details'}</button>
-      {msg && <span className={msg.ok ? 'u-ok' : 'auth-err'} style={{ alignSelf: 'center' }}>{msg.t}</span>}
+    <form className="u-details" onSubmit={submit}>
+      <label className="u-fld"><span>First name</span><input placeholder="First name" value={f.firstName} onChange={set('firstName')} autoComplete="given-name" required autoFocus={gate} /></label>
+      <label className="u-fld"><span>Last name</span><input placeholder="Last name" value={f.lastName} onChange={set('lastName')} autoComplete="family-name" required /></label>
+      <label className="u-fld u-fld-email"><span>Email</span><input type="email" value={(user && user.email) || ''} readOnly title="The email you sign in with can’t be changed here." /></label>
+      <label className="u-fld u-fld-phone"><span>Mobile</span><PhoneField value={f} onChange={(v) => setF((s) => ({ ...s, ...v }))} /></label>
+      <div className="u-fld-actions"><button className="btn-primary" disabled={busy}>{busy ? 'Saving…' : gate ? 'Save and continue' : 'Save details'}</button>{msg && <span className={msg.ok ? 'u-ok' : 'auth-err'}>{msg.t}</span>}</div>
     </form>
   )
 }
@@ -18168,14 +18168,18 @@ const PivotReport = lazyView(() => import('./views/pivot.jsx'), 'PivotReport')
 // Reporting: the Monthly Report decks and the Trend Report, as tabs. The tab
 // rides in the URL (?s=trend; the older ?s=pivot still opens it).
 function ReportingPage({ clients, currency, authUser }) {
-  const [tab, setTabRaw] = useState(() => (['trend', 'pivot'].includes(readNavUrl().s) ? 'pivot' : 'monthly'))
+  const hid = userHidden(authUser)
+  const canMonthly = !isHiddenView(hid, 'reporting_monthly'), canTrend = !isHiddenView(hid, 'reporting_trend')
+  const [tab, setTabRaw] = useState(() => ((['trend', 'pivot'].includes(readNavUrl().s) && canTrend) || !canMonthly ? 'pivot' : 'monthly'))
   const setTab = (t) => { setTabRaw(t); writeNavUrl({ s: t === 'pivot' ? 'trend' : null, pp: null, pf: null, pt: null, pb: null, pm: null, pch: null, pd: null }, true) }
   return (
     <>
-      <div className="subtabs set-subtabs">
-        <button className={tab === 'monthly' ? 'active' : ''} onClick={() => setTab('monthly')}>Monthly Report</button>
-        <button className={tab === 'pivot' ? 'active' : ''} onClick={() => setTab('pivot')}>Trend Report</button>
-      </div>
+      {canMonthly && canTrend ? (
+        <div className="subtabs set-subtabs">
+          <button className={tab === 'monthly' ? 'active' : ''} onClick={() => setTab('monthly')}>Monthly Report</button>
+          <button className={tab === 'pivot' ? 'active' : ''} onClick={() => setTab('pivot')}>Trend Report</button>
+        </div>
+      ) : null}
       {tab === 'pivot' ? <PivotReport clients={clients} currency={currency} authUser={authUser} /> : <MonthlyReport clients={clients} currency={currency} authUser={authUser} />}
     </>
   )
@@ -19210,7 +19214,8 @@ function Dashboard({ authUser, authEnabled, onLogout, realUser, onViewAs }) {
   // Monthly Reports capability (client-facing published reports). Viewers get it
   // only when granted; a viewer can be reports-only (no dashboard tabs).
   const hid = userHidden(authUser)
-  const showView = (id) => !isHiddenView(hid, id)
+  // Reporting is a section with two tabs: it stays in the sidebar while either tab is on.
+  const showView = (id) => !isHiddenView(hid, id) && (id !== 'monthly' || !isHiddenView(hid, 'reporting_monthly') || !isHiddenView(hid, 'reporting_trend'))
   const canReports = isViewer ? !!(authUser && authUser.reports) && showView('reports') : false
   const hasDashTabs = (!isViewer || hid.tabs.length < tabsForRole(role).length) && (!isViewer || showView('dashboards'))
   const viewerView = view === 'settings' ? 'settings'

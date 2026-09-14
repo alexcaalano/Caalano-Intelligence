@@ -23,6 +23,9 @@ export const VIS_VIEWS = [
   { id: 'insights', label: 'Meta Insights', roles: ['superadmin', 'admin', 'user'] },
   { id: 'update', label: 'Client Update', roles: ['superadmin', 'admin', 'user'] },
   { id: 'monthly', label: 'Reporting', roles: ['superadmin', 'admin', 'user'] },
+  // Reporting's tabs; the sidebar entry stays while either is on.
+  { id: 'reporting_monthly', label: 'Reporting · Monthly Report', roles: ['superadmin', 'admin', 'user'] },
+  { id: 'reporting_trend', label: 'Reporting · Trend Report', roles: ['superadmin', 'admin', 'user'] },
   { id: 'social', label: 'Organic Social Media', roles: ['superadmin', 'admin', 'user'] },
   { id: 'reports', label: 'Monthly Reports', roles: ['account_admin', 'account_user'] },
   { id: 'dashboards', label: 'Client workspaces (My dashboards)', roles: ['account_admin', 'account_user'] },

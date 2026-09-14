@@ -5741,8 +5741,11 @@ body.hub-tv-on { overflow: hidden; }
 .pv-check { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 600; color: var(--muted); cursor: pointer; }
 .pv-views select { background: var(--panel-2); border: 1px solid var(--border-2); border-radius: 9px; padding: 8px 10px; color: var(--text); font-size: 12.5px; font-weight: 700; }
 .pv-sub { font-weight: 500; color: var(--muted); font-size: 13px; }
-.pv-pick-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 14px 22px; }
-.pv-pick-row { display: flex; align-items: center; gap: 8px; padding: 5px 6px; border-radius: 7px; font-size: 12.5px; cursor: pointer; }
+.pv-pick-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px 18px; grid-auto-flow: dense; align-items: start; }
+.pv-pick-col { min-width: 0; }
+.pv-pick-grid .pv-ke { grid-column: span 3; margin-top: 0; padding-top: 0; border-top: 0; }
+@media (max-width: 760px) { .pv-pick-grid .pv-ke { grid-column: 1 / -1; } }
+.pv-pick-row { display: flex; align-items: center; gap: 7px; padding: 3px 5px; border-radius: 6px; font-size: 12px; cursor: pointer; line-height: 1.3; }
 .pv-pick-row:hover { background: var(--panel-2); }
 .pv-pick-row.on { color: var(--text); font-weight: 650; }
 .pv-legend-pick { gap: 6px; }
@@ -5785,7 +5788,7 @@ body.hub-tv-on { overflow: hidden; }
 .pv-pick-row .pv-src { margin-left: 6px; }
 .pv-ke { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); }
 .pv-ke-tbl { width: auto; font-size: 12.5px; }
-.pv-ke-tbl th, .pv-ke-tbl td { padding: 6px 10px; text-align: center; white-space: nowrap; }
+.pv-ke-tbl th, .pv-ke-tbl td { padding: 4px 6px; text-align: center; white-space: nowrap; }
 .pv-ke-tbl th.lft, .pv-ke-tbl td.lft { text-align: left; font-weight: 650; }
 .pv-ke-tbl th .pv-src { margin-left: 0; }
 .pv-ke-box { display: inline-flex; align-items: center; gap: 3px; padding: 3px 7px; border-radius: 6px; border: 1px solid var(--border); background: var(--panel-2); color: var(--muted); font-size: 11px; font-weight: 800; cursor: pointer; margin: 0 2px; }
@@ -5812,3 +5815,27 @@ body.hub-tv-on { overflow: hidden; }
 .fmset-route { color: var(--brand); background: color-mix(in srgb, var(--brand) 13%, transparent); }
 .fm-route-read { display: flex; flex-direction: column; gap: 2px; font-size: 12px; }
 @media (max-width: 640px) { .fm-route-row { grid-template-columns: 1fr; gap: 4px; } .fm-route-arrow { display: none; } }
+.pv-tbl .pv-avg { background: color-mix(in srgb, var(--google) 6%, var(--panel)); }
+.pv-tbl thead .pv-avg { right: auto; }
+
+/* People: details as a small grid (My Account, Edit access, Invite) */
+.u-details { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 12px; width: 100%; max-width: 560px; }
+.u-fld { display: flex; flex-direction: column; gap: 4px; min-width: 0; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--faint); }
+.u-fld em { font-style: normal; text-transform: none; letter-spacing: 0; font-weight: 500; }
+.u-fld input, .u-fld .tel-field select, .u-fld .tel-field input { background: var(--panel-2); border: 1px solid var(--border-2); border-radius: 9px; padding: 9px 11px; font-size: 13px; color: var(--text); font-weight: 500; text-transform: none; letter-spacing: 0; min-width: 0; width: 100%; }
+.u-fld input[readonly] { color: var(--muted); background: var(--panel); }
+.u-fld-email { grid-column: 1 / -1; }
+.u-fld-phone .tel-field { max-width: 300px; }
+.u-fld-phone .tel-field select { width: auto; flex: 0 0 auto; }
+.u-fld-actions { grid-column: 1 / -1; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+@media (max-width: 560px) { .u-details { grid-template-columns: 1fr; } }
+.set-row-c.u-details { max-width: none; }
+/* Edit access modal: the Settings shell inside the modal */
+.u-modal { max-width: 640px; }
+.u-modal-rows > .set-row { padding: 12px 0; }
+.u-modal-rows > .set-row:first-child { padding-top: 0; }
+.alloc-sel { background: var(--panel-2); border: 1px solid var(--border-2); border-radius: 9px; padding: 8px 11px; font-size: 13px; color: var(--text); font-weight: 600; max-width: 100%; }
+.alloc-col { flex-direction: column; align-items: flex-start; gap: 8px; }
+.alloc-check { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 500; color: var(--text); cursor: pointer; }
+.alloc-check > span { display: inline-flex; align-items: center; gap: 6px; }
+.alloc-links.set-row-c { flex-direction: column; align-items: stretch; gap: 6px; }

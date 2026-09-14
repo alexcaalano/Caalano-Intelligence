@@ -18,6 +18,22 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.643.0 - 2026-09-14 (commit PENDING)
+
+### Trend Report: Total and Average columns
+
+Two checkboxes beside "vs previous period": **Total** (on by default) and **Average** (off). Total is the whole range, with ratios re-derived from the summed inputs. Average is per period for counts and money, and for a rate or a cost the mean of the periods that have one, so an empty month does not drag a cost per lead down. Both ride in the link, in saved layouts and client defaults, and in the CSV.
+
+**Edit access and My Account, in the Settings shell** - the person modal reads as rows: details (first name, last name, an email field that is now the full width, a compact mobile field), signed-in devices, role (with the role explained on hover), clients, CRM user links and extra access, with the explanations behind an "i". My Account's details form is the same grid, so the email is no longer squeezed and the phone no longer stretches the row.
+
+**Visibility knows Reporting's tabs** - "Reporting · Monthly Report" and "Reporting · Trend Report" are their own switches; the Reporting entry stays in the sidebar while either tab is on, and a person with one tab sees no tab strip.
+
+**Metric picker is denser** - narrower columns, tighter rows, and the key-events grid sits beside the CRM column rather than below everything.
+
+**Graph labels no longer overlap** - when two series' value labels land on each other (a spend and a cost per lead at the same month, say), they are pushed apart so every number reads; a label that would leave the top of the plot moves down instead.
+
+---
+
 ## v3.642.0 - 2026-09-14 (commit 69199c6)
 
 ### Forms: route a form to a pipeline by one of its answers

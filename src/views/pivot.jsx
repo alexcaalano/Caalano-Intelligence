@@ -173,6 +173,44 @@ const fmtVal = (m, v, currency) => {
 }
 const labelOf = (m, ctx) => (typeof m.label === 'function' ? m.label(ctx) : m.label)
 
+// Value labels: our own <text> so they can be found afterwards, then nudged
+// apart. Recharts places each series' labels on its own, so a spend label and
+// a cost label at the same x often land on each other; after every render the
+// labels are read back from the SVG and any two that overlap are pushed apart
+// vertically (the later one up, or down when it would leave the top).
+const pvLabel = (m, currency, color) => (props) => {
+  const { x, y, width, value } = props
+  if (value == null || !isFinite(value) || x == null || y == null) return null
+  const cx = width != null ? x + width / 2 : x
+  return <text className="pv-lbl" x={cx} y={y - 7} textAnchor="middle" fontSize={10} fill={color}>{fmtVal(m, value, currency)}</text>
+}
+function deoverlapLabels(root) {
+  if (!root) return
+  const els = [...root.querySelectorAll('text.pv-lbl')]
+  for (const el of els) el.removeAttribute('transform')
+  const box = (el) => { const b = el.getBBox(); const ty = Number(el.dataset.dy || 0); return { x: b.x, y: b.y + ty, w: b.width, h: b.height } }
+  const svgH = root.querySelector('svg') ? root.querySelector('svg').getBoundingClientRect().height : 260
+  for (const el of els) el.dataset.dy = '0'
+  for (let pass = 0; pass < 12; pass++) {
+    let moved = false
+    for (let i = 0; i < els.length; i++) for (let j = i + 1; j < els.length; j++) {
+      const a = box(els[i]), b = box(els[j])
+      const ox = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x)
+      const oy = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y)
+      if (ox <= 0 || oy <= 0) continue
+      // Push the lower one further down and the upper one up, sharing the move;
+      // anything that would leave the top of the plot moves down instead.
+      const [up, down] = a.y <= b.y ? [els[i], els[j]] : [els[j], els[i]]
+      const need = oy + 2
+      const upDy = Number(up.dataset.dy) - need / 2, downDy = Number(down.dataset.dy) + need / 2
+      const upBox = box(up)
+      if (upBox.y - need / 2 < 2) { down.dataset.dy = String(Number(down.dataset.dy) + need) } else { up.dataset.dy = String(upDy); down.dataset.dy = String(Math.min(downDy, svgH)) }
+      moved = true
+    }
+    if (!moved) break
+  }
+  for (const el of els) { const dy = Number(el.dataset.dy || 0); if (dy) el.setAttribute('transform', `translate(0 ${dy.toFixed(1)})`) }
+}
 // ---- the view --------------------------------------------------------------
 export function PivotReport({ clients, currency }) {
   useSettingsSync()
@@ -186,14 +224,26 @@ export function PivotReport({ clients, currency }) {
   const [ids, setIds] = useState(() => (q0.get('pm') ? q0.get('pm').split(',').filter(Boolean).map(normId) : DEFAULT_IDS))
   const [chart, setChart] = useState(() => (q0.get('pch') ? q0.get('pch').split(',').filter(Boolean).map(normId) : DEFAULT_CHART))
   const [showDelta, setShowDelta] = useState(() => q0.get('pd') !== '0')
+  // Total and Average columns, as on a P&L: Total on by default, Average off.
+  const [showTotal, setShowTotal] = useState(() => q0.get('ptot') !== '0')
+  const [showAvg, setShowAvg] = useState(() => q0.get('pavg') === '1')
   const [labels, setLabels] = useState(() => (q0.get('pl') ? q0.get('pl').split(',').filter(Boolean).map(normId) : []))
+  const chartRef = useRef(null)
+  // Nudge overlapping value labels apart once the chart has drawn (and again on resize).
+  useEffect(() => {
+    if (!labels.length) return
+    const run = () => deoverlapLabels(chartRef.current)
+    const t1 = setTimeout(run, 60), t2 = setTimeout(run, 400)
+    window.addEventListener('resize', run)
+    return () => { clearTimeout(t1); clearTimeout(t2); window.removeEventListener('resize', run) }
+  })
   const toggleLabel = (id) => setLabels((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]))
   const [pickOpen, setPickOpen] = useState(false)
   // A client's saved default layout: metrics, chart, period and grouping. It
   // loads whenever that client is picked; the URL wins only on first open.
   const defaults = (SETTINGS.pivot && SETTINGS.pivot.defaults) || {}
-  const applyLayout = (v) => { if (!v) return; setPreset(v.preset || 'last_12m'); if (v.custom) setCustom(v.custom); setBy(v.by || 'month'); setIds((v.ids || DEFAULT_IDS).map(normId)); setChart((v.chart || DEFAULT_CHART).map(normId)); setLabels((v.labels || []).map(normId)); setShowDelta(v.showDelta !== false) }
-  const layout = () => ({ preset, custom, by, ids, chart, labels, showDelta, savedAt: new Date().toISOString() })
+  const applyLayout = (v) => { if (!v) return; setPreset(v.preset || 'last_12m'); if (v.custom) setCustom(v.custom); setBy(v.by || 'month'); setIds((v.ids || DEFAULT_IDS).map(normId)); setChart((v.chart || DEFAULT_CHART).map(normId)); setLabels((v.labels || []).map(normId)); setShowDelta(v.showDelta !== false); setShowTotal(v.showTotal !== false); setShowAvg(!!v.showAvg) }
+  const layout = () => ({ preset, custom, by, ids, chart, labels, showDelta, showTotal, showAvg, savedAt: new Date().toISOString() })
   const firstRun = useRef(true)
   useEffect(() => { if (firstRun.current) { firstRun.current = false; if (!q0.get('pm') && defaults[clientId]) applyLayout(defaults[clientId]); return } applyLayout(defaults[clientId] || null) /* eslint-disable-next-line */ }, [clientId])
   const writeDefaults = (next) => { SETTINGS.pivot = { ...(SETTINGS.pivot || {}), defaults: next }; saveSettingsRemote({ pivot: { defaults: next } }); bumpSettings() }
@@ -204,7 +254,7 @@ export function PivotReport({ clients, currency }) {
   const bounds = preset === 'custom' ? custom : (presetBounds(preset) || custom)
   const pickPreset = (id) => { setPreset(id); const p = PV_PRESETS.find(([k]) => k === id); if (p && p[2]) setBy(p[2]) }
   // The shareable link: everything about this view lives in the URL.
-  useEffect(() => { writeNavUrl({ v: 'monthly', s: 'trend', c: clientId, pp: preset, pf: preset === 'custom' ? custom.from : null, pt: preset === 'custom' ? custom.to : null, pb: by, pm: ids.join(','), pch: chart.join(','), pl: labels.length ? labels.join(',') : null, pd: showDelta ? null : '0' }, false) }, [clientId, preset, custom.from, custom.to, by, ids, chart, labels, showDelta])
+  useEffect(() => { writeNavUrl({ v: 'monthly', s: 'trend', c: clientId, pp: preset, pf: preset === 'custom' ? custom.from : null, pt: preset === 'custom' ? custom.to : null, pb: by, pm: ids.join(','), pch: chart.join(','), pl: labels.length ? labels.join(',') : null, pd: showDelta ? null : '0', ptot: showTotal ? null : '0', pavg: showAvg ? '1' : null }, false) }, [clientId, preset, custom.from, custom.to, by, ids, chart, labels, showDelta, showTotal, showAvg])
 
   const [st, setSt] = useState({ status: 'idle' })
   const [prog, setProg] = useState(null) // { done, total, note }
@@ -307,6 +357,12 @@ export function PivotReport({ clients, currency }) {
   const applies = (m) => (m.month && by !== 'month') ? false : (m.need === 'meta' ? has.meta : m.need === 'google' ? has.google : m.need === 'ads' ? (has.meta || has.google) : m.need === 'crm' ? has.crm : m.need === 'cash' ? cashOn : m.need === 'crmads' ? has.crm && (has.meta || has.google) : true)
   const selected = ids.map((id) => byId[id]).filter((m) => m && applies(m))
   const total = useMemo(() => rows.reduce((a, r) => addBase(a, r.base), {}), [rows])
+  const avgOf = (m) => {
+    if (!rows.length) return null
+    if (m.kind === 'count' || m.kind === 'money' && !/cost|cpm|cpc|avgdeal/i.test(m.id)) { const t = m.calc(total); return t == null ? null : t / rows.length }
+    const vs = rows.map((r) => m.calc(r.base)).filter((v) => v != null && isFinite(v))
+    return vs.length ? vs.reduce((a, v) => a + v, 0) / vs.length : null
+  }
   // A newly ticked metric joins the end of its own group (Meta, Google, Blended,
   // CRM, Key events) rather than the bottom of the table, so the sections stay
   // together; the handles still let you move it anywhere afterwards.
@@ -338,8 +394,9 @@ export function PivotReport({ clients, currency }) {
   const copyLink = () => { try { navigator.clipboard.writeText(window.location.href); setCopied(true); setTimeout(() => setCopied(false), 1600) } catch { /* clipboard blocked */ } }
   const exportCsv = () => {
     const esc = (v) => { const t = v == null ? '' : String(v); return /[",\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t }
-    const head = ['Metric', ...rows.map((r) => r.label), 'Total']
-    const lines = [head.join(','), ...selected.map((m) => [labelOf(m, ctx) + (m.src ? ` · ${srcOf(m.src)[1]}` : ''), ...rows.map((r) => { const v = m.calc(r.base); return v == null ? '' : Math.round(v * 100) / 100 }), (() => { const v = m.calc(total); return v == null ? '' : Math.round(v * 100) / 100 })()].map(esc).join(','))]
+    const r2 = (v) => (v == null ? '' : Math.round(v * 100) / 100)
+    const head = ['Metric', ...rows.map((r) => r.label), ...(showTotal ? ['Total'] : []), ...(showAvg ? [`Average per ${by}`] : [])]
+    const lines = [head.join(','), ...selected.map((m) => [labelOf(m, ctx) + (m.src ? ` · ${srcOf(m.src)[1]}` : ''), ...rows.map((r) => r2(m.calc(r.base))), ...(showTotal ? [r2(m.calc(total))] : []), ...(showAvg ? [r2(avgOf(m))] : [])].map(esc).join(','))]
     const blob = new Blob([lines.join('\n')], { type: 'text/csv' })
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `trend-report-${client ? client.id : 'report'}-${bounds.from}_${bounds.to}-by-${by}.csv`; a.click(); URL.revokeObjectURL(a.href)
   }
@@ -364,6 +421,8 @@ export function PivotReport({ clients, currency }) {
         {preset === 'custom' ? <span className="pv-custom"><input type="date" value={custom.from} max={custom.to} onChange={(e) => setCustom((c) => ({ ...c, from: e.target.value }))} /><span className="cap">to</span><input type="date" value={custom.to} min={custom.from} onChange={(e) => setCustom((c) => ({ ...c, to: e.target.value }))} /></span> : null}
         <div className="chan-toggle sm">{BY.map(([id, l]) => <button key={id} className={by === id ? 'on' : ''} onClick={() => setBy(id)}>{l}</button>)}</div>
         <label className="pv-check"><input type="checkbox" checked={showDelta} onChange={(e) => setShowDelta(e.target.checked)} /> vs previous period</label>
+        <label className="pv-check" title="A Total column: sums for counts and money, ratios re-derived from the summed inputs"><input type="checkbox" checked={showTotal} onChange={(e) => setShowTotal(e.target.checked)} /> Total</label>
+        <label className="pv-check" title="An Average column: counts and money per period; a rate or cost is the mean of the periods that have one"><input type="checkbox" checked={showAvg} onChange={(e) => setShowAvg(e.target.checked)} /> Average</label>
         <span className="spacer" />
         <button className="mr-btn" onClick={() => setPickOpen((v) => !v)}>{pickOpen ? 'Done' : `Metrics · ${selected.length}`}</button>
         <button className={`mr-btn${isDefault ? ' on' : ''}`} onClick={saveDefault} title={`Open ${client ? client.name : 'this client'} on this set of metrics, chart, period and grouping from now on`}>{defSaved ? '✓ Saved' : isDefault ? '✓ Client default' : 'Save as client default'}</button>
@@ -395,9 +454,8 @@ export function PivotReport({ clients, currency }) {
                 ))}
               </div>
             ))}
-          </div>
           {keLabels.length && has.crm ? (
-            <div className="pv-ke">
+            <div className="pv-ke pv-pick-col">
               <div className="set-sec-t">Key events <span className="cap" style={{ textTransform: 'none', letterSpacing: 0, fontWeight: 400 }}>· by lead source · # = count, $ = cost per event</span></div>
               <div className="pv-wrap"><table className="mini-tbl pv-ke-tbl">
                 <thead><tr><th className="lft">Key event</th>{PV_SRC.map(([src]) => <th key={src}><SrcTag src={src} /></th>)}</tr></thead>
@@ -410,6 +468,7 @@ export function PivotReport({ clients, currency }) {
               </table></div>
             </div>
           ) : null}
+          </div>
         </div>
       )}
       {st.status === 'loading' ? (
@@ -426,7 +485,7 @@ export function PivotReport({ clients, currency }) {
                 <div className="card pv-chart-card">
                   <div className="set-head"><div className="set-head-t"><h3>{client ? client.name : ''} <span className="pv-sub">· {periodLabel} · by {by}</span><InfoTip>Click a series to show its value on every point; the ✕ takes it off the graph. Add a series from the chart icon on any row of the table below, up to four.</InfoTip></h3></div>
                     <div className="set-head-a pv-legend-pick">{chartMs.map((m, i) => <button key={m.id} className={`pv-chip on${labels.includes(m.id) ? ' lbl' : ''}`} style={{ '--c': PALETTE[i % PALETTE.length] }} onClick={() => toggleLabel(m.id)} title={labels.includes(m.id) ? 'Hide the value labels on this series' : 'Show the value on every point of this series'}><i />{labelOf(m, ctx)}{m.src ? ` · ${srcOf(m.src)[1]}` : ''}{labels.includes(m.id) ? <em>labels on</em> : null}<span className="pv-chip-x" title="Remove from the graph" onClick={(e) => { e.stopPropagation(); toggleChart(m.id) }}>✕</span></button>)}</div></div>
-                  <div className="pv-chart">
+                  <div className="pv-chart" ref={chartRef}>
                     <ResponsiveContainer width="100%" height={260}>
                       <ComposedChart data={chartData} margin={{ left: -4, right: 8, top: labels.length ? 18 : 8 }}>
                         <CartesianGrid stroke="var(--border)" vertical={false} />
@@ -439,22 +498,22 @@ export function PivotReport({ clients, currency }) {
                         <Tooltip content={gTip} />
                         <Legend wrapperStyle={{ fontSize: 11 }} formatter={(v) => { const m = byId[v]; return m ? labelOf(m, ctx) + (m.src ? ` · ${srcOf(m.src)[1]}` : '') : v }} />
                         {chartMs.map((m, i) => (isBar(m)
-                          ? <Bar key={m.id} yAxisId="l" dataKey={m.id} fill={PALETTE[i % PALETTE.length]} radius={[3, 3, 0, 0]} maxBarSize={28}>{labels.includes(m.id) ? <LabelList dataKey={m.id} position="top" fontSize={10} fill="var(--muted)" formatter={(v) => fmtVal(m, v, currency)} /> : null}</Bar>
-                          : <Line key={m.id} yAxisId={m.id} dataKey={m.id} stroke={PALETTE[i % PALETTE.length]} strokeWidth={2} dot={rows.length <= 40} connectNulls>{labels.includes(m.id) ? <LabelList dataKey={m.id} position="top" offset={8} fontSize={10} fill={PALETTE[i % PALETTE.length]} formatter={(v) => fmtVal(m, v, currency)} /> : null}</Line>))}
+                          ? <Bar key={m.id} yAxisId="l" dataKey={m.id} fill={PALETTE[i % PALETTE.length]} radius={[3, 3, 0, 0]} maxBarSize={28} isAnimationActive={!labels.length}>{labels.includes(m.id) ? <LabelList dataKey={m.id} content={pvLabel(m, currency, 'var(--muted)')} /> : null}</Bar>
+                          : <Line key={m.id} yAxisId={m.id} dataKey={m.id} stroke={PALETTE[i % PALETTE.length]} strokeWidth={2} dot={rows.length <= 40} connectNulls isAnimationActive={!labels.length}>{labels.includes(m.id) ? <LabelList dataKey={m.id} content={pvLabel(m, currency, PALETTE[i % PALETTE.length])} /> : null}</Line>))}
                       </ComposedChart>
                     </ResponsiveContainer>
                   </div>
                 </div>
               ) : null}
               <div className="card pv-tbl-card">
-                <div className="set-head"><div className="set-head-t"><h3>Period by period<InfoTip>Each column is one {by}; the last column is the whole range (ratios re-derived from the totals, not averaged). Ad figures are ad-reported by day; CRM figures count on the lead's created date, with "by close date" wins and revenue on the day the deal closed. Green is a move in the right direction against the column before, red the wrong way, grey is spend.</InfoTip></h3><p className="set-sub">{rows.length} {by === 'day' ? 'days' : by === 'week' ? 'weeks' : by === 'month' ? 'months' : by === 'quarter' ? 'quarters' : 'years'} · {periodLabel}</p></div></div>
+                <div className="set-head"><div className="set-head-t"><h3>Period by period<InfoTip>Each column is one {by}. Total is the whole range (ratios re-derived from the summed inputs, not averaged); Average is per {by} for counts and money, and the mean of the periods that have one for a rate or a cost. Both are toggles in the bar above. Ad figures are ad-reported by day; CRM figures count on the lead's created date, with "by close date" wins and revenue on the day the deal closed. Green is a move in the right direction against the column before, red the wrong way, grey is spend.</InfoTip></h3><p className="set-sub">{rows.length} {by === 'day' ? 'days' : by === 'week' ? 'weeks' : by === 'month' ? 'months' : by === 'quarter' ? 'quarters' : 'years'} · {periodLabel}</p></div></div>
                 {!selected.length ? <p className="cap">Pick some metrics to show.</p> : (
                   <div className="pv-wrap">
                     <table className="mini-tbl pv-tbl">
-                      <thead><tr><th className="lft pv-first">Metric</th>{rows.map((r) => <th key={r.key} title={`${dmy(r.from)} → ${dmy(r.to)}`}>{r.label}</th>)}<th className="pv-total">Total</th></tr></thead>
+                      <thead><tr><th className="lft pv-first">Metric</th>{rows.map((r) => <th key={r.key} title={`${dmy(r.from)} → ${dmy(r.to)}`}>{r.label}</th>)}{showTotal ? <th className="pv-total">Total</th> : null}{showAvg ? <th className="pv-total pv-avg">Avg / {by}</th> : null}</tr></thead>
                       <tbody>
                         {selected.map((m, i) => {
-                          const head = m.g !== lastGroup ? <tr key={'g:' + m.g} className="pv-grp"><td colSpan={rows.length + 2}><span>{m.g}</span></td></tr> : null
+                          const head = m.g !== lastGroup ? <tr key={'g:' + m.g} className="pv-grp"><td colSpan={rows.length + 1 + (showTotal ? 1 : 0) + (showAvg ? 1 : 0)}><span>{m.g}</span></td></tr> : null
                           lastGroup = m.g
                           const onChart = chart.includes(m.id)
                           return (
@@ -472,7 +531,8 @@ export function PivotReport({ clients, currency }) {
                                   </span>
                                 </td>
                                 {rows.map((r, j) => { const v = m.calc(r.base); const p = j > 0 ? m.calc(rows[j - 1].base) : null; return <td key={r.key}><span className="tr-cell">{fmtVal(m, v, currency)}{showDelta && j > 0 ? <Dlt cur={v} prev={p} good={m.good} pts={m.kind === 'pct'} dp={m.kind === 'pct' ? 1 : 0} /> : null}</span></td> })}
-                                <td className="pv-total">{fmtVal(m, m.calc(total), currency)}</td>
+                                {showTotal ? <td className="pv-total">{fmtVal(m, m.calc(total), currency)}</td> : null}
+                                {showAvg ? <td className="pv-total pv-avg">{fmtVal(m, avgOf(m), currency)}</td> : null}
                               </tr>
                             </React.Fragment>
                           )

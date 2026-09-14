@@ -1913,7 +1913,7 @@ export function MetaConversionsEditor({ clientId, currency }) {
   const labelOf = (id) => (byId.get(id) || {}).label || id
   return (
     <div className="mconv">
-      <p className="cap" style={{ marginTop: 0 }}>Tick the conversion(s) this client optimises to as its <b>primary result</b> - the headline result &amp; cost-per on the Meta tab, Monthly Report and Daily Performance is the <b>sum</b> of every primary you tick. Tick any <b>secondary</b> events to show alongside (not counted in the headline). Standard + previously-fired custom events are listed; add any other <b>custom conversion</b> by name below.</p>
+      <p className="cap" style={{ marginTop: 0 }}>The Meta tab reads each ad set's own optimisation event from Meta (lead forms, a custom conversion, reach) and reports that as its result, so the campaign table matches Ads Manager; every other action a row drove, custom conversions included, sits in the hover. The <b>primary</b> you tick here is the fallback for an ad set whose event can't be read, and the definition of a result on Daily Performance and the cross-client trends, where results are counted by day rather than by ad set - so tick the event the account actually optimises to, and only that. Tick any <b>secondary</b> events to show alongside. Standard + previously-fired custom events are listed; add any other <b>custom conversion</b> by name below.</p>
       <div className="mconv-add">
         <input type="text" placeholder="Add a custom conversion by name (e.g. B_Page_View)" value={addName} onChange={(e) => setAddName(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') findCustom() }} />
         <button className="btn-ghost sm" onClick={findCustom} disabled={probe.status === 'loading' || !addName.trim()}>{probe.status === 'loading' ? 'Finding…' : 'Find + add'}</button>
@@ -1966,7 +1966,7 @@ export function MetaConversionsEditor({ clientId, currency }) {
               <div className="mconv-foot">
                 <button className="btn-primary" onClick={save}>{saved ? '✓ Saved' : 'Save conversions'}</button>
                 {(cfg.primary || []).length ? <button className="btn-ghost sm" onClick={() => setCfg({ primary: [], secondary: [] })}>Clear</button> : null}
-                <span className="cap">{(cfg.primary || []).length ? `Primary: ${cfg.primary.map(labelOf).join(' + ')}${(cfg.secondary || []).length ? ` · ${cfg.secondary.length} secondary` : ''}${cfg.primary.length > 1 ? ' · headline = their sum' : ''}` : 'No primary set - the Meta tab shows Leads by default.'}</span>
+                <span className="cap">{(cfg.primary || []).length ? `Primary: ${cfg.primary.map(labelOf).join(' + ')}${(cfg.secondary || []).length ? ` · ${cfg.secondary.length} secondary` : ''}${cfg.primary.length > 1 ? ' · summed where the primary is used' : ''}` : 'No primary set - an ad set whose event can\'t be read shows Leads.'}</span>
               </div>
             </>}
     </div>

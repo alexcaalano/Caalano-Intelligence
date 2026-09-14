@@ -191,7 +191,8 @@ async function fetchCustomConvCounts(cc, from, to, key, byCampaign = false, pres
 // cc:<name> scheme. Returns null for non-custom fields.
 function ccActionName(fieldId) {
   const s = String(fieldId || '')
-  let m = s.match(/^cc:(.+)$/i); if (m) return m[1].trim().toLowerCase()
+  let m = s.match(/^cc:id:(\d{6,})$/i); if (m) return `offsite_conversion_custom_${m[1]}`
+  m = s.match(/^cc:(.+)$/i); if (m) return m[1].trim().toLowerCase()
   m = s.match(/offsite_conversion_(?:fb_pixel_)?custom_(\d{6,})/i); if (m) return `offsite_conversion_custom_${m[1]}`.toLowerCase()
   return null
 }
@@ -201,6 +202,7 @@ const isCustomConvField = (f) => ccActionName(f) != null
 // Custom Conversion Definition map (id → name) when available, else a generic.
 function ccLabel(fieldId, names) {
   const s = String(fieldId || '')
+  const idm0 = s.match(/^cc:id:(\d{6,})$/i); if (idm0) return (names && names.get(idm0[1])) || 'Custom conversion'
   const m = s.match(/^cc:(.+)$/i); if (m) return m[1].trim()
   const idm = s.match(/custom_(\d{6,})/); if (idm && names && names.get(idm[1])) return names.get(idm[1])
   return 'Custom conversion'
@@ -217,11 +219,19 @@ async function fetchCustomConvNames(cc, from, to, key, preset = null) {
     return m
   } catch { return new Map() }
 }
+// The custom conversion id an ad set optimises to, from its promoted object.
+function promotedCustomId(promoted) {
+  try {
+    const p = promoted ? (typeof promoted === 'string' ? JSON.parse(promoted) : promoted) : null
+    const id = p && p.custom_conversion_id ? String(p.custom_conversion_id) : ''
+    return /^\d{6,}$/.test(id) ? id : null
+  } catch { return null }
+}
 // Auto-detect a row's result field + Ads-Manager-style label from its ad set
 // optimisation goal + destination + promoted object. Returns null when it can't
 // be resolved (e.g. a custom conversion), so the caller falls back to the
 // client's configured primary.
-function resolveMetaResult(row) {
+function resolveMetaResult(row, ccNames = null) {
   const goal = String(row.adset_optimization_goal || '').toUpperCase()
   const dest = String(row.adset_destination_type || '').toUpperCase()
   let promoted = {}
@@ -232,11 +242,18 @@ function resolveMetaResult(row) {
   if (goal === 'LEAD_GENERATION' || goal === 'QUALITY_LEAD') return { field: 'leads_native', label: dest === 'ON_AD' || dest === 'MESSENGER' ? 'On-Facebook leads' : 'Instant form leads' }
   if (goal.includes('CONVERSATION') || goal === 'MESSAGING_PURCHASE_CONVERSION') return { field: 'actions_onsite_conversion_messaging_conversation_started_7d', label: 'Messaging conversations' }
   if (goal === 'OFFSITE_CONVERSIONS' || goal === 'ONSITE_CONVERSIONS' || goal === 'CONVERSIONS') {
+    // An ad set optimised to a custom conversion names it by id in its promoted
+    // object; the result is that conversion, counted from the Custom Conversions
+    // table and labelled with its real name (Ads Manager shows the same name).
+    const cid = promoted.custom_conversion_id && /^\d{6,}$/.test(String(promoted.custom_conversion_id)) ? String(promoted.custom_conversion_id) : null
+    if (cid) return { field: `cc:id:${cid}`, label: (ccNames && ccNames.get(cid)) || 'Custom conversion', custom: cid }
     const m = META_EVENT_FIELD[evt]; if (!m) return null
     const prefix = DEST_PREFIX[dest] || (goal === 'ONSITE_CONVERSIONS' ? 'On-Facebook' : 'Website')
     return { field: m[0], label: `${prefix} ${m[1]}` }
   }
   if (goal === 'LINK_CLICKS') return { field: 'inline_link_clicks', label: 'Link clicks' }
+  // Awareness: Ads Manager reports reach as the result.
+  if (goal === 'IMPRESSIONS' || goal === 'REACH' || goal === 'AD_RECALL_LIFT') return { field: 'reach', label: 'Reach' }
   // Traffic campaigns optimised to landing-page views (e.g. a "Page View" campaign)
   // count those views as their result - so they don't read as 0 against a lead primary.
   if (goal === 'LANDING_PAGE_VIEWS') return { field: 'actions_landing_page_view', label: 'Landing page views' }
@@ -244,8 +261,8 @@ function resolveMetaResult(row) {
 }
 // Resolve a row's result using auto-detect first, then the client's configured
 // primary conversion, then leads as the last resort. Returns {field,label,auto}.
-function rowResult(entity, fallback) {
-  const auto = resolveMetaResult({ adset_optimization_goal: entity.optGoal, adset_destination_type: entity.destType, adset_promoted_object: entity.promoted })
+function rowResult(entity, fallback, ccNames = null) {
+  const auto = resolveMetaResult({ adset_optimization_goal: entity.optGoal, adset_destination_type: entity.destType, adset_promoted_object: entity.promoted }, ccNames)
   if (auto) return { field: auto.field, label: auto.label, auto: true }
   // Multiple configured primary conversions → sum them; the field becomes an array.
   const fields = (fallback && fallback.fields && fallback.fields.length) ? fallback.fields : (fallback && fallback.field ? [fallback.field] : [])
@@ -258,10 +275,17 @@ function rowResult(entity, fallback) {
 // 'leads_native' = Instant Form + on-Facebook leads (matches Ads Manager's
 // lead-gen "Results"); null field = fbLeads; else the raw conversion field. An array
 // of fields (multiple configured primaries) sums each.
+// Custom conversions (cc:… fields) are not insights columns: they come from the
+// Custom Conversions table and sit on the entity as _cc (action name -> count).
+const ccCount = (entity, field) => { const an = ccActionName(field); return an && entity._cc ? (entity._cc.get(an) || 0) : 0 }
 const resultCountOne = (entity, field) => field === 'inline_link_clicks' ? entity.linkClicks
+  : field === 'reach' ? (entity.reach || 0)
   : field === 'leads_native' ? ((entity._rf ? (entity._rf.actions_leadgen_grouped || 0) + (entity._rf.actions_onsite_conversion_lead_grouped || 0) : 0) || entity.leads)
+  : isCustomConvField(field) ? ccCount(entity, field)
   : field ? (entity._rf ? entity._rf[field] || 0 : 0) : entity.leads
 const resultCount = (entity, field) => Array.isArray(field) ? field.reduce((s, f) => s + resultCountOne(entity, f), 0) : resultCountOne(entity, field)
+// Cost per result; for reach, per 1,000 people reached (Ads Manager's unit).
+const costPer = (spend, results, field) => results ? Math.round((spend / (field === 'reach' ? results / 1000 : results)) * 100) / 100 : null
 // All conversion actions an entity accrued (non-zero), for the results hover -
 // so a Lead campaign can still show it also drove messaging, website leads, etc.
 const META_BREAKDOWN = [
@@ -271,7 +295,27 @@ const META_BREAKDOWN = [
   ['actions_onsite_conversion_messaging_conversation_started_7d', 'Messaging conversations'],
   ['actions_complete_registration', 'Registration'], ['conversions_submit_application_total', 'Application'],
 ]
-const breakdownOf = (e) => META_BREAKDOWN.map(([f, lbl]) => ({ label: lbl, count: Math.round((e._rf && e._rf[f]) || 0) })).filter((x) => x.count > 0).sort((a, b) => b.count - a.count)
+const breakdownOf = (e, ccNames = null) => {
+  const std = META_BREAKDOWN.map(([f, lbl]) => ({ label: lbl, count: Math.round((e._rf && e._rf[f]) || 0) }))
+  const custom = []
+  if (e._cc && ccNames) for (const [id, name] of ccNames) { const n = Math.round(e._cc.get(`offsite_conversion_custom_${id}`) || 0); if (n > 0) custom.push({ label: name, count: n }) }
+  return [...std, ...custom].filter((x) => x.count > 0).sort((a, b) => b.count - a.count)
+}
+// Custom conversion counts for one campaign (from the Custom Conversions table,
+// which Windsor only breaks down to campaign), keyed by Meta's action name.
+// Ad sets and ads inside a campaign get the campaign's counts shared out by
+// spend, which is exact for a single-ad-set campaign and a fair split otherwise.
+function attachCustomCounts(entities, ccData, campSpend) {
+  if (!ccData || !ccData.perCamp) return
+  for (const e of entities) {
+    const camp = ccData.perCamp.get(e.campaign || e.name)
+    if (!camp) continue
+    const total = campSpend ? campSpend.get(e.campaign) || 0 : 0
+    const share = campSpend ? (total > 0 ? (e.spend || 0) / total : 0) : 1
+    e._cc = new Map()
+    for (const [an, n] of camp) e._cc.set(an, Math.round(n * share))
+  }
+}
 const fbLeads = (r) => { const native = num(r.actions_leadgen_grouped) + num(r.actions_onsite_conversion_lead_grouped); return native || num(r.actions_offsite_conversion_fb_pixel_lead) }
 
 // Everything reports against Australian Eastern time (Sydney). "Today" is the
@@ -444,7 +488,8 @@ function aggMeta(rows, keyField, extra = []) {
   return [...m.values()]
 }
 const clean = (e) => { const { _rf, optGoal, destType, promoted, ...v } = e; return v }
-function rollupMeta(adRows, dayRows, accRows, campRows, adsetRows, pCampRows, fallback, extra = []) {
+function rollupMeta(adRows, dayRows, accRows, campRows, adsetRows, pCampRows, fallback, extra = [], ccData = null) {
+  const ccNames = ccData ? ccData.names : null
   // FIX A: campaign / ad-set counts come from Meta's own per-level breakdowns
   // (de-duplicated at each level), not from summing the ad rows, so they match
   // Meta Ads Manager instead of inflating via cross-ad attribution.
@@ -454,29 +499,43 @@ function rollupMeta(adRows, dayRows, accRows, campRows, adsetRows, pCampRows, fa
   // Ad sets carry the optimisation goal + promoted object, so results resolve
   // here first; campaign + ad results are rolled up / joined from them.
   const adsets = aggMeta(adsetRows, 'adset_name', extra).sort((a, b) => b.spend - a.spend)
+  // Campaign spend as the sum of its ad sets, so a custom conversion shared out
+  // by spend adds back up to the campaign's exact count.
+  const adsetCampSpend = new Map()
+  for (const a of adsets) if (a.campaign) adsetCampSpend.set(a.campaign, (adsetCampSpend.get(a.campaign) || 0) + a.spend)
+  attachCustomCounts(campaignsRaw, ccData, null)
+  attachCustomCounts(adsets, ccData, adsetCampSpend)
   for (const a of adsets) {
-    const rr = rowResult(a, fallback)
+    const rr = rowResult(a, fallback, ccNames)
     a.resultField = rr.field; a.resultType = rr.label; a.resultAuto = rr.auto
     a.results = resultCount(a, rr.field)
-    a.costPerResult = a.results ? Math.round((a.spend / a.results) * 100) / 100 : null
-    a.breakdown = breakdownOf(a)
+    a.costPerResult = costPer(a.spend, a.results, rr.field)
+    if (rr.field === 'reach') a.cprUnit = 'per 1,000 reached'
+    a.breakdown = breakdownOf(a, ccNames)
   }
   const adsetByName = new Map(adsets.map((a) => [a.name, a]))
   // Per-campaign result: sum of its ad sets' own results; type is uniform label
   // or "Mixed" when a campaign runs ad sets optimising to different events.
   const campRes = new Map()
-  for (const a of adsets) { if (!a.campaign) continue; let e = campRes.get(a.campaign); if (!e) { e = { labels: new Set(), results: 0 }; campRes.set(a.campaign, e) } e.labels.add(a.resultType); e.results += a.results }
+  for (const a of adsets) { if (!a.campaign) continue; let e = campRes.get(a.campaign); if (!e) { e = { labels: new Set(), results: 0, field: a.resultField }; campRes.set(a.campaign, e) } e.labels.add(a.resultType); e.results += a.results }
   const campaigns = campaignsRaw.map((c) => {
     const e = campRes.get(c.name)
-    if (e) { c.resultType = e.labels.size === 1 ? [...e.labels][0] : 'Mixed'; c.results = e.results }
-    else { const rr = rowResult(c, fallback); c.resultType = rr.label; c.results = resultCount(c, rr.field) }
-    c.costPerResult = c.results ? Math.round((c.spend / c.results) * 100) / 100 : null
-    c.breakdown = breakdownOf(c)
+    // One result type across the campaign: read the campaign's own count for it
+    // (exact for reach and custom conversions, which do not sum across ad sets).
+    let cField = null
+    if (e) { c.resultType = e.labels.size === 1 ? [...e.labels][0] : 'Mixed'; cField = e.labels.size === 1 ? e.field : null; c.results = cField ? resultCount(c, cField) : e.results }
+    else { const rr = rowResult(c, fallback, ccNames); c.resultType = rr.label; cField = rr.field; c.results = resultCount(c, rr.field) }
+    c.costPerResult = costPer(c.spend, c.results, cField)
+    if (cField === 'reach') c.cprUnit = 'per 1,000 reached'
+    c.breakdown = breakdownOf(c, ccNames)
     const p = prevCamp.get(c.name)
     c.prev = p ? { spend: p.spend, impressions: p.impressions, clicks: p.clicks, linkClicks: p.linkClicks, leads: p.leads, videoViews: p.videoViews, reach: p.reach } : null
     return clean(c)
   })
-  const readFieldOne = (r, field) => field === 'inline_link_clicks' ? num(r.inline_link_clicks) : field === 'leads_native' ? fbLeads(r) : field ? num(r[field]) : fbLeads(r)
+  const adCampSpend = new Map()
+  for (const r of adRows) if (r.campaign) adCampSpend.set(r.campaign, (adCampSpend.get(r.campaign) || 0) + num(r.spend))
+  const adCc = (r, field) => { const camp = ccData && ccData.perCamp ? ccData.perCamp.get(r.campaign) : null; const an = ccActionName(field); if (!camp || !an) return 0; const tot = adCampSpend.get(r.campaign) || 0; return Math.round((camp.get(an) || 0) * (tot > 0 ? num(r.spend) / tot : 0)) }
+  const readFieldOne = (r, field) => field === 'inline_link_clicks' ? num(r.inline_link_clicks) : field === 'reach' ? num(r.reach) : field === 'leads_native' ? fbLeads(r) : isCustomConvField(field) ? adCc(r, field) : field ? num(r[field]) : fbLeads(r)
   const readField = (r, field) => Array.isArray(field) ? field.reduce((s, f) => s + readFieldOne(r, f), 0) : readFieldOne(r, field)
   const ads = adRows.map((r) => {
     const parent = adsetByName.get(r.adset_name)
@@ -491,7 +550,7 @@ function rollupMeta(adRows, dayRows, accRows, campRows, adsetRows, pCampRows, fa
       reach: num(r.reach),
       spend, impressions: num(r.impressions), clicks: num(r.clicks),
       linkClicks: num(r.inline_link_clicks), leads: fbLeads(r), videoViews: num(r.actions_video_view),
-      resultType: label, results, costPerResult: results ? Math.round((spend / results) * 100) / 100 : null,
+      resultType: label, results, costPerResult: costPer(spend, results, field), ...(field === 'reach' ? { cprUnit: 'per 1,000 reached' } : {}),
     }
   }).filter((a) => a.name).sort((a, b) => b.spend - a.spend)
   // daily series, sorted ascending by date
@@ -912,7 +971,7 @@ async function buildMeta(accountId, from, to, preset, key, fallback, opts = {}) 
   const campFields = ['account_id', 'campaign', 'reach', 'spend', 'impressions', 'clicks', 'inline_link_clicks', ...FB_LEAD_FIELDS, ...RESULT_FIELDS, 'actions_video_view']
   // Ad-set query carries the optimisation goal + promoted object so results
   // auto-detect per ad set.
-  const adsetFields = ['account_id', 'campaign', 'adset_name', 'adset_optimization_goal', 'adset_destination_type', 'adset_promoted_object', 'campaign_objective', 'spend', 'impressions', 'clicks', 'inline_link_clicks', ...FB_LEAD_FIELDS, ...RESULT_FIELDS, 'actions_video_view']
+  const adsetFields = ['account_id', 'campaign', 'adset_name', 'adset_optimization_goal', 'adset_destination_type', 'adset_promoted_object', 'campaign_objective', 'reach', 'spend', 'impressions', 'clicks', 'inline_link_clicks', ...FB_LEAD_FIELDS, ...RESULT_FIELDS, 'actions_video_view']
   // The per-ad-per-day breakdown (adDaily) is by far the heaviest query - for a
   // year that's (#ads x 365) rows, which blows the payload and the time budget.
   // For big windows drop it to campaign x day (10-50x smaller); the campaign
@@ -939,54 +998,28 @@ async function buildMeta(accountId, from, to, preset, key, fallback, opts = {}) 
     windsorFetch('facebook', adsetFields, from, to, preset, key, { accounts: accountId }).then(filt).catch(() => { adReadOk = false; return [] }),
     (core || !pr.from) ? Promise.resolve([]) : windsorFetch('facebook', campFields, pr.from, pr.to, null, key, { accounts: accountId }).then(filt).catch(() => []),
   ])
-  // Resolve custom-conversion primaries to their real names (Custom Conversion
-  // Definition table: id → name) so the Results label reads e.g. "B_Page_View"
-  // instead of "Offsite Conversion Custom <id>". Rebuild the fallback label
-  // rollupMeta stamps onto every row before the rollup runs.
-  let ccNames = null
-  if (fallback && (fallback.fields || []).some(isCustomConvField)) {
-    ccNames = await fetchCustomConvNames({ meta: accountId }, from, to, key, preset)
-    const lab1 = (f) => isCustomConvField(f) ? ccLabel(f, ccNames) : cap1(META_CONV_LABEL[f] || prettyField(f))
-    const fs = fallback.fields
-    fallback = { ...fallback, label: fs.length === 1 ? lab1(fs[0]) : `${lab1(fs[0])} +${fs.length - 1} more` }
+  // Custom conversions live in Windsor's separate Custom Conversions table, not
+  // the insights columns. They are needed when an ad set optimises to one (its
+  // promoted object names the id) or when the client's configured primary is
+  // one. Names come from the Custom Conversion Definition table so the result
+  // reads "A_event_pageview", as Ads Manager shows it.
+  const adsetsUseCustom = adsetRows.some((r) => promotedCustomId(r.adset_promoted_object))
+  const fallbackCustom = !!(fallback && (fallback.fields || []).some(isCustomConvField))
+  let ccData = null
+  if (adsetsUseCustom || fallbackCustom) {
+    const [names, counts] = await Promise.all([
+      fetchCustomConvNames({ meta: accountId }, from, to, key, preset),
+      fetchCustomConvCounts({ meta: accountId }, from, to, key, true, preset).catch(() => ({ total: new Map(), perCamp: new Map() })),
+    ])
+    ccData = { names, perCamp: counts.perCamp, total: counts.total }
+    if (fallbackCustom) {
+      const lab1 = (f) => isCustomConvField(f) ? ccLabel(f, names) : cap1(META_CONV_LABEL[f] || prettyField(f))
+      const fs = fallback.fields
+      fallback = { ...fallback, label: fs.length === 1 ? lab1(fs[0]) : `${lab1(fs[0])} +${fs.length - 1} more` }
+    }
   }
-  const roll = rollupMeta(adRows, dayRows, accRows, campRows, adsetRows, pCampRows, fallback, extra)
+  const roll = rollupMeta(adRows, dayRows, accRows, campRows, adsetRows, pCampRows, fallback, extra, ccData)
   roll.prev = metaTotals(prevRows)
-  // Custom-conversion RESULTS injection. Windsor serves custom conversions only via
-  // its separate Custom Conversions table, so they never reach the insights rollup
-  // above (every custom field reads 0 there). For a client whose configured PRIMARY
-  // includes a custom conversion, add that conversion's real count - per campaign and
-  // to the account total - on top of the standard results, honouring the Settings
-  // promise "headline = the sum of every primary you tick". Add-only: since the
-  // insights value for a custom field is always 0, this can never double-count.
-  const ccPrimary = ((fallback && fallback.fields) || []).filter(isCustomConvField)
-  if (ccPrimary.length) {
-    try {
-      const { total, perCamp } = await fetchCustomConvCounts({ meta: accountId }, from, to, key, true, preset)
-      const sumFor = (m) => ccPrimary.reduce((s, f) => { const an = ccActionName(f); return s + (an && m ? (m.get(an) || 0) : 0) }, 0)
-      const addTotal = sumFor(total)
-      if (addTotal > 0) {
-        const bd = { ...(Object.fromEntries((roll.totals.resultBreakdown || []).map((b) => [b.label, b.count]))) }
-        for (const f of ccPrimary) { const an = ccActionName(f); const c = an ? (total.get(an) || 0) : 0; if (c > 0) { const lab = ccLabel(f, ccNames); bd[lab] = (bd[lab] || 0) + c } }
-        roll.totals.results = (roll.totals.results || 0) + addTotal
-        roll.totals.resultBreakdown = Object.entries(bd).map(([label, count]) => ({ label, count })).sort((a, b) => b.count - a.count)
-        roll.totals.costPerResult = roll.totals.results ? Math.round((roll.totals.spend / roll.totals.results) * 100) / 100 : null
-      }
-      const campCustom = new Map(); const campSpend = new Map()
-      for (const c of roll.campaigns || []) {
-        const add = sumFor(perCamp.get(c.name))
-        campSpend.set(c.name, c.spend || 0)
-        if (add > 0) { campCustom.set(c.name, add); c.results = (c.results || 0) + add; c.costPerResult = c.results ? Math.round((c.spend / c.results) * 100) / 100 : null }
-      }
-      // Windsor breaks custom conversions down only to campaign, so allocate each
-      // campaign's count to its ad sets / ads by spend share - the drill-downs then
-      // reflect the custom conversion too, and each campaign's total stays exact.
-      if (campCustom.size) {
-        const allocate = (rows) => { for (const r of rows || []) { const cust = campCustom.get(r.campaign); if (!cust) continue; const cs = campSpend.get(r.campaign) || 0; const add = Math.round(cust * (cs > 0 ? (r.spend || 0) / cs : 0)); if (add > 0) { r.results = (r.results || 0) + add; r.costPerResult = r.results ? Math.round((r.spend / r.results) * 100) / 100 : null } } }
-        allocate(roll.adsets); allocate(roll.ads)
-      }
-    } catch { /* leave standard results unchanged on any failure */ }
-  }
   roll.adDaily = adDayRows.map((r) => ({ date: String(r.date || '').slice(0, 10), campaign: r.campaign, adset: r.adset_name || null, ad: r.ad_name || null, spend: num(r.spend), impressions: num(r.impressions), clicks: num(r.clicks), linkClicks: num(r.inline_link_clicks), leads: fbLeads(r) })).filter((r) => r.date && (r.ad || r.campaign))
   roll.adDailyLevel = bigWin ? 'campaign' : 'ad'
   // Fast-paint marker: the frontend shows a "loading creatives" note while this is
@@ -3949,7 +3982,7 @@ export default async (req) => {
         // windowed conversions per day and under-counts results - the bug that made
         // the trend disagree with the headline. One fetch per month, in parallel.
         const fallback = await readMetaPrimary(client).catch(() => null)
-        const adsetFields = ['account_id', 'campaign', 'adset_name', 'adset_optimization_goal', 'adset_destination_type', 'adset_promoted_object', 'campaign_objective', 'spend', 'inline_link_clicks', ...FB_LEAD_FIELDS, ...META_RESULT_FIELDS, 'actions_video_view']
+        const adsetFields = ['account_id', 'campaign', 'adset_name', 'adset_optimization_goal', 'adset_destination_type', 'adset_promoted_object', 'campaign_objective', 'reach', 'spend', 'inline_link_clicks', ...FB_LEAD_FIELDS, ...META_RESULT_FIELDS, 'actions_video_view']
         const monthList = [...buckets.keys()]
         const lastDay = (m) => { const [y, mo] = m.split('-').map(Number); return new Date(Date.UTC(y, mo, 0)).toISOString().slice(0, 10) }
         const perMonth = await Promise.all(monthList.map((k) =>
@@ -3957,17 +3990,24 @@ export default async (req) => {
             .then((rows) => rows.filter((r) => !r.account_id || acctEq(r.account_id,cc.meta)))
             .catch(() => [])
         ))
-        // Custom-conversion primaries aren't insights columns, so add each month's
-        // count from the Custom Conversions table (same as the headline).
-        const ccPrimary = ((fallback && fallback.fields) || []).filter(isCustomConvField)
-        const ccPerMonth = ccPrimary.length
-          ? await Promise.all(monthList.map((k) => fetchCustomConvCounts(cc, `${k}-01`, lastDay(k), key, false).then((d) => d.total).catch(() => new Map())))
+        // Custom conversions (an ad set optimised to one, or a custom primary)
+        // come from the Custom Conversions table per month, per campaign, and
+        // are counted through the same per-ad-set rule as the headline.
+        const needCc = perMonth.some((rows) => rows.some((r) => promotedCustomId(r.adset_promoted_object))) || ((fallback && fallback.fields) || []).some(isCustomConvField)
+        const ccNames = needCc ? await fetchCustomConvNames(cc, `${monthList[0]}-01`, lastDay(monthList[monthList.length - 1]), key).catch(() => new Map()) : null
+        const ccPerMonth = needCc
+          ? await Promise.all(monthList.map((k) => fetchCustomConvCounts(cc, `${k}-01`, lastDay(k), key, true).catch(() => ({ total: new Map(), perCamp: new Map() }))))
           : null
         monthList.forEach((k, i) => {
           const b = buckets.get(k); if (!b) return
           let results = 0, spend = 0
-          for (const a of aggMeta(perMonth[i], 'adset_name')) { const rr = rowResult(a, fallback); results += resultCount(a, rr.field) || 0; spend += a.spend }
-          if (ccPerMonth) { const tm = ccPerMonth[i]; for (const f of ccPrimary) { const an = ccActionName(f); results += an ? (tm.get(an) || 0) : 0 } }
+          const adsets = aggMeta(perMonth[i], 'adset_name')
+          if (ccPerMonth) {
+            const campSpend = new Map()
+            for (const a of adsets) if (a.campaign) campSpend.set(a.campaign, (campSpend.get(a.campaign) || 0) + a.spend)
+            attachCustomCounts(adsets, { names: ccNames, perCamp: ccPerMonth[i].perCamp }, campSpend)
+          }
+          for (const a of adsets) { const rr = rowResult(a, fallback, ccNames); results += resultCount(a, rr.field) || 0; spend += a.spend }
           b.spend = spend; b.leads = results
         })
       }
@@ -5371,3 +5411,7 @@ export default async (req) => {
     return json({ error: String(e.message || e), auth: !!(e && e.auth), soft: !(e && e.auth) }, 502)
   }
 }
+
+// For tests: the Meta results roll-up and its resolver, so the Ads-Manager
+// matching rules can be checked against fixture rows without a network.
+export { rollupMeta as _rollupMeta, resolveMetaResult as _resolveMetaResult, promotedCustomId as _promotedCustomId }

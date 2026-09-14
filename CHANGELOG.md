@@ -18,6 +18,34 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.618.0 - 2026-09-14
+
+**Meta Results match Ads Manager: each row reports its own optimisation event.** (commit PENDING)
+
+- The bug: for a client whose configured primary included a custom
+  conversion, that conversion's count was added to every campaign's headline
+  on top of the campaign's own result, so a lead-form campaign with 65 leads
+  read 86 (65 leads plus 21 page-view conversions the client's primary
+  named), and a 14-lead campaign read 19. The injection existed to honour
+  the old "headline = the sum of every primary you tick" promise, which
+  Ads Manager does not follow.
+- Now: an ad set optimised to a custom conversion resolves to that
+  conversion by the id in its promoted object, counted from Meta's custom
+  conversions table and labelled with its real name (A_event_pageview);
+  lead-form ad sets report their leads; awareness ad sets report Reach with
+  cost per 1,000 reached and no CVR. The campaign reads its own count when
+  its ad sets share one result type. The configured primary is only the
+  fallback for an ad set whose event cannot be read (and stays the
+  definition of a result on Daily Performance and the cross-client trends,
+  which count by day). The monthly trend uses the same rule as the table.
+- The hover on every Results cell lists every action the row drove,
+  custom conversions by name included, with the row's own result starred.
+- Settings -> Meta conversions explains the new rule.
+- Test: `tests/metaresults_test.mjs` runs the roll-up on a real 30-day pull
+  for one account (four campaigns: lead form, custom conversion, awareness).
+
+---
+
 ## v3.617.0 - 2026-09-14
 
 **Every account carries first name, last name, email and mobile number.** (commit 9f5953b)

@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.628.0 - 2026-09-14 (commit PENDING)
+## v3.628.0 - 2026-09-14 (commit 5b8938c)
 
 ### Movers carousel on a phone: a clear peek, not a clipped edge
 

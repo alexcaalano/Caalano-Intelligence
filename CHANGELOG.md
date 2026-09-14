@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.630.0 - 2026-09-14 (commit PENDING)
+## v3.630.0 - 2026-09-14 (commit c941d1a)
 
 ### Settings → Visibility as a feature chart
 

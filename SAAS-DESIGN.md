@@ -756,6 +756,32 @@ organisation level, and the sign-in gains an organisation switcher.
 - [ ] Security contact `alex@caalanodigital.com.au` on the site.
 - [ ] Meta App Review and Google OAuth verification submissions prepared
       (screencast, test accounts, privacy URL, deletion URL).
+- [ ] **Sign in with Google, and second factors.** Offer "Sign in with
+      Google" (OpenID Connect via Google Identity Services) beside the
+      password form, matched to the account by verified e-mail. For those
+      people Google carries the second factor: their Google account's own
+      2-step verification, passkeys and device checks apply, and we never see
+      a password. It is not two-factor for the password path: an e-mail and
+      password sign-in stays single-factor until we add our own. Decision for
+      phase 2: (a) Google sign-in for everyone who wants it; (b) for password
+      sign-ins, a TOTP authenticator code (the standard app-based 6-digit code,
+      no provider or per-message cost, works offline) as the second factor,
+      optional at first and required for Super Admin and Agency Admin;
+      (c) e-mail one-time codes as the fallback when someone loses the
+      authenticator. SMS codes are not planned: they cost per message, are the
+      weakest factor (SIM swap), and the phone numbers we hold are for contact,
+      not identity. Raised 2026-09-14.
+- [ ] **Transactional e-mail.** Invites, approvals, password resets, sign-in
+      codes and "your report is published" notices need a sender. Today an
+      invite is a link the admin copies by hand. Pick a transactional provider
+      (Resend or Postmark; both have a free tier that covers our volume, an
+      Australian-friendly sending domain setup, and templates) and send from a
+      caalano360 subdomain with SPF, DKIM and DMARC. Needed before the second
+      factor above and before any outside tenant invites their own people.
+      Client-facing notifications (weekly digest, a lead-response alert, a
+      report ready) are a separate, later plan once the sender exists; they
+      are opt-in per person and per client, and are out of the SaaS launch
+      scope. Raised 2026-09-14.
 - [ ] **Settings → "CRM connection" becomes "Integrations".** Once Meta and
       Google connect from inside the app (section 7.3), the section that today
       holds only the Caalano Systems connection carries every provider:

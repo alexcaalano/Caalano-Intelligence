@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.635.0 - 2026-09-14 (commit PENDING)
+## v3.635.0 - 2026-09-14 (commit 9a4c5b9)
 
 ### Visibility owns the client tabs; Team & access keeps entitlement; "My account"
 

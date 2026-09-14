@@ -18,6 +18,20 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.638.0 - 2026-09-14 (commit PENDING)
+
+### Daily Performance: every figure shows its move against the period before
+
+**Up or down beside every number** - in a window tile's Ad spend → results table, Meta and Google each show spend, results and cost per result with a green or red arrow and percentage against the equal period before (spend in grey: more or less spend is neither good nor bad). The Total row keeps its figures only; the tile above already carries the blended move. Key events under Paid (and every other source) show the count, the share of leads (in points) and the cost per event against the previous window. The 28-day Source table does the same.
+
+**Drill-downs too** - Meta campaigns and ad sets, Google campaigns and ad groups, and Google's conversion actions all carry the same arrows on every metric. Google rows gain a Conversion rate column (conversions ÷ clicks), with its move in points. The server now pulls the equal period before at campaign, ad-set, ad-group and conversion-action grain; a row optimised to a custom conversion, or a campaign running mixed result types, shows no prior result rather than a false zero.
+
+**Cleaner tables** - the blue "campaigns · ad sets" and "campaigns · ad groups · conversion actions" text is gone from the source rows; a small chevron marks a row that opens, and the columns have room for the arrows. The Daily Performance pane is wider (1180px) so nothing overlaps.
+
+**Cache schema 6** - Meta and Google payloads carry new prior-period fields, so remembered payloads are rebuilt on the next load.
+
+---
+
 ## v3.637.0 - 2026-09-14 (commit 9f8a24d)
 
 ### Settings: sections with tabs, and the explanations move into hover

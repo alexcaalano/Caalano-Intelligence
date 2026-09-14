@@ -505,7 +505,7 @@ function aggMeta(rows, keyField, extra = []) {
   return [...m.values()]
 }
 const clean = (e) => { const { _rf, optGoal, destType, promoted, ...v } = e; return v }
-function rollupMeta(adRows, dayRows, accRows, campRows, adsetRows, pCampRows, fallback, extra = [], ccData = null) {
+function rollupMeta(adRows, dayRows, accRows, campRows, adsetRows, pCampRows, fallback, extra = [], ccData = null, pAdsetRows = []) {
   const ccNames = ccData ? ccData.names : null
   // FIX A: campaign / ad-set counts come from Meta's own per-level breakdowns
   // (de-duplicated at each level), not from summing the ad rows, so they match
@@ -516,6 +516,13 @@ function rollupMeta(adRows, dayRows, accRows, campRows, adsetRows, pCampRows, fa
   // Ad sets carry the optimisation goal + promoted object, so results resolve
   // here first; campaign + ad results are rolled up / joined from them.
   const adsets = aggMeta(adsetRows, 'adset_name', extra).sort((a, b) => b.spend - a.spend)
+  // The equal period before, per ad set, so the Daily Performance drill can show
+  // each row up or down. Custom-conversion counts are only pulled for the
+  // current period, so a row optimised to one has no prior result (null), never
+  // a false zero.
+  const prevAdset = new Map()
+  for (const a of aggMeta(pAdsetRows || [], 'adset_name', extra)) prevAdset.set(a.name, a)
+  const prevResult = (p, field) => (!p || !field ? null : (Array.isArray(field) ? field : [field]).some(isCustomConvField) ? null : resultCount(p, field))
   // Campaign spend as the sum of its ad sets, so a custom conversion shared out
   // by spend adds back up to the campaign's exact count.
   const adsetCampSpend = new Map()
@@ -529,6 +536,9 @@ function rollupMeta(adRows, dayRows, accRows, campRows, adsetRows, pCampRows, fa
     a.costPerResult = costPer(a.spend, a.results, rr.field)
     if (rr.field === 'reach') a.cprUnit = 'per 1,000 reached'
     a.breakdown = breakdownOf(a, ccNames)
+    const pa = prevAdset.get(a.name)
+    const pres = prevResult(pa, rr.field)
+    a.prev = pa ? { spend: pa.spend, impressions: pa.impressions, clicks: pa.clicks, linkClicks: pa.linkClicks, leads: pa.leads, results: pres, costPerResult: pres != null ? costPer(pa.spend, pres, rr.field) : null } : null
   }
   const adsetByName = new Map(adsets.map((a) => [a.name, a]))
   // Per-campaign result: sum of its ad sets' own results; type is uniform label
@@ -546,7 +556,10 @@ function rollupMeta(adRows, dayRows, accRows, campRows, adsetRows, pCampRows, fa
     if (cField === 'reach') c.cprUnit = 'per 1,000 reached'
     c.breakdown = breakdownOf(c, ccNames)
     const p = prevCamp.get(c.name)
-    c.prev = p ? { spend: p.spend, impressions: p.impressions, clicks: p.clicks, linkClicks: p.linkClicks, leads: p.leads, videoViews: p.videoViews, reach: p.reach } : null
+    // Prior results on the campaign's own result type (null when that type is a
+    // custom conversion or the campaign runs mixed types).
+    const pres = prevResult(p, cField)
+    c.prev = p ? { spend: p.spend, impressions: p.impressions, clicks: p.clicks, linkClicks: p.linkClicks, leads: p.leads, videoViews: p.videoViews, reach: p.reach, results: pres, costPerResult: pres != null ? costPer(p.spend, pres, cField) : null } : null
     return clean(c)
   })
   const adCampSpend = new Map()
@@ -968,9 +981,11 @@ function resolveFormsAttribution(data, maps) {
 
 async function buildMeta(accountId, from, to, preset, key, fallback, opts = {}) {
   // core = fast first-paint build: skip the two heaviest ad-level queries (per-ad and
-  // per-ad-per-day) plus the prior-period delta pulls, so the campaign / ad-set /
-  // totals / daily payload returns quickly. The creatives + day-drill + deltas arrive
-  // in the follow-up full build. Everything downstream already tolerates ads = [].
+  // per-ad-per-day) plus the account-level prior-period pull, so the campaign /
+  // ad-set / totals / daily payload returns quickly. The creatives + day-drill +
+  // account deltas arrive in the follow-up full build; the campaign and ad-set
+  // prior-period rows are light and come with core. Everything downstream already
+  // tolerates ads = [].
   const core = !!opts.core
   // A failed ad read now yields no rows instead of rejecting the whole
   // Promise.all and taking its successful siblings down with it - but an empty
@@ -1003,7 +1018,7 @@ async function buildMeta(accountId, from, to, preset, key, fallback, opts = {}) 
   // the campaign / ad-set tables + totals come from the lighter campRows/adsetRows
   // and still render. Small windows are cheap, so this rarely triggers there.
   const adCatch = windowDays(from, to, preset) > 90
-  const [adRows, dayRows, accRows, prevRows, adDayRows, campRows, adsetRows, pCampRows] = await Promise.all([
+  const [adRows, dayRows, accRows, prevRows, adDayRows, campRows, adsetRows, pCampRows, pAdsetRows] = await Promise.all([
     core ? Promise.resolve([]) : (adCatch
       ? windsorFetch('facebook', ['account_id', 'campaign', 'adset_name', 'ad_name', 'thumbnail_url', 'quality_ranking', 'reach', 'instagram_permalink_url', ...CREATIVE_MEDIA_FIELDS, 'spend', 'impressions', 'clicks', 'inline_link_clicks', ...FB_LEAD_FIELDS, ...RESULT_FIELDS, 'actions_video_view'], from, to, preset, key, { accounts: accountId }).then(filt).catch(() => [])
       : windsorFetch('facebook', ['account_id', 'campaign', 'adset_name', 'ad_name', 'thumbnail_url', 'quality_ranking', 'reach', 'instagram_permalink_url', ...CREATIVE_MEDIA_FIELDS, 'spend', 'impressions', 'clicks', 'inline_link_clicks', ...FB_LEAD_FIELDS, ...RESULT_FIELDS, 'actions_video_view'], from, to, preset, key, { accounts: accountId }).then(filt)),
@@ -1013,7 +1028,11 @@ async function buildMeta(accountId, from, to, preset, key, fallback, opts = {}) 
     core ? Promise.resolve([]) : windsorFetch('facebook', adDayFields, from, to, preset, key, { accounts: accountId }).then(filt).catch(() => []),
     windsorFetch('facebook', campFields, from, to, preset, key, { accounts: accountId }).then(filt).catch(() => { adReadOk = false; return [] }),
     windsorFetch('facebook', adsetFields, from, to, preset, key, { accounts: accountId }).then(filt).catch(() => { adReadOk = false; return [] }),
-    (core || !pr.from) ? Promise.resolve([]) : windsorFetch('facebook', campFields, pr.from, pr.to, null, key, { accounts: accountId }).then(filt).catch(() => []),
+    // Prior-period campaign and ad-set rows are light, and the Daily Performance
+    // drill (a core build) shows every row against the equal period before, so
+    // these two are pulled in core builds too - only the ad-level pulls stay out.
+    !pr.from ? Promise.resolve([]) : windsorFetch('facebook', campFields, pr.from, pr.to, null, key, { accounts: accountId }).then(filt).catch(() => []),
+    !pr.from ? Promise.resolve([]) : windsorFetch('facebook', adsetFields, pr.from, pr.to, null, key, { accounts: accountId }).then(filt).catch(() => []),
   ])
   // Custom conversions live in Windsor's separate Custom Conversions table, not
   // the insights columns. They are needed when an ad set optimises to one (its
@@ -1035,7 +1054,7 @@ async function buildMeta(accountId, from, to, preset, key, fallback, opts = {}) 
       fallback = { ...fallback, label: fs.length === 1 ? lab1(fs[0]) : `${lab1(fs[0])} +${fs.length - 1} more` }
     }
   }
-  const roll = rollupMeta(adRows, dayRows, accRows, campRows, adsetRows, pCampRows, fallback, extra, ccData)
+  const roll = rollupMeta(adRows, dayRows, accRows, campRows, adsetRows, pCampRows, fallback, extra, ccData, pAdsetRows)
   roll.prev = metaTotals(prevRows)
   roll.adDaily = adDayRows.map((r) => ({ date: String(r.date || '').slice(0, 10), campaign: r.campaign, adset: r.adset_name || null, ad: r.ad_name || null, spend: num(r.spend), impressions: num(r.impressions), clicks: num(r.clicks), linkClicks: num(r.inline_link_clicks), leads: fbLeads(r) })).filter((r) => r.date && (r.ad || r.campaign))
   roll.adDailyLevel = bigWin ? 'campaign' : 'ad'
@@ -1843,16 +1862,20 @@ async function fetchGeo(accountId, from, to, preset, key) {
 async function buildGoogle(accountId, from, to, preset, key) {
   const filt = (rows) => rows.filter((r) => !r.account_id || acctEq(r.account_id, accountId))
   const pr = prevRange(from, to)
-  const [cg, kw, st, dy, prev, agDay, stDay, ca, geo, lp, ads, adLabelRows] = await Promise.all([
+  const [cg, kw, st, dy, prev, agDay, stDay, ca, geo, caPrev, lp, ads, adLabelRows] = await Promise.all([
     windsorFetch('google_ads', ['account_id', 'campaign', 'ad_group_name', 'ad_group', 'spend', 'impressions', 'clicks', 'conversions'], from, to, preset, key, { accounts: accountId }).then(filt),
     windsorFetch('google_ads', ['account_id', 'campaign', 'ad_group_name', 'keyword_text', 'match_type', 'quality_score', 'spend', 'impressions', 'clicks', 'conversions'], from, to, preset, key, { accounts: accountId }).then(filt).catch(() => []),
     windsorFetch('google_ads', ['account_id', 'campaign', 'ad_group_name', 'search_term', 'spend', 'impressions', 'clicks', 'conversions'], from, to, preset, key, { accounts: accountId }).then(filt).catch(() => []),
     windsorFetch('google_ads', ['account_id', 'date', 'spend', 'impressions', 'clicks', 'conversions'], from, to, preset, key, { accounts: accountId }).then(filt).catch(() => []),
-    pr.from ? windsorFetch('google_ads', ['account_id', 'spend', 'impressions', 'clicks', 'conversions'], pr.from, pr.to, null, key, { accounts: accountId }).then(filt).catch(() => []) : Promise.resolve([]),
+    // Prior period at campaign x ad-group grain: the account total sums from it,
+    // and each campaign / ad group row gets its own equal-period-before figures.
+    pr.from ? windsorFetch('google_ads', ['account_id', 'campaign', 'ad_group_name', 'ad_group', 'spend', 'impressions', 'clicks', 'conversions'], pr.from, pr.to, null, key, { accounts: accountId }).then(filt).catch(() => []) : Promise.resolve([]),
     windsorFetch('google_ads', ['account_id', 'date', 'campaign', 'ad_group_name', 'spend', 'impressions', 'clicks', 'conversions'], from, to, preset, key, { accounts: accountId }).then(filt).catch(() => []),
     windsorFetch('google_ads', ['account_id', 'date', 'campaign', 'ad_group_name', 'search_term', 'spend', 'clicks', 'conversions'], from, to, preset, key, { accounts: accountId }).then(filt).catch(() => []),
     windsorFetch('google_ads', ['account_id', 'campaign', 'ad_group_name', 'conversion_action_name', 'conversion_action_category', 'conversions', 'all_conversions', 'conversions_value'], from, to, preset, key, { accounts: accountId }).then(filt).catch(() => []),
     fetchGeo(accountId, from, to, preset, key).catch(() => ({ dim: null, locations: [] })),
+    // The same conversion-action rows for the equal period before.
+    pr.from ? windsorFetch('google_ads', ['account_id', 'campaign', 'ad_group_name', 'conversion_action_name', 'conversions', 'all_conversions'], pr.from, pr.to, null, key, { accounts: accountId }).then(filt).catch(() => []) : Promise.resolve([]),
     // Landing Page Performance (Google's expanded landing-page report). Its own
     // query so a failure can't blank the campaigns/keywords; aggregated by URL.
     windsorFetch('google_ads', ['account_id', 'expanded_landing_page_view_expanded_final_url', 'spend', 'impressions', 'clicks', 'conversions'], from, to, preset, key, { accounts: accountId }).then(filt).catch(() => []),
@@ -1867,6 +1890,15 @@ async function buildGoogle(accountId, from, to, preset, key) {
     windsorFetch('google_ads', ['account_id', 'ad_id', 'labels'], from, to, preset, key, { accounts: accountId }).then(filt).catch(() => []),
   ])
   const roll = rollupGoogle(cg, kw, st, dy, daysInRange(from, to, preset))
+  // Equal period before, per campaign and per (campaign, ad group), so a drill
+  // row can show up or down. Names that did not run last period get null.
+  {
+    const cleanAg = (r) => r.ad_group_name || (r.ad_group ? String(r.ad_group).split('/').pop() : null)
+    const pc = aggBy(prev, (r) => r.campaign)
+    const pg = aggBy(prev, (r) => { const ag = cleanAg(r); return r.campaign && ag ? r.campaign + '|' + ag : null })
+    for (const c of roll.campaigns) c.prev = pc.get(c.name) || null
+    for (const g of roll.adGroups) g.prev = pg.get(g.campaign + '|' + g.name) || null
+  }
   roll.geo = geo
   // Landing pages by spend: which destination PAGES the budget drove traffic to.
   // Google's expanded URL carries every UTM / gclid param, so strip the query
@@ -1905,6 +1937,7 @@ async function buildGoogle(accountId, from, to, preset, key) {
   // Detailed rows (campaign, ad group, action) so the UI can filter them to the
   // drilled-into campaign / ad group; the front-end aggregates by action name.
   roll.conversionActions = ca.map((r) => ({ campaign: r.campaign || null, adGroup: r.ad_group_name || null, name: r.conversion_action_name, category: titleCase(String(r.conversion_action_category || '').replace(/_/g, ' ')), conversions: num(r.conversions), allConversions: num(r.all_conversions), value: num(r.conversions_value) })).filter((r) => r.name && r.allConversions > 0).slice(0, 3000)
+  roll.conversionActionsPrev = caPrev.map((r) => ({ campaign: r.campaign || null, adGroup: r.ad_group_name || null, name: r.conversion_action_name, conversions: num(r.conversions), allConversions: num(r.all_conversions) })).filter((r) => r.name && r.allConversions > 0).slice(0, 3000)
   roll.prev = prev.reduce((a, r) => ({ cost: a.cost + num(r.spend), impressions: a.impressions + num(r.impressions), clicks: a.clicks + num(r.clicks), conversions: a.conversions + num(r.conversions) }), { cost: 0, impressions: 0, clicks: 0, conversions: 0 })
   roll.adGroupDaily = agDay.map((r) => ({ date: String(r.date || '').slice(0, 10), campaign: r.campaign, adGroup: r.ad_group_name || (r.ad_group ? String(r.ad_group).split('/').pop() : null), cost: num(r.spend), impressions: num(r.impressions), clicks: num(r.clicks), conversions: num(r.conversions) })).filter((r) => r.date && r.campaign)
   roll.searchTermDaily = stDay.map((r) => ({ date: String(r.date || '').slice(0, 10), campaign: r.campaign, adGroup: r.ad_group_name || null, keyword: null, term: r.search_term, cost: num(r.spend), clicks: num(r.clicks), conversions: num(r.conversions) })).filter((r) => r.date && r.term && (r.cost > 0 || r.clicks > 0)).sort((a, b) => b.cost - a.cost).slice(0, 2500)

@@ -36,7 +36,7 @@ const lazyView = (load, name) => {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-export const APP_VERSION = '3.637.0'
+export const APP_VERSION = '3.638.0'
 // The business clock. Every server window is cut on the client's local day
 // (Caalano Systems location timezone), so any day the app derives on its own -
 // preset ranges, "today", CSV dates - must use the same clock rather than the
@@ -1222,9 +1222,9 @@ function AgencyComparison({ rows, currency, range, onPick, ov }) {
           return (
             <tr key={r.id} onClick={() => onPick(r.c)}>
               <td className="ov-name"><div className="client-cell"><Avatar id={r.id} name={r.name} i={r.i} /><div><span className="ov-name-row">{r.name}<MaturityBadge clientId={r.id} crmAvg={ok ? o.cur.avgCloseDays : null} sample={ok ? o.cur.avgCloseSample : 0} range={range} size="sm" /></span><small>{r.industry}</small></div></div></td>
-              <Cell v={paidView ? <SpendPop r={r} currency={currency}>{money(spendF)}</SpendPop> : '-'} cur={paidView ? spendF : null} prev={paidView ? pSpendF : null} neutral dash={!paidView} />
-              <Cell v={paidView ? <ResultsPop r={r} currency={currency}>{fmtNumber(resF)}</ResultsPop> : '-'} cur={paidView ? resF : null} prev={paidView ? pResF : null} dash={!paidView} />
-              <Cell v={paidView && resF ? <ResultsPop r={r} currency={currency}>{money(spendF / resF)}</ResultsPop> : '-'} cur={paidView && resF ? spendF / resF : null} prev={paidView && pResF ? pSpendF / pResF : null} gd dash={!paidView || !resF} />
+              <DCell v={paidView ? <SpendPop r={r} currency={currency}>{money(spendF)}</SpendPop> : '-'} cur={paidView ? spendF : null} prev={paidView ? pSpendF : null} neutral dash={!paidView} />
+              <DCell v={paidView ? <ResultsPop r={r} currency={currency}>{fmtNumber(resF)}</ResultsPop> : '-'} cur={paidView ? resF : null} prev={paidView ? pResF : null} dash={!paidView} />
+              <DCell v={paidView && resF ? <ResultsPop r={r} currency={currency}>{money(spendF / resF)}</ResultsPop> : '-'} cur={paidView && resF ? spendF / resF : null} prev={paidView && pResF ? pSpendF / pResF : null} gd dash={!paidView || !resF} />
               {errored
                 ? <td className="ov-td"><span className="ov-rowerr" title={`Couldn't load CRM data: ${o?.err || 'failed'}`}>⚠</span></td>
                 : <Cell {...g(cur ? fmtNumber(cur.opps) : '-', cur?.opps, prev?.opps)} />}
@@ -1377,6 +1377,22 @@ function useChannelFeed(clientId, channel, days) {
   }, [clientId, channel, days])
   return st
 }
+// Up or down against the equal period before, as the window tiles show it:
+// green when the move is good for that metric, red when it is not, grey for
+// spend (more or less spend is neither). Rates compare in points. Nothing is
+// shown when there is no prior figure to compare to.
+export function Dlt({ cur, prev, good = 'up', pts = false, dp = 0 }) {
+  if (cur == null || prev == null) return null
+  let d, txt
+  if (pts) { d = cur - prev; if (!isFinite(d)) return null; txt = `${Math.abs(d).toFixed(dp)} pts` }
+  else { if (!(prev > 0)) return null; d = ((cur - prev) / prev) * 100; if (!isFinite(d)) return null; txt = `${Math.abs(d).toFixed(dp)}%` }
+  if (Math.abs(d) < (pts ? 0.05 : 0.5)) return <span className="tr-dl flat">■ 0{pts ? ' pts' : '%'}</span>
+  const cls = good === 'neu' ? 'neu' : ((d > 0) === (good === 'up') ? 'up' : 'down')
+  return <span className={`tr-dl ${cls}`}>{d > 0 ? '▲' : '▼'} {txt}</span>
+}
+// A table cell's value with its delta beside it.
+export const DCell = ({ v, cur, prev, good, pts, dp }) => <span className="tr-cell">{v}<Dlt cur={cur} prev={prev} good={good} pts={pts} dp={dp} /></span>
+const prevOf = (r, k) => (r && r.prev && r.prev[k] != null ? r.prev[k] : null)
 // Campaigns with a second level under each (ad sets for Meta, ad groups for
 // Google). One open campaign at a time; the child rows sit indented under it.
 function DrillCampaigns({ rows, kidsOf, cols, kidLabel, money, empty }) {
@@ -1411,19 +1427,25 @@ function DrillCampaigns({ rows, kidsOf, cols, kidLabel, money, empty }) {
   )
 }
 const drillNum = (v, dp = 0) => fmtNumber(Math.round((v || 0) * Math.pow(10, dp)) / Math.pow(10, dp))
+// Every figure carries its move against the equal period before (r.prev, from
+// the server): spend in grey, results and clicks green when up, cost per result
+// green when down, rates in points.
 const META_DRILL_COLS = [
   { key: 'name', label: 'Campaign', left: true },
-  { key: 'spend', label: 'Spend', render: (r, money) => money(r.spend || 0) },
-  { key: 'results', label: 'Results', render: (r) => drillNum(r.results) },
+  { key: 'spend', label: 'Spend', render: (r, money) => <DCell v={money(r.spend || 0)} cur={r.spend || 0} prev={prevOf(r, 'spend')} good="neu" /> },
+  { key: 'results', label: 'Results', render: (r) => <DCell v={drillNum(r.results)} cur={r.results || 0} prev={prevOf(r, 'results')} /> },
   { key: 'type', label: 'Result type', sub: true, render: (r) => <span className="cap">{r.resultType || 'Leads'}</span> },
-  { key: 'cpr', label: 'Cost / result', render: (r, money) => (r.costPerResult != null ? `${money(r.costPerResult)}${r.cprUnit ? ' ' + r.cprUnit : ''}` : '-') },
+  { key: 'cpr', label: 'Cost / result', render: (r, money) => <DCell v={r.costPerResult != null ? `${money(r.costPerResult)}${r.cprUnit ? ' ' + r.cprUnit : ''}` : '-'} cur={r.costPerResult} prev={prevOf(r, 'costPerResult')} good="down" /> },
 ]
+const gRate = (r) => (r && r.clicks ? (r.conversions / r.clicks) * 100 : null)
+const gCpc = (r) => (r && r.conversions ? r.cost / r.conversions : null)
 const GOOGLE_DRILL_COLS = [
   { key: 'name', label: 'Campaign', left: true },
-  { key: 'cost', label: 'Spend', render: (r, money) => money(r.cost || 0) },
-  { key: 'clicks', label: 'Clicks', sub: true, render: (r) => drillNum(r.clicks) },
-  { key: 'conv', label: 'Conversions', render: (r) => drillNum(r.conversions, 1) },
-  { key: 'cpc', label: 'Cost / conv.', render: (r, money) => (r.conversions ? money(r.cost / r.conversions) : '-') },
+  { key: 'cost', label: 'Spend', render: (r, money) => <DCell v={money(r.cost || 0)} cur={r.cost || 0} prev={prevOf(r, 'cost')} good="neu" /> },
+  { key: 'clicks', label: 'Clicks', sub: true, render: (r) => <DCell v={drillNum(r.clicks)} cur={r.clicks || 0} prev={prevOf(r, 'clicks')} /> },
+  { key: 'conv', label: 'Conversions', render: (r) => <DCell v={drillNum(r.conversions, 1)} cur={r.conversions || 0} prev={prevOf(r, 'conversions')} /> },
+  { key: 'cvr', label: 'Conv. rate', sub: true, render: (r) => <DCell v={gRate(r) != null ? fmtPct(gRate(r), 1) : '-'} cur={gRate(r)} prev={gRate(r.prev)} pts dp={1} /> },
+  { key: 'cpc', label: 'Cost / conv.', render: (r, money) => <DCell v={gCpc(r) != null ? money(gCpc(r)) : '-'} cur={gCpc(r)} prev={gCpc(r.prev)} good="down" /> },
 ]
 // Meta: campaigns → ad sets, each reporting the event it optimises for (the
 // result type), so what a row calls a result is what Ads Manager calls it.
@@ -1451,9 +1473,15 @@ function GoogleDrill({ clientId, days, money, showActions = true }) {
   const groups = st.data.adGroups || []
   const kidsOf = (c) => groups.filter((g) => g.campaign === c.name)
   const acts = {}
-  for (const r of (st.data.conversionActions || [])) { const e = acts[r.name] = acts[r.name] || { name: r.name, category: r.category, conv: 0, all: 0 }; e.conv += r.conversions || 0; e.all += r.allConversions || 0 }
+  for (const r of (st.data.conversionActions || [])) { const e = acts[r.name] = acts[r.name] || { name: r.name, category: r.category, conv: 0, all: 0, pconv: null, pall: null }; e.conv += r.conversions || 0; e.all += r.allConversions || 0 }
+  for (const r of (st.data.conversionActionsPrev || [])) { const e = acts[r.name]; if (!e) continue; e.pconv = (e.pconv || 0) + (r.conversions || 0); e.pall = (e.pall || 0) + (r.allConversions || 0) }
   const rows = Object.values(acts).sort((a, b) => (b.conv - a.conv) || (b.all - a.all))
   const totConv = rows.reduce((s, r) => s + r.conv, 0)
+  const totAll = rows.reduce((s, r) => s + r.all, 0)
+  const hasPrev = Array.isArray(st.data.conversionActionsPrev)
+  const totPconv = hasPrev ? rows.reduce((s, r) => s + (r.pconv || 0), 0) : null
+  const totPall = hasPrev ? rows.reduce((s, r) => s + (r.pall || 0), 0) : null
+  const r1 = (v) => fmtNumber(Math.round(v * 10) / 10)
   return (
     <div className="tr-src-drillbox">
       <DrillCampaigns rows={camps} kidsOf={kidsOf} cols={GOOGLE_DRILL_COLS} kidLabel="ad groups" money={money} empty={`No Google campaign spend in the last ${days} days.`} />
@@ -1462,8 +1490,8 @@ function GoogleDrill({ clientId, days, money, showActions = true }) {
         {rows.length ? <table className="mini-tbl tr-brk-tbl">
           <thead><tr><th className="lft">Conversion action</th><th>Conversions</th><th>All conv.</th><th>% of conv.</th></tr></thead>
           <tbody>
-            {rows.map((r) => { const primary = r.conv > 0; return <tr key={r.name}><td className="lft">{primary ? <span title="Primary - counts toward the Results number">⭐ </span> : ''}{r.name}{r.category ? <span className="cap"> · {r.category}</span> : null}</td><td>{fmtNumber(Math.round(r.conv * 10) / 10)}</td><td>{fmtNumber(Math.round(r.all * 10) / 10)}</td><td>{totConv ? fmtPct((r.conv / totConv) * 100, 0) : '-'}</td></tr> })}
-            <tr className="tr-src-tot"><td className="lft">Total</td><td>{fmtNumber(Math.round(totConv * 10) / 10)}</td><td>{fmtNumber(Math.round(rows.reduce((s, r) => s + r.all, 0) * 10) / 10)}</td><td>100%</td></tr>
+            {rows.map((r) => { const primary = r.conv > 0; return <tr key={r.name}><td className="lft">{primary ? <span title="Primary - counts toward the Results number">⭐ </span> : ''}{r.name}{r.category ? <span className="cap"> · {r.category}</span> : null}</td><td><DCell v={r1(r.conv)} cur={r.conv} prev={hasPrev ? (r.pconv || 0) : null} /></td><td><DCell v={r1(r.all)} cur={r.all} prev={hasPrev ? (r.pall || 0) : null} /></td><td>{totConv ? fmtPct((r.conv / totConv) * 100, 0) : '-'}</td></tr> })}
+            <tr className="tr-src-tot"><td className="lft">Total</td><td><DCell v={r1(totConv)} cur={totConv} prev={totPconv} /></td><td><DCell v={r1(totAll)} cur={totAll} prev={totPall} /></td><td>100%</td></tr>
           </tbody>
         </table> : <p className="tr-brk-note cap">No Google conversion actions recorded in the last {days} days.</p>}
         <p className="tr-brk-note cap"><b>⭐ = primary conversion</b> - these make up the Conversions number (Google’s primary/optimised “Conversions” count). Un-starred rows are secondary actions, counted only in “All conv.”. Click a campaign for its ad groups. Account-wide over the last {days} days to yesterday.</p>
@@ -1477,18 +1505,22 @@ function TrendSource({ w28, row, money, clientId, pipeId }) {
   // Account-wide drills only: the channel feeds are not pipeline-scoped.
   const canDrill = !!(clientId && (!pipeId || pipeId === 'all'))
   const rows = []
-  if (row.hasGoogle) rows.push({ key: 'google', src: 'Google Ads', cost: w28.google.spend, leads: w28.google.results, drill: canDrill, more: 'campaigns · ad groups · conversion actions' })
-  if (row.hasMeta) rows.push({ key: 'meta', src: 'Facebook Ads', cost: w28.meta.spend, leads: w28.meta.results, drill: canDrill, more: 'campaigns · ad sets' })
+  if (row.hasGoogle) rows.push({ key: 'google', src: 'Google Ads', cost: w28.google.spend, leads: w28.google.results, costP: w28.google.spendPrev, leadsP: w28.google.resultsPrev, drill: canDrill, more: 'campaigns · ad groups · conversion actions' })
+  if (row.hasMeta) rows.push({ key: 'meta', src: 'Facebook Ads', cost: w28.meta.spend, leads: w28.meta.results, costP: w28.meta.spendPrev, leadsP: w28.meta.resultsPrev, drill: canDrill, more: 'campaigns · ad sets' })
   const tot = rows.reduce((a, r) => ({ cost: a.cost + r.cost, leads: a.leads + r.leads }), { cost: 0, leads: 0 })
+  const cplN = (c, l) => (l ? c / l : null)
   const cpl = (c, l) => (l ? money(c / l) : '-')
   const openRow = rows.find((r) => r.drill && r.key === open) || null
   return (
     <>
       <div className="tr-src-wrap">
-        <table className="mini-tbl tr-src"><thead><tr><th className="lft">Source · last 28 days</th><th>Cost</th><th>Results</th><th>Cost / result</th></tr></thead>
+        <table className="mini-tbl tr-src tr-dl-tbl"><thead><tr><th className="lft">Source · last 28 days <span className="tr-th-sub">vs previous 28</span></th><th>Spend</th><th>Results</th><th>Cost / result</th></tr></thead>
           <tbody>{rows.map((r) => (
             <tr key={r.key} className={r.drill ? `tr-src-click${open === r.key ? ' on' : ''}` : ''} onClick={r.drill ? () => setOpen((o) => (o === r.key ? null : r.key)) : undefined} title={r.drill ? `Click to see the ${r.more} behind this number` : undefined}>
-              <td className="lft">{r.src}{r.drill ? <span className="tr-src-more">{open === r.key ? '▾' : '▸'} {r.more}</span> : null}</td><td>{money(r.cost)}</td><td>{fmtNumber(Math.round(r.leads))}</td><td>{cpl(r.cost, r.leads)}</td>
+              <td className="lft">{r.drill ? <span className="tr-src-chev">{open === r.key ? '▾' : '▸'}</span> : null}{r.src}</td>
+              <td><DCell v={money(r.cost)} cur={r.cost} prev={r.costP} good="neu" /></td>
+              <td><DCell v={fmtNumber(Math.round(r.leads))} cur={r.leads} prev={r.leadsP} /></td>
+              <td><DCell v={cpl(r.cost, r.leads)} cur={cplN(r.cost, r.leads)} prev={cplN(r.costP, r.leadsP)} good="down" /></td>
             </tr>
           ))}
             <tr className="tr-src-tot"><td className="lft">Grand total</td><td>{money(tot.cost)}</td><td>{fmtNumber(Math.round(tot.leads))}</td><td>{cpl(tot.cost, tot.leads)}</td></tr></tbody>
@@ -1510,8 +1542,9 @@ function WindowBreakdown({ w, clientId, pipeId, stagePos, currency }) {
   const b = w.blended || {}
   const totalSpend = b.spend || 0
   const srcRows = []
-  if (w.meta && (w.meta.spend || w.meta.results)) srcRows.push({ label: 'Meta', spend: w.meta.spend || 0, results: w.meta.results || 0 })
-  if (w.google && (w.google.spend || w.google.results)) srcRows.push({ label: 'Google', spend: w.google.spend || 0, results: w.google.results || 0 })
+  if (w.meta && (w.meta.spend || w.meta.results)) srcRows.push({ label: 'Meta', spend: w.meta.spend || 0, results: w.meta.results || 0, spendP: w.meta.spendPrev, resultsP: w.meta.resultsPrev })
+  if (w.google && (w.google.spend || w.google.results)) srcRows.push({ label: 'Google', spend: w.google.spend || 0, results: w.google.results || 0, spendP: w.google.spendPrev, resultsP: w.google.resultsPrev })
+  const cprN = (s, r) => (r ? s / r : null)
   const cpr = (s, r) => (r ? money(s / r) : '-')
   const crm = w.crm
   // Key events split by lead-source channel. `src` picks the segment; reach/leads/won
@@ -1520,18 +1553,26 @@ function WindowBreakdown({ w, clientId, pipeId, stagePos, currency }) {
   const [src, setSrc] = useState('paid')
   const pickN = (obj) => { if (!obj) return 0; if (src === 'paid') return (obj.meta || 0) + (obj.google || 0); if (src === 'nonpaid') return obj.other || 0; return obj[src] || 0 }
   const mergeReach = (...maps) => { const o = {}; for (const m of maps) for (const k in (m || {})) o[k] = (o[k] || 0) + m[k]; return o }
-  const reachFor = () => { if (!crm) return {}; const R = crm.reach || {}; if (src === 'paid') return mergeReach(R.meta, R.google); if (src === 'nonpaid') return R.other || {}; return R[src] || {} }
+  const reachFrom = (R) => { if (!R) return {}; if (src === 'paid') return mergeReach(R.meta, R.google); if (src === 'nonpaid') return R.other || {}; return R[src] || {} }
   const leads = crm ? pickN(crm.leads) : 0
   const won = crm ? pickN(crm.won) : 0
-  let keRows = []
+  // The same rows for the equal window before, so every key event shows its move.
+  const hasPrev = !!(crm && crm.leadsPrev && crm.reachPrev)
+  const leadsP = hasPrev ? pickN(crm.leadsPrev) : null
+  let keRows = [], kePrev = new Map()
   if (crm) {
-    const rmap = { m: new Map(Object.entries(reachFor())), total: leads }
     const sp = new Map(Object.entries(stagePos || {}))
-    keRows = keyEventRows(keyEventsForPipe(loadKeyEvents(clientId), pipeId || 'all'), rmap, new Map(), sp, won).filter((r) => r.kind !== 'lead')
+    const kes = keyEventsForPipe(loadKeyEvents(clientId), pipeId || 'all')
+    keRows = keyEventRows(kes, { m: new Map(Object.entries(reachFrom(crm.reach))), total: leads }, new Map(), sp, won).filter((r) => r.kind !== 'lead')
+    if (hasPrev) for (const r of keyEventRows(kes, { m: new Map(Object.entries(reachFrom(crm.reachPrev))), total: leadsP }, new Map(), sp, pickN(crm.wonPrev))) kePrev.set(r.kind + ':' + r.label, r)
   }
+  const prevCount = (r) => { const p = kePrev.get(r.kind + ':' + r.label); return p ? (p.count || 0) : null }
   // Cost per event uses the SELECTED source's ad spend (Non-paid has none → no cost).
-  const srcSpend = src === 'meta' ? (w.meta ? w.meta.spend : 0) : src === 'google' ? (w.google ? w.google.spend : 0) : src === 'nonpaid' ? 0 : totalSpend
+  const spendOf = (k) => (src === 'meta' ? (w.meta ? w.meta[k] : 0) : src === 'google' ? (w.google ? w.google[k] : 0) : src === 'nonpaid' ? 0 : (b[k] || 0))
+  const srcSpend = spendOf('spend'), srcSpendP = hasPrev ? spendOf('spendPrev') : null
   const cpe = (n) => (n && srcSpend ? money(srcSpend / n) : '-')
+  const cpeN = (n, spend) => (n && spend ? spend / n : null)
+  const share = (n, tot) => (tot ? (n / tot) * 100 : null)
   const srcLabel = (KE_SRC.find(([k]) => k === src) || [])[1] || 'All CRM'
   // Drill into the exact people/records behind a key event in this window + source.
   const [drill, setDrill] = useState(null)
@@ -1546,8 +1587,8 @@ function WindowBreakdown({ w, clientId, pipeId, stagePos, currency }) {
     <div className="tr-brk">
       <div className="tr-brk-grid">
         <div>
-          <div className="tr-brk-lab">Ad spend → results · last {w.n} days</div>
-          <table className="mini-tbl tr-brk-tbl">
+          <div className="tr-brk-lab">Ad spend → results · last {w.n} days <span className="tr-th-sub">vs previous {w.n}</span></div>
+          <table className="mini-tbl tr-brk-tbl tr-dl-tbl">
             <thead><tr><th className="lft">Source</th><th>Spend</th><th>Results</th><th>Cost / result</th></tr></thead>
             <tbody>
               {srcRows.length ? srcRows.map((r) => {
@@ -1555,8 +1596,11 @@ function WindowBreakdown({ w, clientId, pipeId, stagePos, currency }) {
                 const on = chanOpen === r.label
                 return (
                   <React.Fragment key={r.label}>
-                    <tr className={can ? 'tr-src-click' : ''} onClick={can ? () => setChanOpen((o) => (o === r.label ? null : r.label)) : undefined} title={can ? `Click for the ${drillMore[r.label]} in this window` : undefined}>
-                      <td className="lft">{r.label}{can ? <span className="tr-src-more">{on ? '▾' : '▸'} {drillMore[r.label]}</span> : null}</td><td>{money(r.spend)}</td><td>{fmtNumber(r.results)}</td><td>{cpr(r.spend, r.results)}</td>
+                    <tr className={can ? `tr-src-click${on ? ' on' : ''}` : ''} onClick={can ? () => setChanOpen((o) => (o === r.label ? null : r.label)) : undefined} title={can ? `Click for the ${drillMore[r.label]} in this window` : undefined}>
+                      <td className="lft">{can ? <span className="tr-src-chev">{on ? '▾' : '▸'}</span> : null}{r.label}</td>
+                      <td><DCell v={money(r.spend)} cur={r.spend} prev={r.spendP} good="neu" /></td>
+                      <td><DCell v={fmtNumber(r.results)} cur={r.results} prev={r.resultsP} /></td>
+                      <td><DCell v={cpr(r.spend, r.results)} cur={cprN(r.spend, r.results)} prev={cprN(r.spendP, r.resultsP)} good="down" /></td>
                     </tr>
                   </React.Fragment>
                 )
@@ -1569,15 +1613,19 @@ function WindowBreakdown({ w, clientId, pipeId, stagePos, currency }) {
           <div className="tr-brk-lab">Key events by source{crm ? '' : ' (no CRM for this segment)'}</div>
           {crm ? (<>
             <div className="chan-toggle sm tr-brk-src">{KE_SRC.map(([k, l]) => <button key={k} className={src === k ? 'on' : ''} onClick={() => setSrc(k)}>{l}</button>)}</div>
-            <table className="mini-tbl tr-brk-tbl">
+            <table className="mini-tbl tr-brk-tbl tr-dl-tbl">
               <thead><tr><th className="lft">Key event · {srcLabel}</th><th>Count</th><th>% leads</th><th>Cost / event</th></tr></thead>
               <tbody>
-                <tr><td className="lft">Leads</td><td>{fmtNumber(leads)}</td><td>{leads ? '100%' : '-'}</td><td>{cpe(leads)}</td></tr>
+                <tr><td className="lft">Leads</td><td><DCell v={fmtNumber(leads)} cur={leads} prev={leadsP} /></td><td>{leads ? '100%' : '-'}</td><td><DCell v={cpe(leads)} cur={cpeN(leads, srcSpend)} prev={cpeN(leadsP, srcSpendP)} good="down" /></td></tr>
                 {keRows.map((r, i) => {
                   const can = (r.count || 0) > 0
+                  const pc = prevCount(r)
                   return (
                     <tr key={r.label + i} className={can ? 'tr-brk-click' : ''} onClick={can ? () => setDrill(r) : undefined} title={can ? 'Click to see the exact people behind this' : undefined}>
-                      <td className="lft">{r.kind === 'calendar' ? '📅 ' : ''}{r.label}{can ? <span className="tr-brk-drillind"> ›</span> : null}</td><td>{fmtNumber(r.count || 0)}</td><td>{leads ? fmtPct((r.count / leads) * 100, 0) : '-'}</td><td>{cpe(r.count || 0)}</td>
+                      <td className="lft">{r.kind === 'calendar' ? '📅 ' : ''}{r.label}{can ? <span className="tr-brk-drillind"> ›</span> : null}</td>
+                      <td><DCell v={fmtNumber(r.count || 0)} cur={r.count || 0} prev={pc} /></td>
+                      <td><DCell v={leads ? fmtPct((r.count / leads) * 100, 0) : '-'} cur={share(r.count || 0, leads)} prev={pc != null ? share(pc, leadsP) : null} pts /></td>
+                      <td><DCell v={cpe(r.count || 0)} cur={cpeN(r.count || 0, srcSpend)} prev={cpeN(pc, srcSpendP)} good="down" /></td>
                     </tr>
                   )
                 })}

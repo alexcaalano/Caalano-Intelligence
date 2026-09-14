@@ -20,7 +20,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ## v3.621.0 - 2026-09-14
 
-**Mirror status reads the database, not one process's counters.** (commit PENDING)
+**Mirror status reads the database, not one process's counters.** (commit 3cd0893)
 
 - `settings?mirror=1` now reports how many members exist in Postgres and
   how many carry a phone number, from the database itself. The write and

@@ -35,7 +35,7 @@ const lazyView = (load, name) => {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-export const APP_VERSION = '3.625.0'
+export const APP_VERSION = '3.626.0'
 // The business clock. Every server window is cut on the client's local day
 // (Caalano Systems location timezone), so any day the app derives on its own -
 // preset ranges, "today", CSV dates - must use the same clock rather than the
@@ -1378,9 +1378,12 @@ function useChannelFeed(clientId, channel, days) {
 function DrillCampaigns({ rows, kidsOf, cols, kidLabel, money, empty }) {
   const [open, setOpen] = useState(null)
   if (!rows.length) return <span className="cap">{empty}</span>
+  // On a phone the secondary columns leave the table and sit under the name.
+  const subs = cols.filter((c) => c.sub)
+  const caption = (r) => (subs.length ? <small className="tr-camp-caption">{subs.map((c) => <span key={c.key}>{c.label}: {c.render(r, money)}</span>)}</small> : null)
   return (
     <table className="mini-tbl tr-brk-tbl tr-camp">
-      <thead><tr>{cols.map((c) => <th key={c.key} className={c.left ? 'lft' : ''}>{c.label}</th>)}</tr></thead>
+      <thead><tr>{cols.map((c) => <th key={c.key} className={`${c.left ? 'lft' : ''}${c.sub ? ' col-sub' : ''}`}>{c.label}</th>)}</tr></thead>
       <tbody>
         {rows.map((r) => {
           const kids = kidsOf(r)
@@ -1389,11 +1392,11 @@ function DrillCampaigns({ rows, kidsOf, cols, kidLabel, money, empty }) {
           return (
             <React.Fragment key={r.name}>
               <tr className={can ? 'tr-src-click' : ''} onClick={can ? () => setOpen(on ? null : r.name) : undefined} title={can ? `Click to see the ${kidLabel} in this campaign` : undefined}>
-                {cols.map((c, i) => <td key={c.key} className={c.left ? 'lft' : ''}>{i === 0 ? <><span className="tr-camp-name">{r.name}</span>{can ? <span className="tr-src-more">{on ? '▾' : '▸'} {kids.length} {kidLabel}</span> : null}</> : c.render(r, money)}</td>)}
+                {cols.map((c, i) => <td key={c.key} className={`${c.left ? 'lft' : ''}${c.sub ? ' col-sub' : ''}`}>{i === 0 ? <><span className="tr-camp-name">{r.name}</span>{can ? <span className="tr-src-more">{on ? '▾' : '▸'} {kids.length} {kidLabel}</span> : null}{caption(r)}</> : c.render(r, money)}</td>)}
               </tr>
               {on ? kids.map((k) => (
                 <tr key={k.name} className="tr-camp-kid">
-                  {cols.map((c, i) => <td key={c.key} className={c.left ? 'lft' : ''}>{i === 0 ? <span className="tr-camp-name">{k.name}</span> : c.render(k, money)}</td>)}
+                  {cols.map((c, i) => <td key={c.key} className={`${c.left ? 'lft' : ''}${c.sub ? ' col-sub' : ''}`}>{i === 0 ? <><span className="tr-camp-name">{k.name}</span>{caption(k)}</> : c.render(k, money)}</td>)}
                 </tr>
               )) : null}
             </React.Fragment>
@@ -1408,13 +1411,13 @@ const META_DRILL_COLS = [
   { key: 'name', label: 'Campaign', left: true },
   { key: 'spend', label: 'Spend', render: (r, money) => money(r.spend || 0) },
   { key: 'results', label: 'Results', render: (r) => drillNum(r.results) },
-  { key: 'type', label: 'Result type', render: (r) => <span className="cap">{r.resultType || 'Leads'}</span> },
+  { key: 'type', label: 'Result type', sub: true, render: (r) => <span className="cap">{r.resultType || 'Leads'}</span> },
   { key: 'cpr', label: 'Cost / result', render: (r, money) => (r.costPerResult != null ? `${money(r.costPerResult)}${r.cprUnit ? ' ' + r.cprUnit : ''}` : '-') },
 ]
 const GOOGLE_DRILL_COLS = [
   { key: 'name', label: 'Campaign', left: true },
   { key: 'cost', label: 'Spend', render: (r, money) => money(r.cost || 0) },
-  { key: 'clicks', label: 'Clicks', render: (r) => drillNum(r.clicks) },
+  { key: 'clicks', label: 'Clicks', sub: true, render: (r) => drillNum(r.clicks) },
   { key: 'conv', label: 'Conversions', render: (r) => drillNum(r.conversions, 1) },
   { key: 'cpc', label: 'Cost / conv.', render: (r, money) => (r.conversions ? money(r.cost / r.conversions) : '-') },
 ]
@@ -1474,18 +1477,21 @@ function TrendSource({ w28, row, money, clientId, pipeId }) {
   if (row.hasMeta) rows.push({ key: 'meta', src: 'Facebook Ads', cost: w28.meta.spend, leads: w28.meta.results, drill: canDrill, more: 'campaigns · ad sets' })
   const tot = rows.reduce((a, r) => ({ cost: a.cost + r.cost, leads: a.leads + r.leads }), { cost: 0, leads: 0 })
   const cpl = (c, l) => (l ? money(c / l) : '-')
+  const openRow = rows.find((r) => r.drill && r.key === open) || null
   return (
-    <table className="mini-tbl tr-src"><thead><tr><th className="lft">Source · last 28 days</th><th>Cost</th><th>Results</th><th>Cost / result</th></tr></thead>
-      <tbody>{rows.map((r) => (
-        <React.Fragment key={r.key}>
-          <tr className={r.drill ? 'tr-src-click' : ''} onClick={r.drill ? () => setOpen((o) => (o === r.key ? null : r.key)) : undefined} title={r.drill ? `Click to see the ${r.more} behind this number` : undefined}>
-            <td className="lft">{r.src}{r.drill ? <span className="tr-src-more">{open === r.key ? '▾' : '▸'} {r.more}</span> : null}</td><td>{money(r.cost)}</td><td>{fmtNumber(Math.round(r.leads))}</td><td>{cpl(r.cost, r.leads)}</td>
-          </tr>
-          {r.drill && open === r.key ? <tr className="tr-src-drillrow"><td colSpan={4}>{r.key === 'google' ? <GoogleDrill clientId={clientId} days={28} money={money} /> : <MetaDrill clientId={clientId} days={28} money={money} />}</td></tr> : null}
-        </React.Fragment>
-      ))}
-        <tr className="tr-src-tot"><td className="lft">Grand total</td><td>{money(tot.cost)}</td><td>{fmtNumber(Math.round(tot.leads))}</td><td>{cpl(tot.cost, tot.leads)}</td></tr></tbody>
-    </table>
+    <>
+      <div className="tr-src-wrap">
+        <table className="mini-tbl tr-src"><thead><tr><th className="lft">Source · last 28 days</th><th>Cost</th><th>Results</th><th>Cost / result</th></tr></thead>
+          <tbody>{rows.map((r) => (
+            <tr key={r.key} className={r.drill ? `tr-src-click${open === r.key ? ' on' : ''}` : ''} onClick={r.drill ? () => setOpen((o) => (o === r.key ? null : r.key)) : undefined} title={r.drill ? `Click to see the ${r.more} behind this number` : undefined}>
+              <td className="lft">{r.src}{r.drill ? <span className="tr-src-more">{open === r.key ? '▾' : '▸'} {r.more}</span> : null}</td><td>{money(r.cost)}</td><td>{fmtNumber(Math.round(r.leads))}</td><td>{cpl(r.cost, r.leads)}</td>
+            </tr>
+          ))}
+            <tr className="tr-src-tot"><td className="lft">Grand total</td><td>{money(tot.cost)}</td><td>{fmtNumber(Math.round(tot.leads))}</td><td>{cpl(tot.cost, tot.leads)}</td></tr></tbody>
+        </table>
+      </div>
+      {openRow ? <div className="tr-brk-convdrill tr-src-under"><div className="tr-brk-lab">{openRow.src} · {openRow.more} · last 28 days</div>{openRow.key === 'google' ? <GoogleDrill clientId={clientId} days={28} money={money} /> : <MetaDrill clientId={clientId} days={28} money={money} />}</div> : null}
+    </>
   )
 }
 // Click-to-open breakdown for one window tile: ad spend → results split by Meta /
@@ -1735,7 +1741,7 @@ function MoversPanel({ list, clients, currency, onPick }) {
       <div className="mov-head">
         <b>📊 Biggest movers</b>
         <div className="chan-toggle sm">{MOVER_WINS.map((n) => <button key={n} className={win === n ? 'on' : ''} onClick={() => { setWin(n); setOpen(null) }}>{n}d</button>)}</div>
-        <span className="cap">cost per result vs the prior {win} days · biggest changes across all clients · click a mover for its creative breakdown</span>
+        <span className="cap">cost per result vs the prior {win} days · biggest changes across all clients · click a mover for its creative breakdown<span className="mov-swipe"> · swipe for more →</span></span>
       </div>
       {movers.length === 0 ? <p className="cap" style={{ margin: 0 }}>Nothing moved more than 8% over the last {win} days.</p>
         : <div className="mov-list">{movers.map((m, i) => (

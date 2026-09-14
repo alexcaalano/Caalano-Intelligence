@@ -5556,3 +5556,42 @@ body.hub-tv-on { overflow: hidden; }
 .tr-camp .tr-camp-kid td.lft { padding-left: 26px; position: relative; }
 .tr-camp .tr-camp-kid td.lft::before { content: '↳'; position: absolute; left: 10px; color: var(--faint); }
 .tr-camp-sub { margin-top: 14px; }
+
+/* ===== Daily performance on a phone: nothing wider than the screen ===== */
+.tr-src-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.tr-src-under { margin-top: 10px; }
+.tr-src-click.on td { background: color-mix(in srgb, var(--brand) 6%, transparent); }
+.tr-camp-caption { display: none; }
+.mov-swipe { display: none; }
+@media (max-width: 900px) {
+  /* Safety net: a stray wide element scrolls inside its own box, never the page. */
+  .main { overflow-x: clip; }
+  .card { max-width: 100%; min-width: 0; }
+  .tr-card { padding: 14px 13px 16px; }
+  .tr-brk { padding: 10px 11px; }
+  .tr-brk-grid { grid-template-columns: 1fr; }
+  .tr-brk-grid > div { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+}
+@media (max-width: 640px) {
+  .tr-src th, .tr-src td, .tr-brk-tbl th, .tr-brk-tbl td { padding: 6px 6px; font-size: 11.5px; }
+  .tr-src th.lft, .tr-src td.lft { padding-left: 4px; }
+  .tr-src-more { display: block; margin: 2px 0 0; }
+  /* Drill tables: secondary columns drop into a caption under the name. */
+  .tr-camp .col-sub { display: none; }
+  .tr-camp-caption { display: flex; flex-wrap: wrap; gap: 2px 10px; margin-top: 2px; font-size: 10.5px; color: var(--faint); }
+  .tr-camp td.lft { max-width: none; }
+  .tr-camp .tr-camp-kid td.lft { padding-left: 18px; }
+  .tr-camp .tr-camp-kid td.lft::before { left: 5px; }
+  .tr-brk-convdrill .tr-src-drillbox > table { min-width: 0; }
+  .tr-brk-src button { padding: 5px 9px; }
+}
+/* ===== Biggest movers: a swipeable carousel on a phone ===== */
+@media (max-width: 700px) {
+  .mov-panel .mov-list { display: flex; gap: 10px; overflow-x: auto; scroll-snap-type: x mandatory; -webkit-overflow-scrolling: touch; margin: 0 -13px; padding: 2px 13px 10px; scrollbar-width: none; }
+  .mov-panel .mov-list::-webkit-scrollbar { display: none; }
+  .mov-panel .mov-item2 { flex: 0 0 min(84vw, 340px); scroll-snap-align: start; display: flex; flex-direction: column; }
+  .mov-panel .mov-item2.open { flex-basis: min(92vw, 420px); }
+  .mov-panel .mov-item2 .mov-drill { max-height: 320px; overflow-y: auto; }
+  .mov-panel .mov-head .cap { flex-basis: 100%; }
+  .mov-swipe { display: inline; color: var(--brand); font-weight: 700; }
+}

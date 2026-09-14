@@ -18,6 +18,17 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.626.0 - 2026-09-14 (commit PENDING)
+
+### Daily performance on a phone
+
+- **No more sideways overflow**: the channel drill (campaigns → ad sets / ad groups) now renders under the source table instead of inside a table cell, so the table can no longer push the client card past the screen. The source table scrolls inside its own wrapper if it ever needs to, and the page itself is clipped horizontally on small screens as a safety net.
+- **Drill tables fit a phone**: at phone width the secondary columns (Meta result type, Google clicks) leave the table and sit as a caption under the campaign / ad set name, so Spend, Results and Cost per result stay readable side by side. Tighter cell padding; the "campaigns · ad sets" hint drops under the channel name.
+- **Date-tile breakdown**: one column on small screens, each table scrolling inside its own box.
+- **Biggest movers as a carousel**: on a phone the movers panel is a swipeable, snap-to-card strip (one mover per card, the open creative breakdown scrolls within the card) instead of a stack; a "swipe for more" hint in the header. Same on the Agency overview movers, which share the panel.
+
+---
+
 ## v3.625.0 - 2026-09-14 (commit f337201)
 
 ### Daily performance: two-level drill on each channel

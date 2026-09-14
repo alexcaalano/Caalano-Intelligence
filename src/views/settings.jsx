@@ -1620,7 +1620,7 @@ function VisMatrix({ cols, onFlip, locked }) {
   )
 }
 export function VisibilitySettings({ clients = [] }) {
-  const [mode, setMode] = useState('roles') // 'roles' | 'client' | 'agency'
+  const [mode, setMode] = useState('agency') // 'agency' | 'roles' | 'client'
   const [vis, setVis] = useState(() => normVisibility(SETTINGS.visibility))
   const [draftRoles, setDraftRoles] = useState(() => normVisibility(SETTINGS.visibility).roles)
   const [draftUsers, setDraftUsers] = useState({}) // email -> entry, or null = return to default
@@ -1689,9 +1689,9 @@ export function VisibilitySettings({ clients = [] }) {
       <h3 style={{ marginTop: 0 }}>Visibility</h3>
       <p className="cap" style={{ marginTop: -4 }}>Every page, client tab and Settings section down the left; who sees it across the top. <b>By role</b> sets the default for everyone of that role. <b>By client</b> shows the Account Admins and Account Users on one client, and <b>Agency</b> everyone at Caalano, as columns: a switch there gives that person their own set (marked <i>custom</i>) and <b>Use default</b> puts them back on the role. Anything new is visible until you switch it off, so this is where a feature waits until launch. That includes you: switch something off for Super Admin and it leaves your own sidebar too, but Settings and this page are always there to switch it back on. Use <b>View as</b> in the sidebar to check what someone else gets.</p>
       <div className="chan-toggle sm vis-mode">
+        <button className={mode === 'agency' ? 'on' : ''} onClick={() => setMode('agency')}>Agency</button>
         <button className={mode === 'roles' ? 'on' : ''} onClick={() => setMode('roles')}>By role</button>
         <button className={mode === 'client' ? 'on' : ''} onClick={() => setMode('client')}>By client</button>
-        <button className={mode === 'agency' ? 'on' : ''} onClick={() => setMode('agency')}>Agency</button>
       </div>
       {mode === 'roles' ? (
         <>

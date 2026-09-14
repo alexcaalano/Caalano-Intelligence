@@ -18,6 +18,14 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.636.0 - 2026-09-14 (commit PENDING)
+
+### Visibility: Agency first
+
+- The tabs read Agency, By role, By client, and the page opens on Agency.
+
+---
+
 ## v3.635.0 - 2026-09-14 (commit 9a4c5b9)
 
 ### Visibility owns the client tabs; Team & access keeps entitlement; "My account"

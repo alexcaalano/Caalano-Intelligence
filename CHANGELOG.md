@@ -20,7 +20,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ## v3.618.0 - 2026-09-14
 
-**Meta Results match Ads Manager: each row reports its own optimisation event.** (commit PENDING)
+**Meta Results match Ads Manager: each row reports its own optimisation event.** (commit be718df)
 
 - The bug: for a client whose configured primary included a custom
   conversion, that conversion's count was added to every campaign's headline

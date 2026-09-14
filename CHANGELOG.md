@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.638.0 - 2026-09-14 (commit PENDING)
+## v3.638.0 - 2026-09-14 (commit 5efdf0b)
 
 ### Daily Performance: every figure shows its move against the period before
 

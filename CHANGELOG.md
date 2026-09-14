@@ -20,7 +20,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ## v3.647.0 - 2026-09-14
 
-**Trend Report: Meta and Google spend counted twice; the Average column for costs** (commit PENDING)
+**Trend Report: Meta and Google spend counted twice; the Average column for costs** (commit 3cda5be)
 
 - Since the month-by-month loading (v3.641.0), the first call that frames the report (the range's buckets and the CRM's wins by close date) was still reading Meta and Google for the whole range, and the monthly ad parts were then added on top - so every Meta and Google figure (spend, results, impressions, clicks, conversions, and the costs built on them) read exactly double. July's Meta spend of $3,382.74 showed as $6,765. The framing call now carries no ad figures, the app clears any it might still receive from an older cached answer before adding the monthly parts, and the test suite asserts it. CRM figures were not affected.
 - The Average column divided a cost by the number of periods (a $44.47 cost per lead over twelve months read as $3.71). A count or an amount is still its total over the periods; a rate or a cost is now the mean of the periods that have one, as the column's hover always said.

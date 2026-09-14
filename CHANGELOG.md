@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.623.0 - 2026-09-14 (commit PENDING)
+## v3.623.0 - 2026-09-14 (commit 480ea66)
 
 ### Key event reach: the organic segment broken down on hover
 

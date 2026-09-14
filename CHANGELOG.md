@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.641.0 - 2026-09-14 (commit PENDING)
+## v3.641.0 - 2026-09-14 (commit 5c8f8ae)
 
 ### Trend Report: key events by source, client defaults, long ranges that finish
 

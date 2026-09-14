@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.624.0 - 2026-09-14 (commit PENDING)
+## v3.624.0 - 2026-09-14 (commit e3b2ccd)
 
 ### Key event reach: every booked person attributed; calendar rows measured on this period's leads
 

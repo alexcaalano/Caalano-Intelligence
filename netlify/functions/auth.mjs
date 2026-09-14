@@ -4,11 +4,12 @@
 // session + role here, so the open door only leads to the login desk.
 import {
   bootstrapAdmin, authenticate, createInvite, inviteInfo, acceptInvite,
-  listUsers, updateUser, deleteUser, changePassword, currentUser, countUsers,
+  listUsers, updateUser, updateProfile, deleteUser, changePassword, currentUser, countUsers,
   signupRequest, approveUser, ensureSuperadmin, isAdminish, signSession, sessionCookie, clearCookie, COOKIE,
   checkLoginAllowed, recordLoginResult, revokeSessions, getUser, geoFromReq,
   recordTermsAcceptance, listTermsAcceptances, getTermsAcceptance, getTermsDoc,
 } from '../lib/auth.mjs'
+import { PHONE_COUNTRIES, DEFAULT_PHONE_COUNTRY } from '../lib/contact.mjs'
 import { loadTerms, saveTerms, resetTerms, termsHash, termsAcceptanceValid, DEFAULT_TERMS, DEFAULT_MIN_VERSION } from '../lib/terms.mjs'
 
 const SESSION_MS = 14 * 86400 * 1000
@@ -50,6 +51,8 @@ export default async (req) => {
       const needsSetup = (await countUsers()) === 0
       return json({ ok: true, enabled: true, user: user ? await withTerms(user) : null, needsSetup })
     }
+    // The country list for the phone picker on the sign-in page.
+    if (action === 'countries') return json({ ok: true, default: DEFAULT_PHONE_COUNTRY, countries: PHONE_COUNTRIES })
     if (action === 'terms') {
       const live = await loadTerms()
       return json({ ok: true, terms: live.terms, hash: await termsHash(live.terms), minVersion: live.minVersion })
@@ -102,6 +105,7 @@ export default async (req) => {
       const phone = String(body.phone || '').trim()
       if (first.length < 2 || last.length < 2) return json({ ok: false, error: 'Please give your first and last name.' }, 400)
       if (phone.replace(/\D/g, '').length < 6) return json({ ok: false, error: 'Please give a contact phone number.' }, 400)
+      const phoneCountry = typeof body.phoneCountry === 'string' ? body.phoneCountry.slice(0, 2) : undefined
       // Bound the image so a pathological payload can't be stored. A signature
       // canvas produces a few tens of KB; anything far past that isn't one.
       if (sig && sig.length > 400000) return json({ ok: false, error: 'Signature image is too large.' }, 400)
@@ -111,7 +115,7 @@ export default async (req) => {
       const live = await loadTerms()
       const r = await recordTermsAcceptance(me.email, {
         version: live.terms.version, hash: await termsHash(live.terms), signature: sig, typedName: typed || null,
-        firstName: first, lastName: last, phone,
+        firstName: first, lastName: last, phone, phoneCountry,
         // Archived alongside the acceptance so the exact wording can be shown
         // back years later, after these terms have been revised.
         doc: live.terms,
@@ -138,6 +142,11 @@ export default async (req) => {
       })
     }
 
+    // Complete or correct your own name and phone (required on every account).
+    if (action === 'profile' && req.method === 'POST') {
+      const r = await updateProfile(me.email, { firstName: body.firstName, lastName: body.lastName, phone: body.phone, phoneCountry: body.phoneCountry })
+      return r.error ? json({ ok: false, error: r.error }, 400) : json({ ok: true, user: await withTerms(r.user) })
+    }
     if (action === 'change-password' && req.method === 'POST') {
       const r = await changePassword(me.email, body.current, body.next)
       if (r.error) return json({ ok: false, error: r.error }, 400)
@@ -232,7 +241,7 @@ export default async (req) => {
       return r.error ? json({ ok: false, error: r.error }, 400) : json({ ok: true, user: r.user })
     }
     if (action === 'update-user' && req.method === 'POST') {
-      const r = await updateUser(body.email, { role: body.role, status: body.status, name: body.name, clients: body.clients, allClients: body.allClients, tabs: body.tabs, reports: body.reports, crm: body.crm, crmUsers: body.crmUsers }, me)
+      const r = await updateUser(body.email, { role: body.role, status: body.status, name: body.name, firstName: body.firstName, lastName: body.lastName, phone: body.phone, phoneCountry: body.phoneCountry, clients: body.clients, allClients: body.allClients, tabs: body.tabs, reports: body.reports, crm: body.crm, crmUsers: body.crmUsers }, me)
       return r.error ? json({ ok: false, error: r.error }, 400) : json({ ok: true, user: r.user })
     }
     // Force another account off every device. The case this exists for: someone

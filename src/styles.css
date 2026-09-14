@@ -5523,3 +5523,15 @@ body.hub-tv-on { overflow: hidden; }
   .hub-tv-grid { grid-template-columns: 1fr; }
   .hub-tv .hub-stat-v { font-size: 28px; } .hub-tv .hub-stat.big .hub-stat-v { font-size: 34px; }
 }
+
+/* Two identity fields side by side on the sign-up screens; stacked on a phone. */
+.auth-two { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.auth-two > label { min-width: 0; }
+@media (max-width: 480px) { .auth-two { grid-template-columns: 1fr; } }
+
+/* Country code picker beside the number, on every screen that asks for a phone. */
+.tel-field { display: flex; gap: 8px; align-items: stretch; width: 100%; min-width: 0; }
+.tel-field select { flex: 0 0 auto; max-width: 42%; min-width: 0; }
+.tel-field input { flex: 1 1 auto; min-width: 0; }
+.auth-form label > .tel-field { margin-top: 6px; }
+.auth-form .tel-field select, .auth-form .tel-field input { margin-top: 0; }

@@ -18,6 +18,35 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.617.0 - 2026-09-14
+
+**Every account carries first name, last name, email and mobile number.** (commit PENDING)
+
+- Request access, invite acceptance and first-account setup ask for first
+  name, last name, email and mobile number, all required, on both the app
+  screens and the sign-in page. Phone numbers are typed with a country
+  picker (Australia first, 21 countries, others by +code) and formatted the
+  way that country writes them as you type; they are stored in
+  international form and checked against each country's length rules.
+  Email addresses are checked locally and on the server (a real domain and
+  top level, no spaces).
+- Accounts created before this release that lack any of the three are asked
+  to complete them once, before anything else, on their next sign-in.
+- Settings -> Your account gains a Your details card; Team -> Edit access
+  lets an admin correct a person's name and number; the team table shows
+  each person's number under their email. The terms signing screen uses
+  the same picker.
+- Shared rules in `netlify/lib/contact.mjs` (re-exported for the app as
+  `src/lib/contact.js`); the sign-in page fetches the country list from
+  `auth?action=countries`. Migration 0004 adds first_name, last_name and
+  phone to the users table and the mirror carries them.
+- Tests: `tests/contact_test.mjs` (parsing per country, formatting, email
+  rule) and `tests/profile_test.mjs` (every creation path refuses a record
+  without the fields; self-service and admin updates). The in-memory Blobs
+  fixture now honours list prefixes.
+
+---
+
 ## v3.616.0 - 2026-09-13
 
 **SaaS phase 1: dual-write to Postgres.** (commit bf6ddaa)

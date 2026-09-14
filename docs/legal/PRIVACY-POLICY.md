@@ -20,7 +20,7 @@ Caalano Digital has elected to be treated as an organisation bound by the *Priva
 
 **From account holders**
 
-- Name, email address and, if you provide them, first and last name and phone number.
+- First name, last name, email address and mobile phone number. All four are required to hold an account, so that verification codes can be sent to you by email or text message.
 - A password, stored only as a salted hash. We never see or store the password itself.
 - Your role and which customer accounts you may see.
 - Sign-in records: the time of each sign-in, the IP address, and the city, region and country our hosting provider derives from it. We keep the last 30 sign-ins.

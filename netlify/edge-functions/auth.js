@@ -287,6 +287,7 @@ button.link:hover{color:var(--brand)}
   .desk{padding:34px 26px 48px}
   .form-col{max-width:none}
 }
+.tel{display:flex;gap:8px;margin-top:6px}.tel select{flex:0 0 auto;max-width:42%;padding:11px 8px;font:inherit;color:var(--text);border:1px solid #dfe3ee;border-radius:10px;background:#fff}.tel input{margin-top:0;flex:1;min-width:0}
 </style></head><body>
 <div class="wrap">
   <section class="tell">
@@ -333,6 +334,16 @@ function post(action, body){
     error:'Something went wrong. Try again.' } }) })
 }
 // A form the three modes share. Each field entry is
+// The country list comes from the auth function (one source, shared with the
+// app); Australia alone is the fallback if that read fails.
+var EMAIL_RE = /^[^\\s@]+@[^\\s@]+\\.[A-Za-z]{2,}$/
+var DEFAULT_COUNTRY = 'AU'
+var COUNTRIES = [{ iso:'AU', dial:'61', flag:'\uD83C\uDDE6\uD83C\uDDFA' }]
+function loadCountries(){
+  return fetch(API + '?action=countries').then(function(r){ return r.json() })
+    .then(function(j){ if (j && j.ok && j.countries && j.countries.length) { COUNTRIES = j.countries; DEFAULT_COUNTRY = j.default || 'AU' } })
+    .catch(function(){})
+}
 // [name, label, inputType, autocomplete, optional].
 function form(opts){
   app.innerHTML = '<h2>' + esc(opts.title) + '</h2>'
@@ -340,6 +351,11 @@ function form(opts){
     + '<form id="f" novalidate>'
     + '<div id="err"></div>'
     + opts.fields.map(function(f, i){
+        // A phone is a country picker beside the local number; the pair posts as
+        // phoneCountry + phone and the server stores the international form.
+        if (f[2] === 'phone') return '<label>' + esc(f[1]) + '<span class="tel"><select name="phoneCountry" aria-label="Country code">'
+          + COUNTRIES.map(function(c){ return '<option value="' + c.iso + '"' + (c.iso === DEFAULT_COUNTRY ? ' selected' : '') + '>' + c.flag + ' +' + c.dial + '</option>' }).join('')
+          + '</select><input name="' + f[0] + '" type="tel" inputmode="tel" autocomplete="tel-national" placeholder="0400 000 000"' + (f[4] ? '' : ' required') + '></span></label>'
         return '<label>' + esc(f[1]) + '<input name="' + f[0] + '" type="' + f[2] + '"'
           + (f[3] ? ' autocomplete="' + f[3] + '"' : '')
           + (i === 0 ? ' autofocus' : '') + (f[4] ? '' : ' required') + '></label>' }).join('')
@@ -352,13 +368,16 @@ function form(opts){
   if (opts.alt) document.getElementById('alt').onclick = opts.onAlt
   f.onsubmit = function(e){
     e.preventDefault()
-    var body = {}, missing = false
+    var body = {}, missing = false, bad = null
     opts.fields.forEach(function(fd){
       var v = f.elements[fd[0]].value.trim()
       if (!v && !fd[4]) missing = true
       body[fd[0]] = v
+      if (fd[2] === 'email' && v && !EMAIL_RE.test(v)) bad = 'Please enter a valid email address, like name@example.com.'
+      if (fd[2] === 'phone') { body.phoneCountry = f.elements.phoneCountry.value; if (v && v.replace(/\\D/g, '').length < 7) bad = 'Please enter a valid mobile number.' }
     })
     if (missing) { errBox.innerHTML = '<div class="err">Please fill in every field.</div>'; return }
+    if (bad) { errBox.innerHTML = '<div class="err">' + esc(bad) + '</div>'; return }
     errBox.innerHTML = ''; btn.disabled = true; btn.textContent = opts.busy
     opts.submit(body).then(function(r){
       if (r && r.ok) { opts.done(r); return }
@@ -378,7 +397,8 @@ function signIn(){
 function requestAccess(){
   form({ title:'Request access', sub:'We\\u2019ll review it and email you when your account is ready.',
     cta:'Request access', busy:'Sending…',
-    fields:[['name','Your name','text','name'],['email','Email','email','username'],
+    fields:[['firstName','First name','text','given-name'],['lastName','Last name','text','family-name'],
+            ['email','Email','email','username'],['phone','Mobile number','phone','tel'],
             ['password','Choose a password','password','new-password'],['note','Anything we should know? (optional)','text','',true]],
     submit:function(b){ return post('signup', b) },
     done:function(){ app.innerHTML = '<h2>Request sent</h2><p class="ok">Thanks. We\\u2019ll be in touch once your access is set up.</p>' },
@@ -387,14 +407,16 @@ function requestAccess(){
 function acceptInvite(token, info){
   form({ title:'Set your password', sub:'Invited as <b>' + esc(info.email) + '</b>',
     cta:'Create my account', busy:'Setting up…',
-    fields:[['name','Your name','text','name'],['password','Choose a password','password','new-password']],
-    submit:function(b){ return post('accept', { token:token, password:b.password, name:b.name }) },
-    done:enter, hint:'Passwords must be at least 8 characters.' })
+    fields:[['firstName','First name','text','given-name'],['lastName','Last name','text','family-name'],
+            ['phone','Mobile number','phone','tel'],['password','Choose a password','password','new-password']],
+    submit:function(b){ return post('accept', { token:token, password:b.password, firstName:b.firstName, lastName:b.lastName, phone:b.phone, phoneCountry:b.phoneCountry }) },
+    done:enter, hint:'Passwords must be at least 8 characters. Your number is kept for account verification.' })
 }
 function firstAdmin(){
   form({ title:'Create the first account', sub:'No accounts exist yet. This one becomes the Super Admin.',
     cta:'Create account', busy:'Creating…',
-    fields:[['name','Your name','text','name'],['email','Email','email','username'],
+    fields:[['firstName','First name','text','given-name'],['lastName','Last name','text','family-name'],
+            ['email','Email','email','username'],['phone','Mobile number','phone','tel'],
             ['password','Choose a password','password','new-password']],
     submit:function(b){ return post('bootstrap', b) }, done:enter,
     hint:'Passwords must be at least 8 characters.' })
@@ -404,6 +426,7 @@ function firstAdmin(){
 // first account. Any failure falls back to the sign-in form, which is the one
 // that works without knowing anything.
 var token = qs('invite')
+loadCountries().then(function(){
 if (token) {
   fetch(API + '?action=invite-info&token=' + encodeURIComponent(token))
     .then(function(r){ return r.json() })
@@ -421,6 +444,7 @@ if (token) {
     .then(function(j){ if (j && j.needsSetup) firstAdmin(); else signIn() })
     .catch(signIn)
 }
+})
 })();
 </script></body></html>`
 }

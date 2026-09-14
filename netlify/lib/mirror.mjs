@@ -144,12 +144,13 @@ export async function syncUser(tx, orgId, u, wsId, { userId = new Map(), warn = 
   const em = emailOf(u.email)
   if (!em) return null
   const hash = u.passwordHash && u.passwordSalt ? `pbkdf2-sha256$${PBKDF2_ITER}$${u.passwordSalt}$${u.passwordHash}` : null
-  const [r] = await rows(tx, `insert into users (email, name, password_hash, terms_version, terms_accepted_at, created_at, last_seen_at)
-    values ($1, $2, $3, $4, $5, coalesce($6::timestamptz, now()), $7)
-    on conflict (email) do update set name = excluded.name, password_hash = coalesce(excluded.password_hash, users.password_hash),
+  const [r] = await rows(tx, `insert into users (email, name, first_name, last_name, phone, password_hash, terms_version, terms_accepted_at, created_at, last_seen_at)
+    values ($1, $2, $3, $4, $5, $6, $7, $8, coalesce($9::timestamptz, now()), $10)
+    on conflict (email) do update set name = excluded.name, first_name = coalesce(excluded.first_name, users.first_name), last_name = coalesce(excluded.last_name, users.last_name),
+      phone = coalesce(excluded.phone, users.phone), password_hash = coalesce(excluded.password_hash, users.password_hash),
       terms_version = coalesce(excluded.terms_version, users.terms_version), terms_accepted_at = coalesce(excluded.terms_accepted_at, users.terms_accepted_at),
       last_seen_at = greatest(excluded.last_seen_at, users.last_seen_at)
-    returning id`, [em, String(u.name || ''), hash, u.termsVersion || null, iso(u.termsAcceptedAt), iso(u.createdAt), iso(u.lastSeen || u.lastLogin)])
+    returning id`, [em, String(u.name || ''), u.firstName || null, u.lastName || null, u.phone || null, hash, u.termsVersion || null, iso(u.termsAcceptedAt), iso(u.createdAt), iso(u.lastSeen || u.lastLogin)])
   userId.set(em, r.id)
   counts.users = (counts.users || 0) + 1
   const m = membershipFromLegacy(u, (slug) => { if (!wsId.has(slug)) { warn(`user ${em}: unknown client ${slug} dropped`); return null } return wsId.get(slug) })

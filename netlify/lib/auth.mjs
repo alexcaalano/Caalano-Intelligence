@@ -12,6 +12,8 @@
 // unsetting the var, which falls the site back to the legacy shared password).
 import { getStore } from '@netlify/blobs'
 import { mirror } from './mirror.mjs'
+import { normPhone, isEmail } from './contact.mjs'
+export { normPhone }
 
 export const COOKIE = 'c360_session'
 const SESSION_DAYS = 14
@@ -22,7 +24,23 @@ const store = () => getStore({ name: 'caalano-auth', consistency: 'strong' })
 const uKey = (email) => 'user:' + String(email || '').trim().toLowerCase()
 const iKey = (token) => 'invite:' + token
 export const normEmail = (e) => String(e || '').trim().toLowerCase()
-const isEmail = (e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(e || '').trim())
+
+// ---- who a person is ----
+// Every account carries a first name, last name, email and phone, so a code
+// can be sent to either channel later (verification, two-factor). Phones are
+// stored in international form (contact.mjs); the person picks the country.
+// Validate the three identity fields together. Returns the clean values with
+// the combined display name, or { error } naming the first problem.
+export function profileFields({ firstName, lastName, phone, phoneCountry } = {}) {
+  const first = String(firstName || '').trim().slice(0, 80)
+  const last = String(lastName || '').trim().slice(0, 80)
+  if (first.length < 2) return { error: 'Please give your first name.' }
+  if (last.length < 2) return { error: 'Please give your last name.' }
+  const ph = normPhone(phone, phoneCountry)
+  if (!ph) return { error: 'Please give a valid phone number for the country you picked, e.g. 0400 000 000.' }
+  return { firstName: first, lastName: last, phone: ph, name: `${first} ${last}` }
+}
+export const profileComplete = (u) => !!(u && u.firstName && u.lastName && u.phone)
 
 // ---- base64url helpers (work identically in Node & Deno runtimes) ----
 function b64urlFromBytes(bytes) {
@@ -156,6 +174,7 @@ const publicUser = (u) => u && ({
   lastSeen: u.lastSeen || null, sessions: Array.isArray(u.sessions) ? u.sessions.slice(-30) : [],
   tokenEpoch: u.tokenEpoch || 0,
   termsVersion: u.termsVersion || null, termsAcceptedAt: u.termsAcceptedAt || null,
+  profileComplete: profileComplete(u),
   clients: Array.isArray(u.clients) ? u.clients : [], allClients: u.allClients !== false,
   tabs: normRole(u.role) === 'account_user' ? ['actions'] : (Array.isArray(u.tabs) ? u.tabs : null), reports: u.reports === true, crm: normRole(u.role) === 'account_user' || u.crm === true,
   // Which CRM user this person is, per client: { clientId: crmUserId }. Optional;
@@ -197,13 +216,14 @@ export async function ensureSuperadmin() {
 // ---- operations ----
 // Create the very first account - a SUPER ADMIN (the owner). Only succeeds when
 // no users exist yet.
-export async function bootstrapAdmin({ email, name, password }) {
+export async function bootstrapAdmin({ email, firstName, lastName, phone, phoneCountry, password }) {
   if (!isEmail(email)) return { error: 'A valid email is required.' }
+  const who = profileFields({ firstName, lastName, phone, phoneCountry }); if (who.error) return who
   if (!password || String(password).length < 8) return { error: 'Password must be at least 8 characters.' }
   if (await countUsers() > 0) return { error: 'Setup already complete - sign in instead.' }
   const { hash, salt } = await hashPassword(password)
   const u = await saveUser({
-    email: normEmail(email), name: String(name || '').trim(), role: 'superadmin', status: 'active',
+    email: normEmail(email), ...who, role: 'superadmin', status: 'active',
     passwordHash: hash, passwordSalt: salt, createdAt: new Date().toISOString(), invitedBy: null, lastLogin: null,
     clients: [], allClients: true, tabs: null,
   })
@@ -241,15 +261,16 @@ export function canSeeReports(user) {
 
 // A client requests access. Creates a PENDING account (with their chosen
 // password) that grants nothing until an admin approves + allocates it.
-export async function signupRequest({ email, name, password, note }) {
+export async function signupRequest({ email, firstName, lastName, phone, phoneCountry, password, note }) {
   if (!isEmail(email)) return { error: 'Please enter a valid email.' }
+  const who = profileFields({ firstName, lastName, phone, phoneCountry }); if (who.error) return who
   if (!password || String(password).length < 8) return { error: 'Password must be at least 8 characters.' }
   const em = normEmail(email)
   const existing = await getUser(em)
   if (existing && (existing.status === 'active' || existing.status === 'invited')) return { error: 'An account for that email already exists. Try signing in.' }
   const { hash, salt } = await hashPassword(password)
   await saveUser({
-    email: em, name: String(name || '').trim(), role: 'account_admin', status: 'pending',
+    email: em, ...who, role: 'account_admin', status: 'pending',
     passwordHash: hash, passwordSalt: salt, createdAt: existing ? existing.createdAt : new Date().toISOString(),
     invitedBy: null, lastLogin: null, clients: [], allClients: false, tabs: null,
     requestedAt: new Date().toISOString(), note: String(note || '').trim().slice(0, 300),
@@ -319,14 +340,15 @@ export async function inviteInfo(token) {
 }
 
 // Recipient accepts an invite by setting their password. Activates the account.
-export async function acceptInvite({ token, password, name }) {
+export async function acceptInvite({ token, password, firstName, lastName, phone, phoneCountry }) {
   const info = await inviteInfo(token)
   if (!info.valid) return { error: info.expired ? 'This invite has expired. Ask an admin to resend it.' : 'This invite link is invalid or has already been used.' }
+  const who = profileFields({ firstName, lastName, phone, phoneCountry }); if (who.error) return who
   if (!password || String(password).length < 8) return { error: 'Password must be at least 8 characters.' }
   const u = await getUser(info.email)
   const { hash, salt } = await hashPassword(password)
   u.passwordHash = hash; u.passwordSalt = salt; u.status = 'active'
-  if (name && String(name).trim()) u.name = String(name).trim()
+  Object.assign(u, who)
   u.inviteToken = null; u.inviteExpires = null; u.lastLogin = new Date().toISOString()
   await saveUser(u)
   await store().delete(iKey(token)).catch(() => {})
@@ -354,6 +376,22 @@ export async function updateUser(email, patch, actor) {
     if (u.status !== 'invited' && u.status !== 'pending') u.status = patch.status
   }
   if (typeof patch.name === 'string') u.name = patch.name.trim()
+  // Identity fields, individually: an admin may fix one without retyping the rest.
+  if (typeof patch.firstName === 'string') { const v = patch.firstName.trim().slice(0, 80); if (v.length < 2) return { error: 'First name must be at least 2 characters.' }; u.firstName = v }
+  if (typeof patch.lastName === 'string') { const v = patch.lastName.trim().slice(0, 80); if (v.length < 2) return { error: 'Last name must be at least 2 characters.' }; u.lastName = v }
+  if (typeof patch.phone === 'string') { const v = normPhone(patch.phone, patch.phoneCountry); if (!v) return { error: 'Please give a valid phone number for the country you picked, e.g. 0400 000 000.' }; u.phone = v }
+  if (u.firstName && u.lastName && (typeof patch.firstName === 'string' || typeof patch.lastName === 'string')) u.name = `${u.firstName} ${u.lastName}`
+  await saveUser(u)
+  return { user: publicUser(u) }
+}
+
+// A person completing or correcting their own details. All three are required
+// here, so an account that reaches the dashboard is always contactable.
+export async function updateProfile(email, patch) {
+  const u = await getUser(email)
+  if (!u) return { error: 'No such user.' }
+  const who = profileFields(patch); if (who.error) return who
+  Object.assign(u, who)
   await saveUser(u)
   return { user: publicUser(u) }
 }
@@ -535,7 +573,7 @@ export async function getTermsDoc(version, hash) {
   try { return (await termsStore().get(dKey(version, hash), { type: 'json' })) || null } catch { return null }
 }
 
-export async function recordTermsAcceptance(email, { version, hash, signature, typedName, ip, userAgent, firstName, lastName, phone, doc }) {
+export async function recordTermsAcceptance(email, { version, hash, signature, typedName, ip, userAgent, firstName, lastName, phone, phoneCountry, doc }) {
   const u = await getUser(email)
   if (!u) return { error: 'No such user.' }
   const at = new Date().toISOString()
@@ -544,7 +582,8 @@ export async function recordTermsAcceptance(email, { version, hash, signature, t
   // stated when they signed must not change.
   const first = String(firstName || '').trim().slice(0, 80)
   const last = String(lastName || '').trim().slice(0, 80)
-  const ph = String(phone || '').trim().slice(0, 40)
+  const ph = normPhone(phone, phoneCountry)
+  if (!ph) return { error: 'Please give a valid phone number for the country you picked, e.g. 0400 000 000.' }
   const fullName = [first, last].filter(Boolean).join(' ') || u.name || ''
   const rec = {
     email: u.email, name: fullName, role: normRole(u.role),

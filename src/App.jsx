@@ -8,6 +8,7 @@ import {
 import {
   fmtCurrency, fmtNumber, fmtCompact, fmtPct, pctChange,
 } from './lib/format.js'
+import { PHONE_COUNTRIES, DEFAULT_PHONE_COUNTRY, countryByIso, countryByDial, parsePhone, formatNational, isEmail as isEmailAddr } from './lib/contact.js'
 import { GOAL_METRICS, goalMetric, SPLITS, normGoals, newGoalId, goalShares, validateGoal, goalLevel, repValue, goalActual, repTargetsFromGoals, migrateRepKpis, goalWindow, goalTargetFor, monthKeysFrom, quarterKeysFrom, RATE_METRICS } from './lib/goals.js'
 // Views carved out of this file load on first open (React.lazy), so the first
 // paint carries the shell and the tabs people land on, not every screen.
@@ -33,7 +34,7 @@ const lazyView = (load, name) => {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-export const APP_VERSION = '3.616.0'
+export const APP_VERSION = '3.617.0'
 // The business clock. Every server window is cut on the client's local day
 // (Caalano Systems location timezone), so any day the app derives on its own -
 // preset ranges, "today", CSV dates - must use the same clock rather than the
@@ -16384,17 +16385,19 @@ function LoginForm({ onSignedIn }) {
   )
 }
 function SignupForm({ onBack }) {
-  const [f, setF] = useState({ name: '', email: '', pw: '', pw2: '', note: '' })
+  const [f, setF] = useState({ firstName: '', lastName: '', email: '', phone: '', country: DEFAULT_PHONE_COUNTRY, pw: '', pw2: '', note: '' })
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
   const [done, setDone] = useState(false)
   const set = (k) => (e) => setF((s) => ({ ...s, [k]: e.target.value }))
   const submit = async (e) => {
     e.preventDefault(); setErr('')
+    if (!isEmailAddr(f.email)) return setErr('Please enter a valid email address, like name@example.com.')
+    if (!parsePhone(f.phone, f.country)) return setErr('Please enter a valid mobile number for the country you picked.')
     if (f.pw !== f.pw2) return setErr('Passwords don’t match.')
     if (f.pw.length < 8) return setErr('Password must be at least 8 characters.')
     setBusy(true)
-    const r = await authApi('signup', { method: 'POST', body: JSON.stringify({ name: f.name, email: f.email, password: f.pw, note: f.note }) })
+    const r = await authApi('signup', { method: 'POST', body: JSON.stringify({ firstName: f.firstName, lastName: f.lastName, email: f.email, phone: f.phone, phoneCountry: f.country, password: f.pw, note: f.note }) })
     setBusy(false)
     if (r.ok) setDone(true); else setErr(r.error || 'Could not send your request.')
   }
@@ -16410,8 +16413,12 @@ function SignupForm({ onBack }) {
       <form onSubmit={submit} className="auth-form">
         <h2>Request client access</h2>
         <p className="auth-sub">Create your login. A Caalano admin approves each request before it’s activated, so your account stays private until then.</p>
-        <label>Your name<input value={f.name} onChange={set('name')} autoFocus required /></label>
+        <div className="auth-two">
+          <label>First name<input value={f.firstName} onChange={set('firstName')} autoComplete="given-name" autoFocus required /></label>
+          <label>Last name<input value={f.lastName} onChange={set('lastName')} autoComplete="family-name" required /></label>
+        </div>
         <label>Email<input type="email" value={f.email} onChange={set('email')} autoComplete="username" required /></label>
+        <label>Mobile number<PhoneField value={f} onChange={(v) => setF((s) => ({ ...s, ...v }))} /></label>
         <label>Which business are you with? <span className="auth-opt">(optional)</span><input value={f.note} onChange={set('note')} placeholder="Helps us match you to your account" /></label>
         <label>Password<input type="password" value={f.pw} onChange={set('pw')} autoComplete="new-password" required /></label>
         <label>Confirm password<input type="password" value={f.pw2} onChange={set('pw2')} autoComplete="new-password" required /></label>
@@ -16423,16 +16430,18 @@ function SignupForm({ onBack }) {
   )
 }
 function SetupAdmin({ onSignedIn }) {
-  const [f, setF] = useState({ name: '', email: '', pw: '', pw2: '' })
+  const [f, setF] = useState({ firstName: '', lastName: '', email: '', phone: '', country: DEFAULT_PHONE_COUNTRY, pw: '', pw2: '' })
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
   const set = (k) => (e) => setF((s) => ({ ...s, [k]: e.target.value }))
   const submit = async (e) => {
     e.preventDefault(); setErr('')
+    if (!isEmailAddr(f.email)) return setErr('Please enter a valid email address, like name@example.com.')
+    if (!parsePhone(f.phone, f.country)) return setErr('Please enter a valid mobile number for the country you picked.')
     if (f.pw !== f.pw2) return setErr('Passwords don’t match.')
     if (f.pw.length < 8) return setErr('Password must be at least 8 characters.')
     setBusy(true)
-    const r = await authApi('bootstrap', { method: 'POST', body: JSON.stringify({ name: f.name, email: f.email, password: f.pw }) })
+    const r = await authApi('bootstrap', { method: 'POST', body: JSON.stringify({ firstName: f.firstName, lastName: f.lastName, email: f.email, phone: f.phone, phoneCountry: f.country, password: f.pw }) })
     setBusy(false)
     if (r.ok) onSignedIn(r.user); else setErr(r.error || 'Setup failed.')
   }
@@ -16441,8 +16450,12 @@ function SetupAdmin({ onSignedIn }) {
       <form onSubmit={submit} className="auth-form">
         <h2>Create your admin account</h2>
         <p className="auth-sub">This is the first account for Caalano360. You’ll invite the rest of your team once you’re in.</p>
-        <label>Your name<input value={f.name} onChange={set('name')} autoFocus required /></label>
+        <div className="auth-two">
+          <label>First name<input value={f.firstName} onChange={set('firstName')} autoComplete="given-name" autoFocus required /></label>
+          <label>Last name<input value={f.lastName} onChange={set('lastName')} autoComplete="family-name" required /></label>
+        </div>
         <label>Email<input type="email" value={f.email} onChange={set('email')} autoComplete="username" required /></label>
+        <label>Mobile number<PhoneField value={f} onChange={(v) => setF((s) => ({ ...s, ...v }))} /></label>
         <label>Password<input type="password" value={f.pw} onChange={set('pw')} autoComplete="new-password" required /></label>
         <label>Confirm password<input type="password" value={f.pw2} onChange={set('pw2')} autoComplete="new-password" required /></label>
         {err && <div className="auth-err">{err}</div>}
@@ -16453,21 +16466,27 @@ function SetupAdmin({ onSignedIn }) {
 }
 function AcceptInvite({ token, onSignedIn }) {
   const [info, setInfo] = useState({ status: 'loading' })
-  const [f, setF] = useState({ name: '', pw: '', pw2: '' })
+  const [f, setF] = useState({ firstName: '', lastName: '', phone: '', country: DEFAULT_PHONE_COUNTRY, pw: '', pw2: '' })
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
+  const set = (k) => (e) => setF((s) => ({ ...s, [k]: e.target.value }))
   useEffect(() => {
     authApi('invite-info&token=' + encodeURIComponent(token)).then((r) => {
-      if (r && r.valid) { setInfo({ status: 'ok', ...r }); setF((s) => ({ ...s, name: r.name || '' })) }
+      if (r && r.valid) {
+        // The admin may have typed a name on the invite; offer it as a starting point.
+        const parts = String(r.name || '').trim().split(/\s+/).filter(Boolean)
+        setInfo({ status: 'ok', ...r }); setF((s) => ({ ...s, firstName: parts[0] || '', lastName: parts.slice(1).join(' ') }))
+      }
       else setInfo({ status: 'bad', expired: r && r.expired })
     })
   }, [token])
   const submit = async (e) => {
     e.preventDefault(); setErr('')
+    if (!parsePhone(f.phone, f.country)) return setErr('Please enter a valid mobile number for the country you picked.')
     if (f.pw !== f.pw2) return setErr('Passwords don’t match.')
     if (f.pw.length < 8) return setErr('Password must be at least 8 characters.')
     setBusy(true)
-    const r = await authApi('accept', { method: 'POST', body: JSON.stringify({ token, password: f.pw, name: f.name }) })
+    const r = await authApi('accept', { method: 'POST', body: JSON.stringify({ token, password: f.pw, firstName: f.firstName, lastName: f.lastName, phone: f.phone, phoneCountry: f.country }) })
     setBusy(false)
     if (r.ok) onSignedIn(r.user); else setErr(r.error || 'Could not accept the invite.')
   }
@@ -16482,11 +16501,15 @@ function AcceptInvite({ token, onSignedIn }) {
   return (
     <AuthShell>
       <form onSubmit={submit} className="auth-form">
-        <h2>Set your password</h2>
-        <p className="auth-sub">You’ve been invited to Caalano360 as <b>{info.email}</b> ({info.role === 'admin' ? 'Admin' : 'Viewer'}). Pick a password to finish.</p>
-        <label>Your name<input value={f.name} onChange={(e) => setF((s) => ({ ...s, name: e.target.value }))} autoFocus required /></label>
-        <label>Password<input type="password" value={f.pw} onChange={(e) => setF((s) => ({ ...s, pw: e.target.value }))} autoComplete="new-password" required /></label>
-        <label>Confirm password<input type="password" value={f.pw2} onChange={(e) => setF((s) => ({ ...s, pw2: e.target.value }))} autoComplete="new-password" required /></label>
+        <h2>Create your account</h2>
+        <p className="auth-sub">You’ve been invited to Caalano360 as <b>{info.email}</b> ({ROLE_LABEL[info.role] || 'Account Admin'}). Tell us who you are and pick a password.</p>
+        <div className="auth-two">
+          <label>First name<input value={f.firstName} onChange={set('firstName')} autoComplete="given-name" autoFocus required /></label>
+          <label>Last name<input value={f.lastName} onChange={set('lastName')} autoComplete="family-name" required /></label>
+        </div>
+        <label>Mobile number<PhoneField value={f} onChange={(v) => setF((s) => ({ ...s, ...v }))} /></label>
+        <label>Password<input type="password" value={f.pw} onChange={set('pw')} autoComplete="new-password" required /></label>
+        <label>Confirm password<input type="password" value={f.pw2} onChange={set('pw2')} autoComplete="new-password" required /></label>
         {err && <div className="auth-err">{err}</div>}
         <button className="auth-btn" disabled={busy}>{busy ? 'Saving…' : 'Set password & sign in'}</button>
       </form>
@@ -16730,6 +16753,8 @@ function UserAccessModal({ user, clients, authUser, onClose, onChanged }) {
   const isInvite = !user
   const self = !isInvite && authUser && user.email === authUser.email
   const [name, setName] = useState(isInvite ? '' : (user.name || ''))
+  const [who, setWho] = useState(isInvite ? null : { firstName: user.firstName || '', lastName: user.lastName || '', ...phoneParts(user.phone) })
+  const setW = (k) => (e) => setWho((w) => ({ ...w, [k]: e.target.value }))
   const [email, setEmail] = useState(isInvite ? '' : user.email)
   const [draft, setDraft] = useState(isInvite
     ? { role: 'account_admin', clients: [], allClients: true, tabs: VIEWER_DEFAULT_TABS, reports: false }
@@ -16741,7 +16766,8 @@ function UserAccessModal({ user, clients, authUser, onClose, onChanged }) {
   const copy = (t) => { navigator.clipboard.writeText(t).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1600) }).catch(() => {}) }
   const submit = async () => {
     setErr('')
-    if (isInvite && !email) return setErr('Enter an email address.')
+    if (isInvite && !isEmailAddr(email)) return setErr('Enter a valid email address, like name@example.com.')
+    if (!isInvite && who && who.phone.trim() && !parsePhone(who.phone, who.country)) return setErr('That phone number is not valid for the country picked.')
     if (isClientRoleFE(draft.role) && !(draft.clients || []).length) return setErr(`Pick at least one client for an ${ROLE_LABEL[draft.role] || 'Account Admin'}.`)
     setBusy(true)
     const payload = { role: draft.role, clients: draft.clients, allClients: draft.allClients, tabs: draft.tabs, reports: draft.reports === true, crm: draft.crm === true, crmUsers: draft.crmUsers || {} }
@@ -16750,7 +16776,11 @@ function UserAccessModal({ user, clients, authUser, onClose, onChanged }) {
       setBusy(false)
       if (r.ok) { setLink(r.inviteUrl); onChanged() } else setErr(r.error || 'Could not create the invite.')
     } else {
-      const r = await authApi('update-user', { method: 'POST', body: JSON.stringify({ email: user.email, name, ...payload }) })
+      // Only identity fields that were filled in travel, so a blank one left by an
+      // older account is not sent as an error.
+      const ident = Object.fromEntries(Object.entries(who || {}).filter(([k, v]) => k !== 'country' && String(v || '').trim()))
+      if (ident.phone) ident.phoneCountry = who.country
+      const r = await authApi('update-user', { method: 'POST', body: JSON.stringify({ email: user.email, ...ident, ...payload }) })
       setBusy(false)
       if (r.ok) { onChanged(); onClose() } else setErr(r.error || 'Could not save changes.')
     }
@@ -16785,7 +16815,11 @@ function UserAccessModal({ user, clients, authUser, onClose, onChanged }) {
                 <input type="email" placeholder="their@email.com" value={email} onChange={(e) => setEmail(e.target.value)} required />
               </div>
             ) : (
-              <label className="alloc-role" style={{ marginBottom: 10, maxWidth: 320 }}>Name<input className="u-modal-name" value={name} onChange={(e) => setName(e.target.value)} /></label>
+              <div className="u-invite" style={{ marginBottom: 10 }}>
+                <input placeholder="First name" value={who.firstName} onChange={setW('firstName')} autoComplete="off" />
+                <input placeholder="Last name" value={who.lastName} onChange={setW('lastName')} autoComplete="off" />
+                <PhoneField value={who} onChange={(v) => setWho((w) => ({ ...w, ...v }))} required={false} />
+              </div>
             )}
             <AllocationEditor value={draft} clients={clients} onChange={setDraft} actorRole={authUser && authUser.role} />
           </fieldset>
@@ -16927,7 +16961,7 @@ export function UsersAdmin({ authUser, authEnabled, clients }) {
             return (
               <tr key={u.email}>
                 <td className="lft">{u.name || <span className="cap">-</span>}{self && <span className="u-you">you</span>}</td>
-                <td className="lft">{u.email}</td>
+                <td className="lft">{u.email}{u.phone ? <div className="cap">{u.phone}</div> : null}</td>
                 <td className="lft"><span className={`u-role-tag r-${u.role}`}>{roleLabelOf(u)}</span></td>
                 <td className="lft"><span className="cap">{accessSummary(u)}</span></td>
                 {seeActivity && <>
@@ -17147,7 +17181,7 @@ function TermsGate({ user, onAccepted, onLogout, preview, termsOverride }) {
     return {
       first: user.firstName || parts[0] || '',
       last: user.lastName || (parts.length > 1 ? parts.slice(1).join(' ') : ''),
-      phone: user.phone || '',
+      ...phoneParts(user.phone || ''),
     }
   })
   const setW = (k) => (e) => setWho((w) => ({ ...w, [k]: e.target.value }))
@@ -17175,14 +17209,14 @@ function TermsGate({ user, onAccepted, onLogout, preview, termsOverride }) {
     setBusy(true); setErr(null)
     const r = await authApi('accept-terms', {
       method: 'POST',
-      body: JSON.stringify({ signature: sig, typedName: typed.trim(), firstName: who.first.trim(), lastName: who.last.trim(), phone: who.phone.trim() }),
+      body: JSON.stringify({ signature: sig, typedName: typed.trim(), firstName: who.first.trim(), lastName: who.last.trim(), phone: who.phone.trim(), phoneCountry: who.country }),
     })
     setBusy(false)
     if (r && r.ok) onAccepted(r)
     else setErr((r && r.error) || 'Couldn’t record your acceptance. Please try again.')
   }
   const signed = !!sig || typed.trim().length >= 3
-  const whoOk = who.first.trim().length >= 2 && who.last.trim().length >= 2 && who.phone.replace(/\D/g, '').length >= 6
+  const whoOk = who.first.trim().length >= 2 && who.last.trim().length >= 2 && !!parsePhone(who.phone, who.country)
   return (
     <div className="terms-bg">
       <div className="terms-card">
@@ -17243,7 +17277,7 @@ function TermsGate({ user, onAccepted, onLogout, preview, termsOverride }) {
             </div>
             <div className="fld">
               <label className="cap" htmlFor="terms-phone">Phone</label>
-              <input id="terms-phone" className="inp" value={who.phone} onChange={setW('phone')} placeholder="e.g. 0400 000 000" autoComplete="tel" inputMode="tel" />
+              <PhoneField id="terms-phone" value={who} onChange={(v) => setWho((w) => ({ ...w, ...v }))} />
             </div>
           </div>
           <div className="terms-sign">
@@ -17649,6 +17683,72 @@ function TermsRecordModal({ rec, onClose }) {
         </div>
       </div>
     </div>
+  )
+}
+// Country picker plus the local number, formatted as the person types the way
+// that country writes it. Value is { country, phone } (phone as typed, national).
+export function PhoneField({ value, onChange, autoFocus = false, required = true, id, placeholder }) {
+  const iso = (value && value.country) || DEFAULT_PHONE_COUNTRY
+  const c = countryByIso(iso) || countryByIso(DEFAULT_PHONE_COUNTRY)
+  const typed = (value && value.phone) || ''
+  const onNum = (e) => {
+    const raw = e.target.value
+    // A pasted international number keeps its plus and picks its own country.
+    if (raw.trim().startsWith('+')) { const p = parsePhone(raw); onChange({ country: (p && p.iso) || iso, phone: raw }); return }
+    onChange({ country: c.iso, phone: formatNational(raw, c.iso) })
+  }
+  return (
+    <span className="tel-field">
+      <select value={c.iso} onChange={(e) => onChange({ country: e.target.value, phone: typed.trim().startsWith('+') ? typed : formatNational(typed, e.target.value) })} aria-label="Country code" title={c.name}>
+        {PHONE_COUNTRIES.map((k) => <option key={k.iso} value={k.iso}>{k.flag} +{k.dial}</option>)}
+      </select>
+      <input id={id} type="tel" value={typed} onChange={onNum} placeholder={placeholder || (c.iso === 'AU' ? '0400 000 000' : 'Mobile number')} inputMode="tel" autoComplete="tel-national" required={required} autoFocus={autoFocus} />
+    </span>
+  )
+}
+// A stored +E.164 number back into { country, phone } for the field.
+export function phoneParts(e164) {
+  const p = e164 ? parsePhone(e164) : null
+  if (!p) return { country: DEFAULT_PHONE_COUNTRY, phone: e164 || '' }
+  const c = p.iso ? countryByIso(p.iso) : null
+  return { country: p.iso || DEFAULT_PHONE_COUNTRY, phone: c ? formatNational(c.trunk + p.national, c.iso) : '+' + p.national }
+}
+// The three fields every account must carry. Used as a gate for accounts that
+// predate the requirement, and as the card in Settings -> Your account.
+export function YourDetailsCard({ user, onSaved, gate = false }) {
+  const parts = String((user && user.name) || '').trim().split(/\s+/).filter(Boolean)
+  const [f, setF] = useState({ firstName: (user && user.firstName) || parts[0] || '', lastName: (user && user.lastName) || parts.slice(1).join(' ') || '', ...phoneParts(user && user.phone) })
+  const [msg, setMsg] = useState(null)
+  const [busy, setBusy] = useState(false)
+  const set = (k) => (e) => setF((s) => ({ ...s, [k]: e.target.value }))
+  const submit = async (e) => {
+    e.preventDefault(); setMsg(null); setBusy(true)
+    const r = await authApi('profile', { method: 'POST', body: JSON.stringify({ firstName: f.firstName, lastName: f.lastName, phone: f.phone, phoneCountry: f.country }) })
+    setBusy(false)
+    if (r.ok) { setMsg({ ok: true, t: 'Details saved.' }); if (onSaved) onSaved(r.user) }
+    else setMsg({ ok: false, t: r.error || 'Could not save your details.' })
+  }
+  return (
+    <form className="u-invite" onSubmit={submit} style={{ marginTop: 4, flexWrap: 'wrap' }}>
+      <input placeholder="First name" value={f.firstName} onChange={set('firstName')} autoComplete="given-name" required autoFocus={gate} />
+      <input placeholder="Last name" value={f.lastName} onChange={set('lastName')} autoComplete="family-name" required />
+      <input type="email" value={(user && user.email) || ''} readOnly title="The email you sign in with can’t be changed here." />
+      <PhoneField value={f} onChange={(v) => setF((s) => ({ ...s, ...v }))} />
+      <button className="btn-primary" disabled={busy}>{busy ? 'Saving…' : gate ? 'Save and continue' : 'Save details'}</button>
+      {msg && <span className={msg.ok ? 'u-ok' : 'auth-err'} style={{ alignSelf: 'center' }}>{msg.t}</span>}
+    </form>
+  )
+}
+function ProfileGate({ user, onSaved, onLogout }) {
+  return (
+    <AuthShell>
+      <div className="auth-form">
+        <h2>Complete your details</h2>
+        <p className="auth-sub">Every Caalano360 account carries a first name, last name and mobile number, so we can verify it is you when it matters. Signed in as <b>{user.email}</b>.</p>
+        <YourDetailsCard user={user} onSaved={onSaved} gate />
+        <button type="button" className="auth-link" onClick={onLogout}>Sign out</button>
+      </div>
+    </AuthShell>
   )
 }
 export function ChangePasswordCard() {
@@ -18967,6 +19067,13 @@ export default function App() {
   // accepted version is deliberately raised. The fallback covers an older
   // function still being live mid-deploy: sign only if nothing is on file.
   const effUser = auth.enabled && viewAs && auth.user && auth.user.role === 'superadmin' ? { ...viewAs, viewAs: true } : auth.user
+  // Identity first: an account without a first name, last name and phone
+  // completes them before anything else (accounts created before v3.617 may
+  // lack them). The server says so explicitly; an older function mid-deploy
+  // leaves the flag undefined, which is not a reason to gate.
+  if (auth.enabled && auth.user && auth.user.profileComplete === false) {
+    return <ProfileGate user={auth.user} onLogout={onLogout} onSaved={(u) => setAuth((a) => ({ ...a, user: { ...a.user, ...u, profileComplete: true } }))} />
+  }
   const needsTerms = auth.user && (auth.user.needsTerms !== undefined ? auth.user.needsTerms : !auth.user.termsVersion)
   if (auth.enabled && auth.user && needsTerms) {
     return <TermsGate

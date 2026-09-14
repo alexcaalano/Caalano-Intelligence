@@ -20,7 +20,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ## v3.646.0 - 2026-09-14
 
-**Ad-set rules in the Monthly Report and the creative cards** (commit PENDING)
+**Ad-set rules in the Monthly Report and the creative cards** (commit 269130e)
 
 - The Monthly Report now follows the ad-set level campaign links too: each creative's pipeline, its key-event columns and its place in the per-pipeline creative groups come from its own ad set's rule, falling back to the campaign's link. The key-events-by-campaign tables put a split campaign under the one pipeline its ad sets agree on; a campaign whose ad sets go to different pipelines sits in the "all key events" table, since its CRM outcomes span them.
 - The creative cards on a client's Meta tab resolve their pipeline the same way.

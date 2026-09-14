@@ -303,7 +303,10 @@ async function currentSettings() {
 
 // For the superadmin status card: is the mirror on, what has it done, what is in the database.
 export async function mirrorStatus() {
-  const out = { on: mirrorOn(), ...mirrorState(), counts: null }
+  // The write counters belong to this function's own process: a write made
+  // through another function (auth, windsor) is not counted here. The row
+  // counts below come from the database and are the check that matters.
+  const out = { on: mirrorOn(), instance: { ...mirrorState(), note: 'writes made through this function only' }, counts: null }
   if (!out.on) return out
   try {
     const id = await orgId()
@@ -316,6 +319,8 @@ export async function mirrorStatus() {
       (select count(*)::int from monthly_reports) as monthly_reports,
       (select count(*)::int from terms_acceptances) as terms_acceptances,
       (select count(*)::int from connections where provider = 'ghl' and cred_kek_id is not null) as sealed_ghl,
+      (select count(*)::int from users u where exists (select 1 from memberships m where m.user_id = u.id)) as users,
+      (select count(*)::int from users u where u.phone is not null and exists (select 1 from memberships m where m.user_id = u.id)) as users_with_phone,
       (select max(updated_at) from workspace_settings) as last_settings_write`), opts())
     out.counts = c; out.org = id
   } catch (e) { out.statusError = String((e && e.message) || e).slice(0, 300) }

@@ -92,6 +92,7 @@ assert.equal(await mirror.ghlToken({ access_token: 'x' }), false, 'no key, no wr
 
 // 6. Status for the superadmin card.
 const st = await mirrorStatus()
-assert.equal(st.on, true); assert.ok(st.writes >= 6); assert.equal(st.errors, 2)
+assert.equal(st.on, true); assert.ok(st.instance.writes >= 6); assert.equal(st.instance.errors, 2)
+assert.equal(st.counts.users, 1); assert.equal(st.counts.users_with_phone, 0)
 assert.equal(st.counts.workspaces, Object.keys(BUILTIN_CLIENTS).length + 1); assert.equal(st.counts.sealed_ghl, BUILTIN_GHL + 1); assert.equal(st.counts.monthly_reports, 1)
 console.log('mirror_test: ok')

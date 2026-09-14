@@ -18,6 +18,18 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.621.0 - 2026-09-14
+
+**Mirror status reads the database, not one process's counters.** (commit PENDING)
+
+- `settings?mirror=1` now reports how many members exist in Postgres and
+  how many carry a phone number, from the database itself. The write and
+  error counters move under `instance` with a note that they cover writes
+  made through the settings function's own process only; a user edit goes
+  through the auth function and was never going to show there.
+
+---
+
 ## v3.620.0 - 2026-09-14
 
 **Remembered payloads survive a release that leaves the numbers alone.** (commit 5bef8c4)

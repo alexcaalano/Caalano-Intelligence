@@ -6078,3 +6078,12 @@ body.hub-tv-on { overflow: hidden; }
 /* Reports button: a dot while the report on screen is frozen but unpublished */
 .mr-btn-dot { position: relative; }
 .mr-btn-dot::after { content: ''; position: absolute; top: 6px; right: 6px; width: 7px; height: 7px; border-radius: 50%; background: #f0a53a; }
+/* Account frame: the client's areas in the sidebar, pages indented beneath */
+.nav-grp { display: flex; flex-direction: column; gap: 2px; }
+.nav-grp + .nav-grp { margin-top: 6px; }
+.nav button.sub { padding: 7px 12px 7px 14px; font-size: 13px; gap: 10px; }
+.nav-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--border-2); flex: 0 0 auto; }
+.nav button.sub.active .nav-dot { background: var(--brand); }
+.side-account { display: flex; align-items: center; gap: 10px; padding: 8px 10px; margin-bottom: 8px; border: 1px solid var(--border); border-radius: 12px; background: var(--panel-2); }
+.csw-agency { margin: 6px 6px 0; border: 1px solid var(--border); background: var(--panel-2); }
+.csw-agency-ic { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; background: var(--brand); color: #fff; font-size: 12px; flex: 0 0 auto; }

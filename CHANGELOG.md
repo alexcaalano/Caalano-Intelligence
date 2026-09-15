@@ -16,6 +16,16 @@ git commit that produced it, so any version can be redeployed or reverted to.
 
 The version number also appears in the app sidebar. Newest first.
 
+## v3.669.0 - 2026-09-15 (commit PENDING)
+
+Agency view and Account view, the way a sub-account platform splits them.
+
+- **Agency view.** The sidebar lists the agency tools only: Agency Overview, Daily Performance, Weekly Traffic Light, Funnel Forecaster, Creative Cockpit, Meta Insights, Client Update, Reporting, Organic Social Media and Settings. Without a client open, the Clients page asks you to choose one; the period, won-basis and refresh controls stay out of the way until you do.
+- **Account view.** Choosing a client from the picker swaps the sidebar for that account's areas, grouped as Overview, Acquisition, Audience, Sales and Appointments, with the client's own pages under each. The old tab strip and "All clients" button are gone; the page head names the open area and its group, then the client.
+- **Switch to Agency view** sits at the top of the client picker while an account is open and returns to the first agency tool you can see.
+- **Client-side users** live in the account view. With one account there is no picker (the account name heads the sidebar) and Account Users land on Action Centre; with several, the picker chooses between them. Reports appears at the bottom of the account sidebar for anyone with access to published reports.
+- **Links.** Old `?v=actionhub` and `?v=saleshub` links open the same pages inside the account. The phone reopens the last account you were in.
+
 ## v3.668.0 - 2026-09-15 (commit 44bb690)
 
 Client workspace tabs regrouped in the order a lead travels.

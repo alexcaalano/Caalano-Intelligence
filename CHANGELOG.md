@@ -16,7 +16,7 @@ git commit that produced it, so any version can be redeployed or reverted to.
 
 The version number also appears in the app sidebar. Newest first.
 
-## v3.674.0 - 2026-09-15 (commit PENDING)
+## v3.674.0 - 2026-09-15 (commit 9d97271)
 
 Less text on screen, Reporting in the sidebar, and no purple flash on reload.
 

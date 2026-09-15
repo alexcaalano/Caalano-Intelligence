@@ -36,7 +36,7 @@ const lazyView = (load, name) => {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-export const APP_VERSION = '3.675.0'
+export const APP_VERSION = '3.676.0'
 // The business clock. Every server window is cut on the client's local day
 // (Caalano Systems location timezone), so any day the app derives on its own -
 // preset ranges, "today", CSV dates - must use the same clock rather than the
@@ -8921,6 +8921,7 @@ const V2_TAB_GROUPS = [
   ['Audience', ['analytics', 'forms', 'location', 'cohorts']],
   ['Sales', ['actionhub', 'saleshub', 'timing', 'calls', 'users', 'lostreasons']],
   ['Appointments', ['appts', 'calperf']],
+  ['Settings', ['set_account', 'set_tracking', 'set_targets', 'set_operations']],
 ]
 function v2TabGroups(tabs) {
   const list = Array.isArray(tabs) ? tabs : []
@@ -8940,7 +8941,10 @@ const ACCOUNT_TAB_LABELS = {
   overall: 'Overview', custom: 'Custom dashboard', clinic: 'Clinic', meta: 'Meta Ads', google: 'Google Ads', optlog: 'Change Log',
   analytics: 'Analytics', forms: 'Forms', location: 'Location', actionhub: 'Action Centre', saleshub: 'Sales Hub', timing: 'Speed to Lead',
   calls: 'Call Reporting', users: 'Reps', lostreasons: 'Lost Reasons', appts: 'Appointments', calperf: 'Calendars', cohorts: 'Cohorts',
+  set_account: 'Account', set_tracking: 'Tracking', set_targets: 'Targets', set_operations: 'Operations',
 }
+// Which settings group each Settings page of the account frame shows.
+const SET_GROUP = { set_account: 'Account', set_tracking: 'Tracking', set_targets: 'Targets', set_operations: 'Operations' }
 function accountHead(tabId) {
   const grp = V2_TAB_GROUPS.find(([, ids]) => ids.includes(tabId))
   return { title: ACCOUNT_TAB_LABELS[tabId] || 'Overview', group: grp ? grp[0] : '' }
@@ -16580,12 +16584,19 @@ function clientTabList(client, cfg, authUser, isClinic) {
   // enough to have something to say. The tab id stays `optlog` so existing viewer
   // grants and deep links keep pointing at it.
   if (loadOptLog(client.id) || cfg.meta || client.meta || cfg.google || client.google) allTabs.push({ id: 'optlog', label: 'Change Log' })
+  // The account's settings, as pages of the account frame. Visibility decides
+  // who sees them (off for Account Admins until switched on); Account Users
+  // never get them.
+  allTabs.push({ id: 'set_account', label: 'Account' })
+  if (cfg.ghl || cfg.meta || client.meta) allTabs.push({ id: 'set_tracking', label: 'Tracking' })
+  if (cfg.ghl || cfg.meta || client.meta || cfg.google || client.google) allTabs.push({ id: 'set_targets', label: 'Targets' })
+  allTabs.push({ id: 'set_operations', label: 'Operations' })
   return allowedTabsFE(authUser, allTabs)
 }
 // The account frame's sidebar: this client's areas and their pages, in the
 // order a lead travels. Its own component so the clinic probe (a hook) runs
 // beside the workspace's rather than inside the shell.
-const SECTION_ICON = { Overview: 'overview', Acquisition: 'acquisition', Audience: 'audience', Sales: 'sales', Appointments: 'appointments' }
+const SECTION_ICON = { Overview: 'overview', Acquisition: 'acquisition', Audience: 'audience', Sales: 'sales', Appointments: 'appointments', Settings: 'settings' }
 function AccountNav({ client, config, authUser, tab, onTab, canReports, onReports, reportsActive }) {
   useSettingsSync()
   const cfg = ((config && config.clients) || []).find((c) => c.id === client.id) || {}
@@ -16711,6 +16722,7 @@ function ClientWorkspace({ client, index, data, config, range, nonce, wonBasis =
           ? <IntelBanner model={liveOK(curTab) ? intelAds(live.data[curTab], curTab, (v) => fmtCurrency(v, data.currency)) : null} status={live.status === 'ok' && !liveOK(curTab) ? 'err' : live.status} tab={curTab} pipeName={pipeName} range={range} />
           : tabIntel[curTab] ? <IntelBanner model={tabIntel[curTab]} status="ok" tab={curTab} pipeName={pipeName} range={range} />
             : crmId && INTEL_TABS.has(curTab) ? <IntelBanner model={intel} status={ccForPipes.status} tab={curTab} pipeName={pipeName} range={range} /> : null}
+        {SET_GROUP[curTab] && <ClientSettingsPage client={((config && config.clients) || []).find((x) => x.id === client.id) || client} clients={(config && config.clients) || []} currency={data.currency} canManageAccounts={!authUser || authUser.role === 'superadmin'} group={SET_GROUP[curTab]} onDeleted={onBack || (() => {})} />}
         {curTab === 'overall' && <ExecutiveDashboard clientId={client.id} clientName={client.name} currency={data.currency} range={range} nonce={nonce} onNav={setTab} authUser={authUser} wonBasis={wonBasis} pipe={pipe} onPipe={setPipe} pipes={pipes} />}
         {curTab === 'custom' && dash && <ExecutiveDashboard key={`custom:${dash.updatedAt || ''}`} clientId={client.id} clientName={client.name} currency={data.currency} range={range} nonce={nonce} onNav={setTab} authUser={authUser} wonBasis={wonBasis} pipe={pipe} onPipe={setPipe} pipes={pipes} layout={dash} />}
         {curTab === 'users' && <UsersView clientId={client.id} range={range} nonce={nonce} currency={data.currency} wonBasis={wonBasis} pipe={pipe} onPipe={setPipe} />}
@@ -16742,6 +16754,7 @@ function ClientWorkspace({ client, index, data, config, range, nonce, wonBasis =
 
 // ---- Settings: the client editors and the Settings page: src/views/settings.jsx, loaded on first open ----
 const SettingsPage = lazyView(() => import('./views/settings.jsx'), 'SettingsPage')
+const ClientSettingsPage = lazyView(() => import('./views/settings.jsx'), 'ClientSettingsPage')
 // "Sydney, NSW, AU" from whatever parts came back. Best-effort: a VPN or a mobile
 // network moves people hundreds of kilometres, so this is always a hint, never a
 // claim about where a person physically was.
@@ -19539,7 +19552,7 @@ function Dashboard({ authUser, authEnabled, onLogout, realUser, onViewAs }) {
   const go = (v) => { setView(v); setPicked(null); setNavOpen(false); writeNavUrl({ v, c: null, t: null, p: null, m: null, s: v === 'settings' ? undefined : null }, true) }
   // Reporting's two pages are sidebar entries; the page itself carries no tab strip.
   const goReport = (t) => { const hid = userHidden(authUser); const tt = t === 'pivot' && isHiddenView(hid, 'reporting_trend') ? 'monthly' : t === 'monthly' && isHiddenView(hid, 'reporting_monthly') ? 'pivot' : t; setReportTab(tt); setView('monthly'); setPicked(null); setNavOpen(false); writeNavUrl({ v: 'monthly', c: null, t: null, p: null, m: null, s: tt === 'pivot' ? 'trend' : null, pp: null, pf: null, pt: null, pb: null, pm: null, pch: null, pd: null }, true) }
-  const openClient = (c) => { setPicked(c); setView('clients'); setClientTab('overall'); setNavOpen(false); writeNavUrl({ v: 'clients', c: c.id, t: 'overall', p: null, m: null, s: null }, true) }
+  const openClient = (c, t = 'overall') => { setPicked(c); setView('clients'); setClientTab(t); setNavOpen(false); writeNavUrl({ v: 'clients', c: c.id, t, p: null, m: null, s: null }, true) }
   // A page inside the account on screen, from the account sidebar.
   const openTab = (t) => { setClientTab(t); setView('clients'); setNavOpen(false); writeNavUrl({ v: 'clients', t }, true) }
   // Access role gates the whole shell. Viewers (clients) never reach agency-wide
@@ -19659,9 +19672,9 @@ function Dashboard({ authUser, authEnabled, onLogout, realUser, onViewAs }) {
             </div>
           </div>
           <div className="spacer" />
-          {curView !== 'settings' && curView !== 'monthly' && curView !== 'reports' && curView !== 'trends' && !noPick && !(inAccount && (clientTab === 'actionhub' || clientTab === 'saleshub')) && <DateRange range={range} onChange={setRange} busy={agency.status === 'loading'} />}
-          {(curView === 'overview' || curView === 'weekly' || (curView === 'clients' && curPicked)) && <WonBasisToggle value={wonBasis} onChange={setWonBasis} />}
-          {curView !== 'monthly' && curView !== 'reports' && !noPick && !(inAccount && clientTab === 'actionhub') && <button className="refresh-btn" title="Refresh live data" onClick={() => setRefreshKey((k) => k + 1)}><span className={agency.status === 'loading' ? 'spin sm' : ''} style={{ display: 'inline-block' }}>⟳</span> Refresh</button>}
+          {curView !== 'settings' && curView !== 'monthly' && curView !== 'reports' && curView !== 'trends' && !noPick && !(inAccount && (clientTab === 'actionhub' || clientTab === 'saleshub' || SET_GROUP[clientTab])) && <DateRange range={range} onChange={setRange} busy={agency.status === 'loading'} />}
+          {(curView === 'overview' || curView === 'weekly' || (curView === 'clients' && curPicked && !SET_GROUP[clientTab])) && <WonBasisToggle value={wonBasis} onChange={setWonBasis} />}
+          {curView !== 'monthly' && curView !== 'reports' && !noPick && !(inAccount && (clientTab === 'actionhub' || SET_GROUP[clientTab])) && <button className="refresh-btn" title="Refresh live data" onClick={() => setRefreshKey((k) => k + 1)}><span className={agency.status === 'loading' ? 'spin sm' : ''} style={{ display: 'inline-block' }}>⟳</span> Refresh</button>}
         </div>
         {/* A client who follows an agency-only link (Reporting, Daily Performance…)
             lands on their own dashboard; say so rather than looking like the link broke. */}
@@ -19677,7 +19690,7 @@ function Dashboard({ authUser, authEnabled, onLogout, realUser, onViewAs }) {
           {curView === 'monthly' && !isViewer && <ReportingPage clients={visibleClients} currency={data.currency} authUser={authUser} tab={reportTab} />}
           {curView === 'reports' && isViewer && canReports && <ClientReports clients={myClients} currency={data.currency} authUser={authUser} />}
           {curView === 'social' && !isViewer && <SocialDashboard clients={visibleClients} range={range} nonce={refreshKey} />}
-          {curView === 'settings' && <SettingsPage config={cfgMerged} enabled={enabled} setEnabled={setEnabled} restricted={restricted} setRestricted={setRestricted} currency={data.currency} authUser={authUser} authEnabled={authEnabled} theme={theme} setTheme={setTheme} onPick={(c) => openClient(baseClients.find((x) => x.id === c.id) || c)} />}
+          {curView === 'settings' && <SettingsPage config={cfgMerged} enabled={enabled} setEnabled={setEnabled} restricted={restricted} setRestricted={setRestricted} currency={data.currency} authUser={authUser} authEnabled={authEnabled} theme={theme} setTheme={setTheme} onPick={(c, t) => openClient(baseClients.find((x) => x.id === c.id) || c, t)} />}
           {curView === 'clients' && curPicked && <ClientWorkspace client={curPicked} index={idx} data={data} config={cfgMerged} range={range} nonce={refreshKey} wonBasis={wonBasis} authUser={authUser} initialTab={clientTab} onTabChange={(t) => { setClientTab(t); writeNavUrl({ v: 'clients', c: curPicked.id, t }, false) }} onBack={isViewer ? null : () => go('overview')} />}
           {curView === 'clients' && !curPicked && !isViewer && <div className="card empty-deep hub-choose"><b>Choose a client to get started.</b></div>}
           {curView === 'clients' && !curPicked && isViewer && <div className="card empty-deep"><div className="big">👋</div><b>No report is assigned to your account yet.</b><p style={{ maxWidth: 460, margin: '8px auto 0' }}>Your Caalano admin will assign your client dashboard shortly.</p></div>}

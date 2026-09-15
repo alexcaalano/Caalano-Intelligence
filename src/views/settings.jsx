@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { APP_VERSION, Avatar, BIZ_TYPES, CC_CHANS, Caveat, ChangePasswordCard, ClinicSettings, DASH_AUD, DASH_MODULES, DASH_PRESETS, DEFAULT_HOURS, DOW_LABELS, FATIGUE_DEFAULTS, FAVICON, FormsSettingsTab, GeoSettings, HelpNote, OptLogSettings, PROFILE_FIELDS, ROLE_LABEL, SEED_KEYEVENTS, SETTINGS, SignOutEverywhereCard, YourDetailsCard, Spinner, TAB_OPTIONS, TermsAdmin, TermsRegister, UsersAdmin, acolor, apiJson, applyAliases, clientLogoSrc, dashAudience, dashModuleFits, dedupeFetch, deleteClient, domainOf, dpClientOn, dpPipeOn, fetchDiscover, fmtDMY, fmtHours, formKeyEvents, formsDoneCount, hhmm, initials, isAdminishFE, isClientDeleted, iso, loadAdsetRules, loadAliases, loadBizType, loadCampMap, loadCashOn, loadCloseOverride, loadDashboard, loadFatigueCfg, loadHours, loadKeep, loadKeyEvents, loadKeyEventsRaw, loadKpis, loadLogo, loadMetaConv, loadProfile, loadQualStage, loadSocialKpis, mkOutcomeMap, normId, presetRange, rangeLabel, rangeMaturity, rangeQuery, readNavUrl, removeCustomClient, restoreClient, roleLabelOf, saveAdsetRules, saveBizType, saveCampMap, saveCashOn, saveCloseOverride, saveCustomClient, saveDashboard, saveFatigueCfg, saveHours, saveKeyEvents, saveKpis, saveLogo, saveMetaConv, saveProfile, saveQualStage, saveSocialKpis, setAlias, setDpClient, setDpPipe, setKeep, syncLogos, unorm, useDiscoverNames, useSettingsSync, writeNavUrl, normCrmUrl, saveCrmUrl, CRM_DEFAULT_URL } from '../App.jsx'
 import { fmtCurrency, fmtNumber } from '../lib/format.js'
-import { VIS_VIEWS, VIS_TABS, VIS_SETTINGS, VIS_ACCOUNT_GROUPS, VIS_ROLES, VIS_ROLE_LABELS, viewsForRole, tabsForRole, settingsForRole, normVisibility, isHiddenSetting, entryFor, hasLegacyTicks, visSettingLabel } from '../lib/visibility.js'
+import { VIS_VIEWS, VIS_TABS, VIS_SETTINGS, VIS_ACCOUNT_GROUPS, isDefaultOff, VIS_ROLES, VIS_ROLE_LABELS, viewsForRole, tabsForRole, settingsForRole, normVisibility, isHiddenSetting, entryFor, hasLegacyTicks, visSettingLabel } from '../lib/visibility.js'
 import { authApi, saveSettingsRemote, bumpSettings, userHidden, InfoTip, loadAnnot, saveAnnot } from '../App.jsx'
 import { GoalsEditor } from './sales-hub.jsx'
 
@@ -1678,7 +1678,8 @@ const VIS_ITEMS = [
 const visRoleOf = (r) => (r === 'viewer' ? 'account_admin' : r)
 const visApplies = (item, role) => (item.kind === 'views' ? viewsForRole(role) : item.kind === 'settings' ? settingsForRole(role) : tabsForRole(role)).some((x) => x.id === item.id)
 const visOn = (entry, item) => !(entry && entry[item.kind] && entry[item.kind][item.id] === false)
-const visFlip = (entry, item) => { const cur = { ...((entry && entry[item.kind]) || {}) }; if (cur[item.id] === false) delete cur[item.id]; else cur[item.id] = false; return { views: {}, tabs: {}, settings: {}, ...entry, [item.kind]: cur } }
+// Off → on: a default-off page (an Account Admin's settings pages) stores an explicit true; anything else just drops its "off".
+const visFlip = (entry, item, role) => { const cur = { ...((entry && entry[item.kind]) || {}) }; if (cur[item.id] === false) { if (isDefaultOff(role, item.kind, item.id)) cur[item.id] = true; else delete cur[item.id] } else cur[item.id] = false; return { views: {}, tabs: {}, settings: {}, ...entry, [item.kind]: cur } }
 const visSame = (a, b) => JSON.stringify(normVisibility({ users: { x: a } }).users.x) === JSON.stringify(normVisibility({ users: { x: b } }).users.x)
 // One matrix: rows are the items, columns are whatever is passed in. Each
 // column answers on/off for an item, whether the item applies, and how to flip.
@@ -1724,7 +1725,7 @@ export function VisibilitySettings({ clients = [] }) {
   const usersDirty = Object.keys(draftUsers).length > 0
   // ---- role defaults ----
   const roleCols = VIS_ROLES.map((r) => ({ key: r, role: r, label: VIS_ROLE_LABELS[r], sub: 'default', entry: draftRoles[r] }))
-  const flipRole = (c, item) => { setDraftRoles((d) => ({ ...d, [c.role]: visFlip(d[c.role], item) })); setSaved(null) }
+  const flipRole = (c, item) => { setDraftRoles((d) => ({ ...d, [c.role]: visFlip(d[c.role], item, c.role) })); setSaved(null) }
   const saveRoles = () => {
     const next = normVisibility({ ...vis, roles: draftRoles })
     SETTINGS.visibility = { ...(SETTINGS.visibility || {}), roles: next.roles }
@@ -1739,7 +1740,7 @@ export function VisibilitySettings({ clients = [] }) {
   const flipUser = (c, item) => {
     const u = c.user, key = u.email.toLowerCase()
     setDraftUsers((d) => {
-      const next = visFlip(effective(u), item)
+      const next = visFlip(effective(u), item, visRoleOf(u.role))
       // Back to exactly the role default = no override needed.
       const same = visSame(next, vis.roles[visRoleOf(u.role)])
       return { ...d, [key]: same ? null : next }
@@ -1846,7 +1847,6 @@ function AnnotRow() {
 export function SettingsPage({ config, enabled, setEnabled, restricted = {}, setRestricted, currency, authUser, authEnabled, theme, setTheme, onPick }) {
   const [filter, setFilter] = useState('active')
   const [q, setQ] = useState('')
-  const [editing, setEditing] = useState(null) // client being configured (modal)
   const [adding, setAdding] = useState(false)   // add/edit-client explorer modal (true = new, client = edit)
   const [autoOnboard, setAutoOnboard] = useState(false) // auto-onboard matcher modal
   const role = authEnabled && authUser ? authUser.role : 'admin' // legacy/basic = full admin
@@ -2005,7 +2005,7 @@ export function SettingsPage({ config, enabled, setEnabled, restricted = {}, set
               </div>
               <HealthStrip c={c} />
               <div className="set-card-actions">
-                <button className="set-expand" onClick={() => setEditing(c)}>✎ Edit</button>
+                <button className="set-expand" onClick={() => onPick(c, 'set_account')} title="Open this account's settings">⚙ Settings ↗</button>
                 {isSuper && <button className={`set-restr-btn ${isRestr(c) ? 'on' : ''}`} onClick={() => toggleRestr(c)} title={isRestr(c) ? 'Visible to Super Admins only - click to show the whole team' : 'Restrict to Super Admins only'}>{isRestr(c) ? '🔒 Super-Admin only' : '🔓 Visible to team'}</button>}
               </div>
             </div>
@@ -2014,7 +2014,6 @@ export function SettingsPage({ config, enabled, setEnabled, restricted = {}, set
         {!list.length && <div className="card empty-deep"><div className="big">🔍</div><b>No clients match.</b></div>}
       </div>}
       </>)}
-      {editing && <SettingsEditModal client={editing} names={names} currency={currency} canManageAccounts={isSuper} onClose={() => setEditing(null)} onOpen={() => { const cc = editing; setEditing(null); onPick(cc) }} onRelink={() => { const cc = editing; setEditing(null); setAdding(cc) }} />}
       {adding && <AddClientModal existing={config.clients} editClient={typeof adding === 'object' ? adding : null} onClose={() => setAdding(false)} />}
       {autoOnboard && <AutoOnboardModal existing={config.clients} onClose={() => setAutoOnboard(false)} />}
     </div>
@@ -2357,7 +2356,7 @@ export function DashboardBuilder({ client: c }) {
     </div>
   )
 }
-export function SettingsEditModal({ client: c, names, currency, canManageAccounts, onClose, onOpen, onRelink }) {
+function ClientSettingsBody({ client: c, names, currency, canManageAccounts, onClose, onOpen, onRelink, group, embedded }) {
   const canLink = (c.meta || c.google) && c.ghl
   const nm = (kind, id) => (names && id ? names[kind][normId(id)] : null)
   useSettingsSync()
@@ -2401,49 +2400,46 @@ export function SettingsEditModal({ client: c, names, currency, canManageAccount
   if (c.ghl && bizType === 'clinic') tabs.push(['clinic', 'Clinic', 'Operations', 'Practitioners and appointment types'])
   tabs.push(['optlog', 'Optimisation Log', 'Operations', 'The Google Sheet of changes made'])
   if (c.ghl && (c.meta || c.google)) tabs.push(['diagnostics', 'Diagnostics', 'Operations', 'Is tracking actually working'])
-  const groups = [...new Set(tabs.map((t) => t[2]))]
+  // In the account frame each Settings page shows one group (Account, Tracking,
+  // Targets, Operations); the modal shows them all.
+  const shown = group ? tabs.filter((t) => t[2] === group) : tabs
+  const first = shown[0] ? shown[0][0] : 'summary'
+  const groups = [...new Set(shown.map((t) => t[2]))]
   // The last tab opened for this client is where it reopens: someone setting
   // KPI targets across ten clients should not land on Summary ten times.
-  const tabKey = `caalano_set_tab:${c.id}`
-  const [tab, setTabRaw] = useState(() => { try { const t = localStorage.getItem(tabKey); return t && tabs.some((x) => x[0] === t) ? t : 'summary' } catch { return 'summary' } })
+  const tabKey = `caalano_set_tab:${c.id}${group ? ':' + group : ''}`
+  const [tab, setTabRaw] = useState(() => { try { const t = localStorage.getItem(tabKey); return t && shown.some((x) => x[0] === t) ? t : first } catch { return first } })
+  // A stored or stale tab outside this group falls back to the group's first page.
+  const tabOn = shown.some((x) => x[0] === tab) ? tab : first
   const setTab = (t) => { setTabRaw(t); try { localStorage.setItem(tabKey, t) } catch { /* private mode */ } }
   // ↑ / ↓ move through the list, so the whole of a client's setup can be
   // walked without reaching for the mouse.
   const onNavKey = (e) => {
     if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return
     e.preventDefault()
-    const i = tabs.findIndex((x) => x[0] === tab)
-    const n = tabs[(i + (e.key === 'ArrowDown' ? 1 : tabs.length - 1)) % tabs.length]
+    const i = shown.findIndex((x) => x[0] === tabOn)
+    const n = shown[(i + (e.key === 'ArrowDown' ? 1 : shown.length - 1)) % shown.length]
     if (n) setTab(n[0])
   }
-  return (
-    <div className="modal-bg" onClick={onClose}>
-      <div className="modal set-modal" onClick={(e) => e.stopPropagation()}>
-        <div className="m-head">
-          <div className="set-modal-title"><Avatar id={c.id} name={name || c.name} i={0} sm /><div><h3>{name || c.name}</h3><span className="cap">{industry || (c.custom ? 'Added client' : 'Configuration')}</span></div></div>
-          <div className="set-modal-actions">
-            <button className="set-open" onClick={onOpen} title="Open this client's performance workspace">Open Client View ↗</button>
-            <button className="icon-btn" onClick={onClose}>✕</button>
-          </div>
-        </div>
+  const split = (
         <div className="set-split">
           <nav className="set-nav" aria-label="Client settings" onKeyDown={onNavKey}>
             {groups.map((g) => (
               <div className="set-nav-grp" key={g}>
                 <div className="set-nav-glab">{g}</div>
-                {tabs.filter((t) => t[2] === g).map(([k, lbl, , hint]) => (
-                  <button key={k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>
+                {shown.filter((t) => t[2] === g).map(([k, lbl, , hint]) => (
+                  <button key={k} className={tabOn === k ? 'on' : ''} onClick={() => setTab(k)}>
                     <span className="set-nav-l">{lbl}</span><span className="set-nav-h">{hint}</span>
                   </button>
                 ))}
               </div>
             ))}
           </nav>
-          <select className="set-nav-select" value={tab} onChange={(e) => setTab(e.target.value)} aria-label="Client settings section">
-            {groups.map((g) => <optgroup key={g} label={g}>{tabs.filter((t) => t[2] === g).map(([k, lbl]) => <option key={k} value={k}>{lbl}</option>)}</optgroup>)}
+          <select className="set-nav-select" value={tabOn} onChange={(e) => setTab(e.target.value)} aria-label="Client settings section">
+            {groups.map((g) => <optgroup key={g} label={g}>{shown.filter((t) => t[2] === g).map(([k, lbl]) => <option key={k} value={k}>{lbl}</option>)}</optgroup>)}
           </select>
         <div className="m-body set-tabbody">
-          {tab === 'summary' && <div className="set-summary">
+          {tabOn === 'summary' && <div className="set-summary">
             <div className="set-details">
               <div className="set-field"><label>Client name</label><input value={name} onChange={(e) => setName(e.target.value)} /></div>
               <div className="set-field"><label>Description / Industry</label><input value={industry} onChange={(e) => setIndustry(e.target.value)} placeholder="e.g. Pool builder (trades, high-ticket)" /></div>
@@ -2475,24 +2471,52 @@ export function SettingsEditModal({ client: c, names, currency, canManageAccount
               </div>
             )}
           </div>}
-          {tab === 'keyevents' && <div className="set-tabpane"><div className="set-sec-t">Key events</div><KeyEventsEditor clientId={c.id} embedded nonce={sig} /></div>}
-          {tab === 'timing' && <div className="set-tabpane"><TimingSettings clientId={c.id} hasMeta={!!c.meta} /></div>}
-          {tab === 'dashboard' && canManageAccounts && <div className="set-tabpane"><div className="set-sec-t">Custom dashboard</div><DashboardBuilder client={c} /></div>}
-          {tab === 'geo' && <GeoSettings clientId={c.id} />}
-          {tab === 'goals' && <div className="set-tabpane"><div className="set-sec-t">Goals - business, pipeline and rep targets</div><GoalsEditor clientId={c.id} currency={c.currency} /></div>}
-          {tab === 'clinic' && <ClinicSettings clientId={c.id} nonce={sig} />}
-          {tab === 'metaconv' && <div className="set-tabpane"><div className="set-sec-t">Meta conversions - primary &amp; secondary results</div><MetaConversionsEditor clientId={c.id} currency={currency} /></div>}
-          {tab === 'links' && <div className="set-tabpane"><div className="set-sec-t">Link campaigns to pipelines</div><CampaignLinker clientId={c.id} embedded nonce={sig} /></div>}
-          {tab === 'kpis' && <div className="set-tabpane"><div className="set-sec-t">KPI targets</div><KpiEditor clientId={c.id} embedded nonce={sig} /></div>}
-          {tab === 'forms' && <div className="set-tabpane"><div className="set-sec-t">Forms - link to a pipeline &amp; add notes</div><p className="cap" style={{ marginTop: 0 }}>Set each form's pipeline and notes here. The client's Forms tab shows these (and its full performance).</p><FormsSettingsTab clientId={c.id} /></div>}
-          {tab === 'aliases' && <div className="set-tabpane"><div className="set-sec-t">UTM aliases - link renamed campaigns / ad sets / creatives</div><AliasEditor clientId={c.id} nonce={sig} /></div>}
-          {tab === 'qualstage' && <div className="set-tabpane"><div className="set-sec-t">Qualified lead - stage per pipeline</div><QualStageEditor clientId={c.id} nonce={sig} /></div>}
-          {tab === 'optlog' && <div className="set-tabpane"><div className="set-sec-t">Optimisation Log - Google Sheet</div><OptLogSettings clientId={c.id} /></div>}
-          {tab === 'diagnostics' && <div className="set-tabpane"><ClientTrackingDiagnostics clientId={c.id} currency={currency} embedded nonce={sig} /></div>}
+          {tabOn === 'keyevents' && <div className="set-tabpane"><div className="set-sec-t">Key events</div><KeyEventsEditor clientId={c.id} embedded nonce={sig} /></div>}
+          {tabOn === 'timing' && <div className="set-tabpane"><TimingSettings clientId={c.id} hasMeta={!!c.meta} /></div>}
+          {tabOn === 'dashboard' && canManageAccounts && <div className="set-tabpane"><div className="set-sec-t">Custom dashboard</div><DashboardBuilder client={c} /></div>}
+          {tabOn === 'geo' && <GeoSettings clientId={c.id} />}
+          {tabOn === 'goals' && <div className="set-tabpane"><div className="set-sec-t">Goals - business, pipeline and rep targets</div><GoalsEditor clientId={c.id} currency={c.currency} /></div>}
+          {tabOn === 'clinic' && <ClinicSettings clientId={c.id} nonce={sig} />}
+          {tabOn === 'metaconv' && <div className="set-tabpane"><div className="set-sec-t">Meta conversions - primary &amp; secondary results</div><MetaConversionsEditor clientId={c.id} currency={currency} /></div>}
+          {tabOn === 'links' && <div className="set-tabpane"><div className="set-sec-t">Link campaigns to pipelines</div><CampaignLinker clientId={c.id} embedded nonce={sig} /></div>}
+          {tabOn === 'kpis' && <div className="set-tabpane"><div className="set-sec-t">KPI targets</div><KpiEditor clientId={c.id} embedded nonce={sig} /></div>}
+          {tabOn === 'forms' && <div className="set-tabpane"><div className="set-sec-t">Forms - link to a pipeline &amp; add notes</div><p className="cap" style={{ marginTop: 0 }}>Set each form's pipeline and notes here. The client's Forms tab shows these (and its full performance).</p><FormsSettingsTab clientId={c.id} /></div>}
+          {tabOn === 'aliases' && <div className="set-tabpane"><div className="set-sec-t">UTM aliases - link renamed campaigns / ad sets / creatives</div><AliasEditor clientId={c.id} nonce={sig} /></div>}
+          {tabOn === 'qualstage' && <div className="set-tabpane"><div className="set-sec-t">Qualified lead - stage per pipeline</div><QualStageEditor clientId={c.id} nonce={sig} /></div>}
+          {tabOn === 'optlog' && <div className="set-tabpane"><div className="set-sec-t">Optimisation Log - Google Sheet</div><OptLogSettings clientId={c.id} /></div>}
+          {tabOn === 'diagnostics' && <div className="set-tabpane"><ClientTrackingDiagnostics clientId={c.id} currency={currency} embedded nonce={sig} /></div>}
         </div>
         </div>
+  )
+  if (embedded) return <div className="card set-page">{split}</div>
+  return (
+    <div className="modal-bg" onClick={onClose}>
+      <div className="modal set-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="m-head">
+          <div className="set-modal-title"><Avatar id={c.id} name={name || c.name} i={0} sm /><div><h3>{name || c.name}</h3><span className="cap">{industry || (c.custom ? 'Added client' : 'Configuration')}</span></div></div>
+          <div className="set-modal-actions">
+            <button className="set-open" onClick={onOpen} title="Open this client's performance workspace">Open Client View ↗</button>
+            <button className="icon-btn" onClick={onClose}>✕</button>
+          </div>
+        </div>
+        {split}
       </div>
     </div>
+  )
+}
+// The floating editor, kept for anything that still wants it.
+export function SettingsEditModal(props) { return <ClientSettingsBody {...props} /> }
+// One Settings page of the account frame: the group's tabs, as a page. The
+// same editors as the modal; "Edit linked accounts" opens the linking modal
+// here, and deleting the client hands control back to the shell.
+export function ClientSettingsPage({ client, clients, currency, canManageAccounts, group, onDeleted }) {
+  const names = useDiscoverNames()
+  const [relink, setRelink] = useState(false)
+  return (
+    <>
+      <ClientSettingsBody key={group || 'all'} client={client} names={names} currency={currency} canManageAccounts={canManageAccounts} group={group} embedded onClose={onDeleted} onRelink={() => setRelink(true)} />
+      {relink && <AddClientModal existing={clients || []} editClient={client} onClose={() => setRelink(false)} />}
+    </>
   )
 }
 

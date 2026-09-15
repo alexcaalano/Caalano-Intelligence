@@ -58,6 +58,12 @@ export const VIS_TABS = [
   { id: 'timing', label: 'Speed to Lead' },
   { id: 'lostreasons', label: 'Lost Reasons' },
   { id: 'optlog', label: 'Change Log' },
+  // The account's own settings pages (Account view · Settings). Off for
+  // Account Admins until switched on; agency roles see them.
+  { id: 'set_account', label: 'Settings · Account' },
+  { id: 'set_tracking', label: 'Settings · Tracking' },
+  { id: 'set_targets', label: 'Settings · Targets' },
+  { id: 'set_operations', label: 'Settings · Operations' },
 ]
 // The Account view's sidebar groups, in order, with the page ids each holds.
 // Mirrors V2_TAB_GROUPS in the app (a test keeps the two identical); the
@@ -68,6 +74,7 @@ export const VIS_ACCOUNT_GROUPS = [
   ['Audience', ['analytics', 'forms', 'location', 'cohorts']],
   ['Sales', ['actionhub', 'saleshub', 'timing', 'calls', 'users', 'lostreasons']],
   ['Appointments', ['appts', 'calperf']],
+  ['Settings', ['set_account', 'set_tracking', 'set_targets', 'set_operations']],
 ]
 // Settings tabs. Only the agency-level ones: My Profile (My Account,
 // Appearance) is for everyone, and the Super Admin pages (Visibility, Terms of
@@ -95,7 +102,16 @@ export const viewsForRole = (role) => VIS_VIEWS.filter((v) => v.roles.includes(n
 export const tabsForRole = (role) => (normRole(role) === 'account_user' ? [] : VIS_TABS)
 export const settingsForRole = (role) => VIS_SETTINGS.filter((v) => v.roles.includes(normRole(role)))
 
-const offMap = (m) => { const o = {}; for (const k in (m || {})) if (m[k] === false) o[k] = false; return o }
+// Pages a role starts WITHOUT until a Super Admin switches them on. Unlike
+// everything else (visible until switched off, only "off" stored), these keep
+// an explicit true when switched on, so the default can be off and the switch
+// still works both ways.
+export const DEFAULT_OFF = { account_admin: { tabs: ['set_account', 'set_tracking', 'set_targets', 'set_operations'] } }
+const KEEP_TRUE = new Set(Object.values(DEFAULT_OFF).flatMap((d) => Object.values(d).flat()))
+export const isDefaultOff = (role, kind, id) => !!(DEFAULT_OFF[normRole(role)] && DEFAULT_OFF[normRole(role)][kind] && DEFAULT_OFF[normRole(role)][kind].includes(id))
+const offMap = (m) => { const o = {}; for (const k in (m || {})) { if (m[k] === false) o[k] = false; else if (m[k] === true && KEEP_TRUE.has(k)) o[k] = true } return o }
+// A role's default-off pages read as off unless the entry says true.
+const withDefaults = (e, role) => { const d = DEFAULT_OFF[normRole(role)]; if (!d) return e; const out = { ...e }; for (const kind in d) { out[kind] = { ...(e[kind] || {}) }; for (const id of d[kind]) if (out[kind][id] !== true) out[kind][id] = false } return out }
 // What a role gets before a Super Admin has ever touched its column: an
 // Account Admin starts without Sales Hub (the manager view), as the old tab
 // ticks defaulted. Applies only while the role has no stored entry at all -
@@ -106,7 +122,7 @@ const normEntry = (e) => ({ views: offMap(e && e.views), tabs: offMap(e && e.tab
 // by lower-cased email.
 export function normVisibility(v) {
   const roles = {}, users = {}
-  for (const r of VIS_ROLES) roles[r] = normEntry(v && v.roles && (r in v.roles) ? v.roles[r] : DEFAULT_ROLE_OFF[r])
+  for (const r of VIS_ROLES) roles[r] = withDefaults(normEntry(v && v.roles && (r in v.roles) ? v.roles[r] : DEFAULT_ROLE_OFF[r]), r)
   for (const [email, e] of Object.entries((v && v.users) || {})) { const k = String(email || '').trim().toLowerCase(); if (k && e && typeof e === 'object') users[k] = normEntry(e) }
   return { roles, users }
 }
@@ -123,7 +139,7 @@ export function entryFor(user, v) {
   if (!user || !user.role) return null
   const vis = normVisibility(v)
   const own = vis.users[String(user.email || '').trim().toLowerCase()]
-  if (own) return own
+  if (own) return withDefaults(own, user.role)
   const role = vis.roles[normRole(user.role)] || { views: {}, tabs: {}, settings: {} }
   if (hasLegacyTicks(user, v)) { const tabs = {}; for (const t of tabsForRole(user.role)) if (!user.tabs.includes(t.id)) tabs[t.id] = false; return { ...role, tabs } }
   return role
@@ -142,9 +158,9 @@ export function hiddenFor(user, v) {
   if (!e) return { views: [], tabs: [], settings: [] }
   const okViews = new Set(viewsForRole(user.role).map((x) => x.id)), okTabs = new Set(tabsForRole(user.role).map((x) => x.id)), okSettings = new Set(settingsForRole(user.role).map((x) => x.id))
   return {
-    views: Object.keys(e.views).filter((id) => okViews.has(id)),
-    tabs: Object.keys(e.tabs).filter((id) => okTabs.has(id)),
-    settings: Object.keys(e.settings || {}).filter((id) => okSettings.has(id)),
+    views: Object.keys(e.views).filter((id) => e.views[id] === false && okViews.has(id)),
+    tabs: Object.keys(e.tabs).filter((id) => e.tabs[id] === false && okTabs.has(id)),
+    settings: Object.keys(e.settings || {}).filter((id) => (e.settings || {})[id] === false && okSettings.has(id)),
   }
 }
 export const isHiddenView = (hidden, id) => !!(hidden && Array.isArray(hidden.views) && hidden.views.includes(id))

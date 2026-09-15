@@ -4474,6 +4474,10 @@ td.lm-ker-n { font-weight: 600; color: var(--muted); font-variant-numeric: tabul
 .set-nav-h { font-size: 10.5px; opacity: .75; line-height: 1.25; }
 .set-nav button.on .set-nav-h { opacity: .85; }
 .set-nav-select { display: none; }
+/* Settings as a page of the account frame: the same split, inside a card. */
+.set-page { padding: 0; overflow: hidden; }
+.set-page .set-nav { top: 8px; max-height: none; }
+.set-page .m-body { padding: 18px 22px; }
 @media (max-width: 760px) {
   .set-split { grid-template-columns: 1fr; }
   .set-nav { display: none; }

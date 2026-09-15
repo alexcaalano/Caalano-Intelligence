@@ -20,12 +20,21 @@ assert.deepEqual(V.hiddenFor({ email: 'a@x', role: 'admin' }, vis), { views: ['f
 assert.deepEqual(V.hiddenFor({ email: 'a@x', role: 'admin' }, { roles: { admin: { settings: { team: false, visibility: false, account: false } } } }), { views: [], tabs: [], settings: ['team'] }, 'settings: only the agency sections can be hidden; never Visibility or Your account')
 assert.deepEqual(V.hiddenFor({ email: 'a@x', role: 'user' }, { roles: { user: { settings: { team: false } } } }).settings, [], 'an Agency User has no settings sections to hide')
 assert.deepEqual(V.hiddenFor({ email: 'a@x', role: 'user' }, vis), { views: ['social'], tabs: [], settings: [] })
-assert.deepEqual(V.hiddenFor({ email: 'a@x', role: 'viewer' }, vis), { views: ['reports'], tabs: ['optlog'], settings: [] }, 'viewer reads as account_admin')
+assert.deepEqual(V.hiddenFor({ email: 'a@x', role: 'viewer' }, vis), { views: ['reports'], tabs: ['optlog', 'set_account', 'set_tracking', 'set_targets', 'set_operations'], settings: [] }, 'viewer reads as account_admin (and starts without the settings pages)')
 assert.deepEqual(V.hiddenFor({ email: 'a@x', role: 'account_user' }, vis), { views: [], tabs: [], settings: [] }, 'an account user has no client tabs to hide')
 assert.deepEqual(V.hiddenFor({ email: 'SAM@example.com', role: 'admin' }, vis), { views: [], tabs: ['cohorts'], settings: [] }, 'a person\'s entry replaces the role default')
 assert.deepEqual(V.hiddenFor({ email: 'a@x', role: 'superadmin' }, vis), { views: [], tabs: [], settings: [] }, 'no Super Admin entry: nothing hidden')
 assert.deepEqual(V.hiddenFor({ email: 'a@x', role: 'superadmin' }, { roles: { superadmin: { views: { forecast: false }, tabs: { clinic: false } } } }), { views: ['forecast'], tabs: ['clinic'], settings: [] }, 'a Super Admin can hide things from themselves')
 assert.ok(!V.VIS_VIEWS.some((x) => x.id === 'settings'), 'Settings is never in the list')
+// The account's settings pages start off for Account Admins, and an explicit
+// true (what the Visibility switch stores) turns one on - per role or per person.
+assert.ok(V.hiddenFor({ email: 'a@x', role: 'account_admin' }, {}).tabs.includes('set_account'), 'account admin: settings pages off by default')
+assert.ok(V.hiddenFor({ email: 'a@x', role: 'account_admin' }, { roles: { account_admin: { views: {}, tabs: {} } } }).tabs.includes('set_tracking'), 'still off once the role has been saved without them')
+assert.ok(!V.hiddenFor({ email: 'a@x', role: 'account_admin' }, { roles: { account_admin: { tabs: { set_account: true } } } }).tabs.includes('set_account'), 'switched on for the role')
+assert.ok(!V.hiddenFor({ email: 'a@x', role: 'account_admin' }, { users: { 'a@x': { tabs: { set_targets: true } } } }).tabs.includes('set_targets'), 'switched on for one person')
+assert.ok(V.hiddenFor({ email: 'a@x', role: 'account_admin' }, { users: { 'a@x': { tabs: { set_targets: true } } } }).tabs.includes('set_account'), 'the rest stay off for that person')
+assert.ok(!V.hiddenFor({ email: 'a@x', role: 'admin' }, {}).tabs.includes('set_account'), 'agency roles see the settings pages')
+assert.ok(V.isDefaultOff('viewer', 'tabs', 'set_account') && !V.isDefaultOff('admin', 'tabs', 'set_account'), 'isDefaultOff reads viewer as account admin')
 // The Account view's groups: Visibility lays its rows out by the same list the
 // app builds the account sidebar from, and every group member is a known page.
 {

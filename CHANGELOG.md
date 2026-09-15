@@ -16,6 +16,15 @@ git commit that produced it, so any version can be redeployed or reverted to.
 
 The version number also appears in the app sidebar. Newest first.
 
+## v3.676.0 - 2026-09-15 (commit PENDING)
+
+Client settings live in the Account view.
+
+- **Settings section in the account sidebar**, after Appointments, with four pages: Account (Summary, Timing, Custom dashboard), Tracking (Key events, Meta conversions, Campaign links, UTM aliases, Qualified lead, Forms), Targets (KPI targets, Catchment, Goals) and Operations (Clinic, Optimisation Log, Diagnostics). Each is a page in the frame with the same editors the popup had; Edit linked accounts and Delete client stay on the Account page for Super Admins.
+- **Agency Settings · Clients** keeps the list with its connection status. Its button now reads "Settings ↗" and opens that account's Settings page instead of the popup.
+- **Visibility.** Four new rows under Account view · Settings, one per page, for every role. Agency roles see them; Account Admins start with all four off and can be switched on per role or per person (these are the first switches that store an explicit "on"); Account Users never see them. Their own profile settings are unchanged.
+- **Head controls.** The period, won-basis and refresh controls stay hidden on the Settings pages.
+
 ## v3.675.0 - 2026-09-15 (commit 48ec375)
 
 - **Biggest movers and Account health fold.** On Agency Overview the two section titles are switches: press one to hide its body, press again to bring it back; each browser remembers the choice.

@@ -16,7 +16,7 @@ git commit that produced it, so any version can be redeployed or reverted to.
 
 The version number also appears in the app sidebar. Newest first.
 
-## v3.679.0 - 2026-09-16 (commit PENDING)
+## v3.679.0 - 2026-09-16 (commit cab2bcd)
 
 A client-side person now sees exactly what Visibility says, on every page.
 

@@ -2424,7 +2424,7 @@ button.bn-cal-row.is-link:hover .bn-cal-go { color: var(--brand); }
 
 /* KPI row */
 .mr-kpirow { display: grid; grid-template-columns: repeat(auto-fit, minmax(128px, 1fr)); gap: 10px; }
-.mr-kpirow-wide { grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); }
+.mr-kpirow-wide { grid-template-columns: repeat(auto-fit, minmax(112px, 1fr)); }
 .mr-kpi { background: var(--panel-2); border: 1px solid var(--border); border-radius: 11px; padding: 11px 13px; display: flex; flex-direction: column; gap: 3px; }
 .mr-kpi-strong { background: color-mix(in srgb, var(--brand) 12%, var(--panel-2)); border-color: color-mix(in srgb, var(--brand) 35%, var(--border)); }
 .mr-kpi-lab { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; color: var(--faint); }
@@ -2519,11 +2519,11 @@ button.bn-cal-row.is-link:hover .bn-cal-go { color: var(--brand); }
    numeric columns take a fixed slice each and right-align. */
 .mr-cre-ketbl { width: 100%; border-collapse: collapse; font-size: 11px; table-layout: fixed; }
 .mr-cre-ketbl col.ke-name { width: auto; }
-.mr-cre-ketbl col.ke-num { width: 15%; }
+.mr-cre-ketbl col.ke-num { width: 12%; }
 .mr-cre-ketbl th { text-align: left; font-size: 8.5px; text-transform: uppercase; letter-spacing: .02em; color: var(--faint); font-weight: 700; padding: 0 5px 3px; border-bottom: 1px solid var(--border); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .mr-cre-ketbl th.r, .mr-cre-ketbl td.r { text-align: right; }
 .mr-cre-ketbl td { padding: 3px 5px; border-bottom: 1px solid var(--border); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.mr-cre-ketbl td:first-child { font-weight: 600; color: var(--text); }
+.mr-cre-ketbl td:first-child { font-weight: 600; color: var(--text); white-space: normal; overflow: visible; line-height: 1.25; }
 .mr-cre-ketbl td small { color: var(--faint); font-weight: 500; }
 .mr-cre-ketbl tbody tr:last-child td { border-bottom: none; }
 .mr-cre-ketbl .mr-ketbl-lead td { color: var(--muted); font-weight: 600; }
@@ -5891,3 +5891,50 @@ body.hub-tv-on { overflow: hidden; }
 /* The action page: the client picker above one client's Deals & Actions. */
 .hub-page { display: flex; flex-direction: column; gap: 12px; }
 .hub-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
+/* Monthly Report: notes per page, the notes panel beside the deck, the Meta
+   performance page and the creative screen's key-event ticks. */
+.mr-notes { margin-top: 16px; padding: 12px 14px; border: 1px solid color-mix(in srgb, var(--brand) 30%, var(--border)); border-left: 4px solid var(--brand); border-radius: 10px; background: color-mix(in srgb, var(--brand) 6%, var(--panel)); }
+.mr-notes-lab { font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; color: var(--brand); margin-bottom: 4px; }
+.mr-notes-txt { white-space: pre-wrap; font-size: 13.5px; line-height: 1.5; }
+.mr-split { display: flex; gap: 16px; align-items: flex-start; }
+.mr-split .mr-main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 16px; }
+.mr-notes-panel { flex: 0 0 320px; position: sticky; top: 64px; max-height: calc(100vh - 80px); overflow: auto; background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+.mr-notes-panel-h { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.mr-notes-panel-h b { font-size: 14px; }
+.mr-notes-panel-h .mr-btn { margin-left: auto; }
+.mr-notes-panel-tip { margin: 0; }
+.mr-notes-fld { display: flex; flex-direction: column; gap: 4px; }
+.mr-notes-fld > span { font-size: 11px; font-weight: 700; color: var(--muted); }
+.mr-notes-fld textarea { width: 100%; resize: vertical; min-height: 64px; background: var(--panel-2); color: var(--text); border: 1px solid var(--border-2); border-radius: 8px; padding: 8px 10px; font: inherit; font-size: 12.5px; line-height: 1.4; }
+.mr-notes-fld textarea:focus { outline: none; border-color: var(--brand); }
+@media (max-width: 900px) { .mr-split { flex-direction: column; } .mr-notes-panel { flex: 1 1 auto; position: static; max-height: none; width: 100%; } }
+.mr-cmp { display: flex; flex-direction: column; gap: 2px; margin-top: 2px; }
+.mr-cmp-row { display: flex; align-items: baseline; gap: 6px; font-size: 11px; white-space: nowrap; }
+.mr-cmp-row small { color: var(--faint); font-size: 10.5px; }
+.mr-mp { display: flex; flex-direction: column; gap: 14px; }
+.mr-mp-chart { border: 1px solid var(--border); border-radius: 12px; padding: 10px 8px 4px; background: var(--panel-2); }
+.mr-mp-tbl th:not(.lft), .mr-mp-tbl td:not(.lft) { text-align: right; font-variant-numeric: tabular-nums; }
+.mr-mp-tbl tr.row-sel td { font-weight: 700; background: color-mix(in srgb, var(--brand) 7%, transparent); }
+.mr-ke-pick { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 10px 12px; border: 1px dashed var(--border-2); border-radius: 10px; background: var(--panel-2); }
+.mr-ke-pick-lab { font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin-right: 4px; }
+.mr-collapse { align-self: flex-start; margin-top: 14px; border: 1px solid var(--border-2); background: var(--panel-2); color: var(--text); border-radius: 8px; padding: 6px 12px; font-size: 12.5px; font-weight: 700; cursor: pointer; }
+.mr-collapse:hover { border-color: var(--brand); color: var(--brand); }
+/* Google Ads page blocks */
+.mr-gblocks .mr-section-lab { margin-top: 0; }
+.mr-lab-note { font-weight: 400; text-transform: none; letter-spacing: 0; }
+.mr-ca-star { color: #22b07d; }
+.mr-locs { display: flex; flex-direction: column; gap: 2px; }
+.mr-kw-chart { border: 1px solid var(--border); border-radius: 12px; padding: 8px 6px 2px; background: var(--panel-2); }
+.mr-cmp-row .tr-dl { font-size: 11px; }
+@media (max-width: 900px) { .mr-three { grid-template-columns: 1fr; } }
+/* Sales Performance: lost table beside the status / lost-reason pie; pages tick list */
+.mr-lost-split { align-items: start; }
+.mr-lost-split .mr-lost-full { min-width: 0; }
+.mr-lost-pie { min-width: 0; border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; background: var(--panel-2); }
+.mr-pie-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.mr-pie-toggle { margin: 0; }
+.mr-pie-toggle button { padding: 3px 9px; font-size: 11px; }
+.mr-pages-pick { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 0; border-bottom: 1px solid var(--border); }
+.mr-notes-fld-lab { flex: 1 1 100%; font-size: 11px; font-weight: 700; color: var(--muted); }
+@media (max-width: 900px) { .mr-lost-split { grid-template-columns: 1fr; } }

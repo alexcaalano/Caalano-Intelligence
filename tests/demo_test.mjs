@@ -57,7 +57,12 @@ ok(fup.length > 0 && fup.every((c) => c.occurred >= c.shown) && fup.some((c) => 
 // inside occurred.
 ok(fup.every((c) => c.cancelled + c.occurred + c.upcoming === c.booked && c.shown + c.noShow + c.unresulted === c.occurred), 'cancelled + occurred + still to come = booked; results sit inside occurred')
 ok(drill.bookingByCalendar.every((c) => c.resulted === c.shown + c.noShow && c.unresulted === c.occurred - c.resulted && c.unresulted >= 0), 'resulted = shown + no-show; unresulted = occurred - resulted')
-ok(drill.bookingByCalendar.some((c) => c.cancelled > 0) && drill.bookingByCalendar.every((c) => c.cancelled <= c.booked), 'cancellations are counted per calendar, within bookings')
+// Cancellations only exist among visits whose time has passed, so a 30-day
+// window can hold none on a given day; the invariant is checked here and the
+// existence over 90 days, which always reaches past visits.
+ok(drill.bookingByCalendar.every((c) => c.cancelled <= c.booked), 'cancellations are counted per calendar, within bookings')
+const drill90 = await buildCcDrill(DEMO_LOCATION, new Date(Date.now() - 89 * 86400000).toISOString().slice(0, 10), to, 'all', 'created')
+ok(drill90.bookingByCalendar.some((c) => c.cancelled > 0) && drill90.bookingByCalendar.every((c) => c.cancelled <= c.booked), 'cancellations show up per calendar over a longer window')
 ok(drill.bookingByCalendar.every((c) => (c.people || []).every((p) => [p.shown, p.noShow, p.cancelled].filter(Boolean).length <= 1)), 'a person has one result')
 ok(drill.cash && drill.cash.collected > 0 && drill.cash.paidInFull > 0 && drill.cash.paidInFull < drill.cash.won, 'cash collected reads with some paid in full')
 const speed = await buildSpeedToLead(DEMO_LOCATION, from, to)

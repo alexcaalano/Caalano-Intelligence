@@ -4106,7 +4106,8 @@ export default async (req) => {
     const cc = CLIENTS[client]
     if (!cc) return json({ error: `unknown client ${client}` }, 404)
     if (!from || !to) return json({ error: 'from/to required' }, 400)
-    const months = Math.max(1, Math.min(12, parseInt(url.searchParams.get('months') || '6', 10)))
+    // Up to 13 months: the report month and the same month a year earlier.
+    const months = Math.max(1, Math.min(13, parseInt(url.searchParams.get('months') || '6', 10)))
     // Anchor on the range's END month so a multi-month report shows the correct
     // trailing months (for a single month, from and to share a month → identical).
     const anchor = new Date((to || from) + 'T00:00:00Z')
@@ -4115,7 +4116,7 @@ export default async (req) => {
     const buckets = new Map()
     for (let i = 0; i < months; i++) {
       const d = new Date(Date.UTC(startD.getUTCFullYear(), startD.getUTCMonth() + i, 1))
-      buckets.set(d.toISOString().slice(0, 7), { month: d.toISOString().slice(0, 7), label: d.toLocaleString('en-AU', { month: 'short', timeZone: 'UTC' }), spend: 0, leads: 0 })
+      buckets.set(d.toISOString().slice(0, 7), { month: d.toISOString().slice(0, 7), label: d.toLocaleString('en-AU', { month: 'short', timeZone: 'UTC' }), spend: 0, leads: 0, impressions: 0, clicks: 0, linkClicks: 0, reach: 0 })
     }
     try {
       if (cc.meta) {
@@ -4125,7 +4126,7 @@ export default async (req) => {
         // windowed conversions per day and under-counts results - the bug that made
         // the trend disagree with the headline. One fetch per month, in parallel.
         const fallback = await readMetaPrimary(client).catch(() => null)
-        const adsetFields = ['account_id', 'campaign', 'adset_name', 'adset_optimization_goal', 'adset_destination_type', 'adset_promoted_object', 'campaign_objective', 'reach', 'spend', 'inline_link_clicks', ...FB_LEAD_FIELDS, ...META_RESULT_FIELDS, 'actions_video_view']
+        const adsetFields = ['account_id', 'campaign', 'adset_name', 'adset_optimization_goal', 'adset_destination_type', 'adset_promoted_object', 'campaign_objective', 'reach', 'spend', 'impressions', 'clicks', 'inline_link_clicks', ...FB_LEAD_FIELDS, ...META_RESULT_FIELDS, 'actions_video_view']
         const monthList = [...buckets.keys()]
         const lastDay = (m) => { const [y, mo] = m.split('-').map(Number); return new Date(Date.UTC(y, mo, 0)).toISOString().slice(0, 10) }
         const perMonth = await Promise.all(monthList.map((k) =>
@@ -4143,19 +4144,31 @@ export default async (req) => {
           : null
         monthList.forEach((k, i) => {
           const b = buckets.get(k); if (!b) return
-          let results = 0, spend = 0
+          let results = 0, spend = 0, impressions = 0, clicks = 0, linkClicks = 0, reach = 0
           const adsets = aggMeta(perMonth[i], 'adset_name')
           if (ccPerMonth) {
             const campSpend = new Map()
             for (const a of adsets) if (a.campaign) campSpend.set(a.campaign, (campSpend.get(a.campaign) || 0) + a.spend)
             attachCustomCounts(adsets, { names: ccNames, perCamp: ccPerMonth[i].perCamp }, campSpend)
           }
-          for (const a of adsets) { const rr = rowResult(a, fallback, ccNames); results += resultCount(a, rr.field) || 0; spend += a.spend }
-          b.spend = spend; b.leads = results
+          for (const a of adsets) { const rr = rowResult(a, fallback, ccNames); results += resultCount(a, rr.field) || 0; spend += a.spend; impressions += a.impressions || 0; clicks += a.clicks || 0; linkClicks += a.linkClicks || 0; reach += a.reach || 0 }
+          b.spend = spend; b.leads = results; b.impressions = impressions; b.clicks = clicks; b.linkClicks = linkClicks; b.reach = reach
         })
       }
-      const trend = [...buckets.values()].map((b) => ({ month: b.month, label: b.label, spend: Math.round(b.spend), leads: Math.round(b.leads), cpl: b.leads ? Math.round(b.spend / b.leads) : null }))
-      return json({ trend }, 200)
+      const r2 = (v) => Math.round(v * 100) / 100
+      const trend = [...buckets.values()].map((b) => ({ month: b.month, label: b.label, spend: r2(b.spend), leads: Math.round(b.leads), cpl: b.leads ? r2(b.spend / b.leads) : null, impressions: Math.round(b.impressions), clicks: Math.round(b.clicks), linkClicks: Math.round(b.linkClicks), reach: Math.round(b.reach) }))
+      // Google by month over the same window: one dated pull, bucketed by month
+      // (a conversion sits on its click's day, so months add up cleanly).
+      let gtrend = []
+      if (cc.google) {
+        const gb = new Map(); for (const k of buckets.keys()) gb.set(k, { month: k, label: buckets.get(k).label, cost: 0, impressions: 0, clicks: 0, conversions: 0 })
+        const lastKey = [...buckets.keys()].pop()
+        const gEnd = new Date(Date.UTC(Number(lastKey.slice(0, 4)), Number(lastKey.slice(5, 7)), 0)).toISOString().slice(0, 10)
+        const rows = await windsorFetch('google_ads', ['account_id', 'date', 'spend', 'impressions', 'clicks', 'conversions'], winFrom, gEnd, null, key, { accounts: cc.google }).then((rs) => rs.filter((r) => !r.account_id || acctEq(r.account_id, cc.google))).catch(() => [])
+        for (const r of rows) { const b = gb.get(String(r.date || '').slice(0, 7)); if (!b) continue; b.cost += num(r.spend); b.impressions += num(r.impressions); b.clicks += num(r.clicks); b.conversions += num(r.conversions) }
+        gtrend = [...gb.values()].map((b) => ({ ...b, cost: r2(b.cost), conversions: r2(b.conversions), cpa: b.conversions ? r2(b.cost / b.conversions) : null }))
+      }
+      return json({ trend, gtrend }, 200)
     } catch (e) { return json({ trend: [], error: String(e.message || e) }, 200) }
   }
 

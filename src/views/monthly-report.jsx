@@ -1,8 +1,9 @@
 // Monthly Report. Carved out of App.jsx so it loads on first open; the
 // helpers it shares with the rest of the app are imported from there.
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Bar, BarChart, CartesianGrid, Cell, ComposedChart, LabelList, Legend, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { C360GrpRow, KeyEventsFunnel, KeyPeopleModal, MRKpi, O360ColGroup, O360Head, SortTh, Spinner, aliasedOutcomeMap, buildO360Cols, calCountMap, clientDownloadOn, fmtDate, formKeyEvents, isAdminishFE, keyEventRows, campIsSplit, keyEventsForPipe, loadAdsetRules, loadCampMap, loadKeyEvents, mkOutcomeMap, mrFetch, o360Cells, o360ColClass, o360Fields, pipeOfAdset, rangeQuery, reachedByStage, readNavUrl, resolveKeyEvents, setClientDownload, sortRows, stagePosMap, stageReachOf, suggestPipeline, unorm, useSettingsSync, useSort, writeNavUrl } from '../App.jsx'
+import { C360GrpRow, Dlt, KeyEventsFunnel, KeyPeopleModal, MRKpi, O360ColGroup, O360Head, SortTh, Spinner, aliasedOutcomeMap, buildO360Cols, calCountMap, clientDownloadOn, fmtDate, formKeyEvents, isAdminishFE, isClientRoleFE, keyEventRows, campIsSplit, keyEventsForPipe, loadAdsetRules, loadCampMap, loadKeyEvents, loadMReport, mkOutcomeMap, mrFetch, o360Cells, o360ColClass, o360Fields, pipeOfAdset, rangeQuery, reachedByStage, readNavUrl, resolveKeyEvents, saveMReport, setClientDownload, sortRows, stagePosMap, stageReachOf, suggestPipeline, unorm, useSettingsSync, useSort, writeNavUrl } from '../App.jsx'
 import { fmtCompact, fmtCurrency, fmtNumber, fmtPct } from '../lib/format.js'
 
 // ---------------------------------------------------------------------------
@@ -121,31 +122,40 @@ export async function mrFetchTry(qs, { tries = 3, timeoutMs = 22000 } = {}) {
       lastErr = new Error((j && j.error) || `HTTP ${r.status}`)
     } catch (e) { lastErr = e }
     finally { clearTimeout(timer) }
-    if (i < tries - 1) await new Promise((res) => setTimeout(res, 1500 * (i + 1)))
+    if (i < tries - 1) await new Promise((res) => setTimeout(res, Math.min(8000, 1200 * (i + 1))))
   }
   throw lastErr || new Error('failed')
 }
 
 // Pull every scope the deck needs for one client + month, in parallel, and
 // shape the frozen report payload.
-export async function assembleMonthlyReport(client, period) {
+export async function assembleMonthlyReport(client, period, onProgress) {
   const b = { from: period.from, to: period.to, label: period.label }
   const q = `client=${encodeURIComponent(client.id)}&${rangeQuery(b)}`
-  // Each section retries before giving up; a section that STILL fails is recorded so
-  // the UI can warn instead of silently freezing an incomplete report.
+  // Every part is retried (twelve goes, pauses growing to eight seconds) and
+  // the report is only built once every part has answered - a deck with a
+  // section quietly missing reads as real figures. Progress goes to the caller.
   const failed = []
-  const section = (label, want, qs2, pick) => want
-    ? mrFetchTry(qs2).then(pick).catch(() => { failed.push(label); return null })
-    : Promise.resolve(null)
-  const [meta, google, blend, attribution, trendR, dealsR, formsR] = await Promise.all([
+  const wanted = []
+  let done = 0
+  const note = (t) => { if (onProgress) onProgress({ done, total: wanted.length, note: t }) }
+  const section = (label, want, qs2, pick) => {
+    if (!want) return Promise.resolve(null)
+    wanted.push(label)
+    return mrFetchTry(qs2, { tries: 12 }).then(pick).catch(() => { failed.push(label); return null }).finally(() => { done++; note(`${label} · ${done} of ${wanted.length} parts`) })
+  }
+  const parts = Promise.all([
     section('Meta Ads', client.meta, `channel=meta&${q}`, (r) => r.meta),
     section('Google Ads', client.google, `channel=google&${q}`, (r) => r.google),
     section('Overview', true, `channel=blend&${q}`, (r) => r.blend),
     section('CRM attribution', client.ghl, `channel=attribution&${q}`, (r) => r.attribution),
-    section('Meta 6-month trend', client.meta, `scope=monthlytrend&months=6&${q}`, (r) => r.trend),
+    section('13-month trend', client.meta || client.google, `scope=monthlytrend&months=13&${q}`, (r) => ({ trend: r.trend || [], gtrend: r.gtrend || [] })),
     section('CRM deals', client.ghl, `scope=monthlydeals&${q}`, (r) => r.deals),
     section('Form performance', client.ghl, `scope=forms&${q}`, (r) => ({ forms: r.forms, pipelines: r.pipelines })),
   ])
+  note('Reading Meta, Google and the CRM…')
+  const [meta, google, blend, attribution, trendR, dealsR, formsR] = await parts
+  if (failed.length) throw new Error(`These parts did not answer after twelve tries: ${failed.join(', ')}. Nothing was saved - press Generate to try again.`)
   // Join CRM key-event outcomes (utm_content) onto each Meta creative so the
   // creative slide can show Leads → Booked → Shown → Won → Revenue per ad, the
   // same attribution the Meta Ads view uses. Done before the attribution trim.
@@ -206,7 +216,7 @@ export async function assembleMonthlyReport(client, period) {
     v: 1, client: { id: client.id, name: client.name, industry: client.industry || null },
     month: period.key, period: b, currency: undefined,
     hasMeta: !!client.meta, hasGoogle: !!client.google, hasCrm: !!client.ghl,
-    meta, google, blend, attribution: attrTrim, trend: trendR || [], deals: dealsR || null,
+    meta, google, blend, attribution: attrTrim, trend: (trendR && trendR.trend) || [], gtrend: (trendR && trendR.gtrend) || [], deals: dealsR || null,
     // ID→name folds so Google's utm_campaign / utm_content (which carry the numeric
     // campaign / ad-group ID, not the name) resolve to the live campaign name - the
     // exact map the Meta/Google views pass to aliasedOutcomeMap. Without it the
@@ -242,7 +252,7 @@ export async function assembleMonthlyReport(client, period) {
 }
 
 // --- small presentational pieces -------------------------------------------
-export function MRSlide({ n, total, kicker, title, sub, children, tone }) {
+export function MRSlide({ n, total, kicker, title, sub, children, tone, notes }) {
   return (
     <section className={`mr-slide ${tone ? 'mr-slide-' + tone : ''}`}>
       <header className="mr-slide-head">
@@ -254,6 +264,7 @@ export function MRSlide({ n, total, kicker, title, sub, children, tone }) {
         {n != null && <div className="mr-pageno">{n}{total ? ` / ${total}` : ''}</div>}
       </header>
       <div className="mr-slide-body">{children}</div>
+      {notes && String(notes).trim() ? <div className="mr-notes"><div className="mr-notes-lab">Notes</div><div className="mr-notes-txt">{String(notes).trim()}</div></div> : null}
     </section>
   )
 }
@@ -309,10 +320,131 @@ export function MRTrend({ trend, currency }) {
   )
 }
 
+// A platform's month-by-month page: the report month beside up to twelve
+// months before it - each tile against the month before, the three-month
+// average and the same month a year earlier; two bar series and a line on one
+// chart (counts on the left scale, money on the right); a month table. Reads
+// the trend the deck froze; older decks carry fewer fields and read accordingly.
+export function MRMonthPerf({ trend, monthKey, money, spec }) {
+  const rows = (trend || []).filter((r) => r && r.month).slice(-13)
+  if (rows.length < 2) return <div className="mr-empty">Not enough history yet for a month-by-month view - this fills in as months accrue.</div>
+  const lab = (m) => { const [y, mo] = String(m).split('-'); return new Date(Date.UTC(+y, +mo - 1, 1)).toLocaleString('en-AU', { month: 'short', year: '2-digit', timeZone: 'UTC' }) }
+  const data = rows.map((r) => ({ ...spec.derive(r), month: r.month, lbl: lab(r.month) }))
+  let ci = data.findIndex((r) => r.month === monthKey); if (ci < 0) ci = data.length - 1
+  const cur = data[ci], prev = ci > 0 ? data[ci - 1] : null
+  const last3 = data.slice(Math.max(0, ci - 3), ci)
+  const avg3 = last3.length === 3 ? (k) => { const vs = last3.map((r) => r[k]).filter((v) => v != null && isFinite(v)); return vs.length ? vs.reduce((a, v) => a + v, 0) / vs.length : null } : null
+  const yoy = ci >= 12 ? data[ci - 12] : null
+  const tiles = spec.tiles.filter(Boolean)
+  const cmps = (k) => [prev && ['vs ' + prev.lbl, prev[k]], avg3 && ['vs 3-mo avg', avg3(k)], yoy && ['vs ' + yoy.lbl, yoy[k]]].filter((x) => x && x[1] != null)
+  const tableRows = data.slice().reverse()
+  const cols = spec.cols.filter(Boolean)
+  return (
+    <div className="mr-mp">
+      <div className="mr-kpirow mr-kpirow-wide">
+        {tiles.map((t) => (
+          <div key={t.k} className={`mr-kpi${t.strong ? ' mr-kpi-strong' : ''}`}>
+            <span className="mr-kpi-lab">{t.label}</span>
+            <b className="mr-kpi-val">{cur[t.k] == null ? '-' : t.fmt(cur[t.k])}</b>
+            <div className="mr-cmp">{cmps(t.k).map(([l, v]) => <span key={l} className="mr-cmp-row"><Dlt cur={cur[t.k]} prev={v} good={t.good} dp={1} /><small>{l}</small></span>)}</div>
+          </div>
+        ))}
+      </div>
+      <div className="mr-mp-chart">
+        <ResponsiveContainer width="100%" height={270}>
+          <ComposedChart data={data} margin={{ top: 18, right: 6, left: 0, bottom: 0 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+            <XAxis dataKey="lbl" tick={{ fontSize: 11, fill: 'var(--muted)' }} axisLine={false} tickLine={false} interval={0} />
+            <YAxis yAxisId="n" tick={{ fontSize: 10, fill: 'var(--muted)' }} axisLine={false} tickLine={false} width={36} tickFormatter={(v) => fmtCompact(v)} />
+            <YAxis yAxisId="$" orientation="right" tick={{ fontSize: 10, fill: 'var(--muted)' }} axisLine={false} tickLine={false} width={46} tickFormatter={(v) => '$' + fmtCompact(v)} />
+            <Tooltip formatter={(v, name, item) => [item && item.dataKey === spec.bars.k ? spec.bars.fmt(v) : money(v), name]} contentStyle={{ fontSize: 12 }} />
+            <Legend wrapperStyle={{ fontSize: 12 }} />
+            <Bar yAxisId="n" dataKey={spec.bars.k} name={spec.bars.name} fill="#4f7cff" radius={[4, 4, 0, 0]} />
+            <Bar yAxisId="$" dataKey={spec.bars2.k} name={spec.bars2.name} fill="#c3c7d3" radius={[4, 4, 0, 0]}>
+              <LabelList dataKey={spec.bars2.k} position="top" formatter={(v) => (v == null ? '' : money(v))} style={{ fontSize: 10, fill: 'var(--muted)' }} />
+            </Bar>
+            <Line yAxisId="$" type="monotone" dataKey={spec.line.k} name={spec.line.name} stroke="var(--text)" strokeWidth={2} dot={{ r: 2.5 }} />
+          </ComposedChart>
+        </ResponsiveContainer>
+      </div>
+      <div className="table-wrap">
+        <table className="mini-tbl mr-mp-tbl">
+          <thead><tr><th className="lft">Month</th>{cols.map((c) => <th key={c.k}>{c.label}</th>)}</tr></thead>
+          <tbody>{tableRows.map((r) => (
+            <tr key={r.month} className={r.month === cur.month ? 'row-sel' : ''}>
+              <td className="lft">{r.lbl}</td>
+              {cols.map((c) => <td key={c.k}>{r[c.k] == null ? '-' : c.fmt(r[c.k])}</td>)}
+            </tr>
+          ))}</tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+export function MRMetaPerf({ trend, monthKey, money, n0, resultType }) {
+  const hasImpr = (trend || []).some((r) => r && r.impressions > 0)
+  const resLabel = resultType || 'Leads'
+  const one = resLabel.toLowerCase().replace(/s$/, '')
+  const pct2 = (v) => fmtPct(v, 2)
+  const spec = {
+    derive: (r) => ({ ...r, cpm: r.impressions ? (r.spend / r.impressions) * 1000 : null, ctr: r.impressions ? ((r.linkClicks || 0) / r.impressions) * 100 : null, cpc: r.linkClicks ? r.spend / r.linkClicks : null, cpl: r.leads ? r.spend / r.leads : null }),
+    tiles: [
+      { k: 'spend', label: 'Amount spent', fmt: money, good: 'neu' },
+      hasImpr && { k: 'cpm', label: 'CPM', fmt: money, good: 'down' },
+      hasImpr && { k: 'impressions', label: 'Impressions', fmt: n0, good: 'neu' },
+      hasImpr && { k: 'linkClicks', label: 'Link clicks', fmt: n0, good: 'up' },
+      hasImpr && { k: 'ctr', label: 'CTR', fmt: pct2, good: 'up' },
+      hasImpr && { k: 'cpc', label: 'CPC', fmt: money, good: 'down' },
+      { k: 'leads', label: resLabel, fmt: n0, good: 'up' },
+      { k: 'cpl', label: `Cost / ${one}`, fmt: money, good: 'down', strong: true },
+    ],
+    bars: { k: 'leads', name: resLabel, fmt: (v) => fmtNumber(v) }, bars2: { k: 'cpl', name: `Cost / ${one}` }, line: { k: 'spend', name: 'Amount spent' },
+    cols: [hasImpr && { k: 'impressions', label: 'Impressions', fmt: n0 }, hasImpr && { k: 'linkClicks', label: 'Link clicks', fmt: n0 }, { k: 'leads', label: resLabel, fmt: n0 }, { k: 'spend', label: 'Cost', fmt: money }, hasImpr && { k: 'cpc', label: 'CPC', fmt: money }, hasImpr && { k: 'cpm', label: 'CPM', fmt: money }, hasImpr && { k: 'ctr', label: 'CTR', fmt: pct2 }, { k: 'cpl', label: `Cost / ${one}`, fmt: money }],
+  }
+  return <MRMonthPerf trend={trend} monthKey={monthKey} money={money} spec={spec} />
+}
+export function MRGooglePerf({ trend, monthKey, money, n0 }) {
+  const n1 = (v) => (v == null || isNaN(v) ? '-' : fmtNumber(Math.round(v * 10) / 10))
+  const pct2 = (v) => fmtPct(v, 2)
+  const spec = {
+    derive: (r) => ({ ...r, ctr: r.impressions ? (r.clicks / r.impressions) * 100 : null, cpc: r.clicks ? r.cost / r.clicks : null, cpa: r.conversions ? r.cost / r.conversions : null, cvr: r.clicks ? (r.conversions / r.clicks) * 100 : null }),
+    tiles: [
+      { k: 'impressions', label: 'Impressions', fmt: n0, good: 'neu' },
+      { k: 'clicks', label: 'Clicks', fmt: n0, good: 'up' },
+      { k: 'ctr', label: 'CTR', fmt: pct2, good: 'up' },
+      { k: 'cost', label: 'Cost', fmt: money, good: 'neu' },
+      { k: 'conversions', label: 'Conversions', fmt: n1, good: 'up' },
+      { k: 'cpa', label: 'Cost / conv.', fmt: money, good: 'down', strong: true },
+      { k: 'cvr', label: 'Conv. rate', fmt: pct2, good: 'up' },
+      { k: 'cpc', label: 'Avg CPC', fmt: money, good: 'down' },
+    ],
+    bars: { k: 'conversions', name: 'Conversions', fmt: n1 }, bars2: { k: 'cpa', name: 'Cost / conv.' }, line: { k: 'cost', name: 'Cost' },
+    cols: [{ k: 'impressions', label: 'Impressions', fmt: n0 }, { k: 'cvr', label: 'Conv. rate', fmt: pct2 }, { k: 'clicks', label: 'Clicks', fmt: n0 }, { k: 'ctr', label: 'CTR', fmt: pct2 }, { k: 'cost', label: 'Cost', fmt: money }, { k: 'conversions', label: 'Conversions', fmt: n1 }, { k: 'cpa', label: 'Cost / conv.', fmt: money }],
+  }
+  return <MRMonthPerf trend={trend} monthKey={monthKey} money={money} spec={spec} />
+}
+
+// Beside the lost-reasons table: one pie, flipped between where this month's
+// leads stand (won, lost, still open) and why the lost ones were lost.
+export function MRLostPie({ status, reasons, money }) {
+  const [mode, setMode] = useState('status')
+  const data = mode === 'status' ? status : reasons
+  return (
+    <div className="mr-lost-pie">
+      <div className="mr-viz-lab mr-pie-head"><span>{mode === 'status' ? 'Where this month\'s leads stand' : 'Why deals were lost'}</span>
+        <span className="subtabs mr-pie-toggle no-print"><button type="button" className={mode === 'status' ? 'active' : ''} onClick={() => setMode('status')}>Status</button><button type="button" className={mode === 'reasons' ? 'active' : ''} onClick={() => setMode('reasons')}>Lost reason</button></span>
+      </div>
+      {data && data.length ? <MRDonut data={data} money={money} /> : <div className="mr-empty">{mode === 'status' ? 'No leads this month.' : 'No deals were marked lost this month.'}</div>}
+      <p className="mr-foot-note">{mode === 'status' ? 'This month\'s leads by where they stand now. Abandoned deals count as lost.' : 'Share of the deals marked lost this month.'}</p>
+    </div>
+  )
+}
+
 // Client-facing Monthly Reports: read-only, PUBLISHED frozen reports only, for the
 // clients the viewer is allocated. No generate / refresh / publish controls. Reuses
 // the same deck renderer as the agency Monthly Report, in continuous (scroll) view.
 export function ClientReports({ clients, currency }) {
+  useSettingsSync() // notes and the key events shown arrive with the settings
   const list = (clients || []).slice().sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base' }))
   // Deep link: ?c= client, ?m= published report month - so a shared link opens
   // straight onto that report.
@@ -357,7 +489,11 @@ export function ClientReports({ clients, currency }) {
     return () => { alive = false }
   }, [clientId, month])
   const rep = st.status === 'ok' ? st.report : null
-  const deck = React.useMemo(() => (rep ? renderMonthlyDeck(rep, { currency, money, n0, pc, openDrill: (d) => setDrill(d), setFormDrill }) : []), [rep, currency])
+  const mrsC = client ? loadMReport(client.id) : {}
+  const notesC = (rep && mrsC.notes && mrsC.notes[rep.month]) || null
+  const keOffC = mrsC.keOff || []
+  const hiddenC = Array.isArray(mrsC.hidden) ? mrsC.hidden : MR_DEFAULT_HIDDEN
+  const deck = React.useMemo(() => (rep ? renderMonthlyDeck(rep, { currency, money, n0, pc, openDrill: (d) => setDrill(d), setFormDrill, notes: notesC, keOff: new Set(keOffC) }).filter((el) => !hiddenC.includes(el.key)) : []), [rep, currency, JSON.stringify(notesC), keOffC.join('|'), hiddenC.join('|')])
   const total = deck.length
   const cur = Math.max(0, Math.min(idx, total - 1))
   const slideTitle = (el, i) => (el && el.props && (el.props.title || el.props.kicker)) || (el && el.key === 'cover' ? 'Cover' : `Slide ${i + 1}`)
@@ -400,7 +536,7 @@ export function ClientReports({ clients, currency }) {
         {canDownload && <button className="mr-btn" onClick={downloadPdf} disabled={!rep || exporting} title="Download as PDF">{exporting ? 'Exporting…' : '⤓ Download PDF'}</button>}
       </div>
       {months && !months.length && <div className="mr-note mr-empty-deep"><div className="big">🗓️</div><b>No published reports yet.</b><p style={{ maxWidth: 460, margin: '8px auto 0' }}>When your agency publishes a monthly report for {client ? client.name : 'your account'}, it will appear here.</p></div>}
-      {st.status === 'loading' && <div className="mr-note"><Spinner label="Loading report…" /></div>}
+      {st.status === 'loading' && <div className="card pv-loading"><Spinner big label="Loading the report…" /></div>}
       {st.status === 'err' && <div className="mr-note mr-err">Couldn’t load this report - please try again shortly.</div>}
       {rep && view === 'slides' && total > 0 && (
         <div className="mr-nav no-print">
@@ -447,6 +583,8 @@ export function MonthlyReport({ clients, currency, authUser }) {
   const [snapBump, setSnapBump] = useState(0)    // re-fetch trigger after publish/generate
   const [showList, setShowList] = useState(false)
   const [genWarn, setGenWarn] = useState(null) // sections that failed on the last generate
+  const [prog, setProg] = useState(null) // {done, total, note} while generating
+  const [editing, setEditing] = useState(false) // the notes panel beside the deck
   const [exporting, setExporting] = useState(false)
   const [drill, setDrill] = useState(null) // {title, kind, deals}
   const [formDrill, setFormDrill] = useState(null) // {form, event, pipeKey} - who is behind one Form performance cell
@@ -492,17 +630,15 @@ export function MonthlyReport({ clients, currency, authUser }) {
 
   async function generate() {
     if (!client) return
-    setBusy(true); setSt({ status: 'loading' }); setGenWarn(null)
+    setBusy(true); setSt({ status: 'loading' }); setGenWarn(null); setProg({ done: 0, total: 1, note: 'Starting…' })
     try {
-      const report = await assembleMonthlyReport(client, period)
-      const incomplete = report._incomplete || []
-      delete report._incomplete // transient - don't freeze it into the snapshot
-      setGenWarn(incomplete.length ? incomplete : null)
+      const report = await assembleMonthlyReport(client, period, setProg)
+      delete report._incomplete
       setSt({ status: 'ok', report, frozen: false })
       const save = await fetch(`/.netlify/functions/windsor?scope=monthlysnap&client=${encodeURIComponent(client.id)}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ month: period.key, report }) }).then((x) => x.json()).catch(() => null)
       if (save && save.ok) { setSaved({ savedAt: save.savedAt, savedBy: save.savedBy, published: !!save.publishedAt, publishedAt: save.publishedAt || null, edited: !!save.publishedAt }); setSt({ status: 'ok', report, frozen: true }); setSnapBump((n) => n + 1) }
     } catch (e) { setSt({ status: 'err', error: String(e.message || e) }) }
-    setBusy(false)
+    setProg(null); setBusy(false)
   }
 
   async function downloadPdf() {
@@ -520,7 +656,23 @@ export function MonthlyReport({ clients, currency, authUser }) {
   }
 
   const rep = st.status === 'ok' ? st.report : null
-  const deck = React.useMemo(() => (rep ? renderMonthlyDeck(rep, { currency, money, n0, pc, openDrill: (d) => setDrill(d), setFormDrill }) : []), [rep, currency])
+  // Notes per page for this report, drafted here and saved as you type; the
+  // key events the client sees on the creative screen, per client.
+  const canEdit = !isClientRoleFE(authUser && authUser.role)
+  const [draft, setDraft] = useState({})
+  useEffect(() => { const m = client ? loadMReport(client.id) : {}; setDraft((m.notes && m.notes[period.key]) || {}) }, [clientId, period.key])
+  const noteTimer = useRef(null)
+  const saveNotes = (d) => { if (!client) return; const cur = loadMReport(client.id); saveMReport(client.id, { notes: { ...(cur.notes || {}), [period.key]: d } }) }
+  const setNote = (k, v) => setDraft((d) => { const nx = { ...d, [k]: v }; clearTimeout(noteTimer.current); noteTimer.current = setTimeout(() => saveNotes(nx), 800); return nx })
+  const keOffArr = (client && loadMReport(client.id).keOff) || []
+  const toggleKe = (label) => { if (!client) return; const set = new Set(loadMReport(client.id).keOff || []); if (set.has(label)) set.delete(label); else set.add(label); saveMReport(client.id, { keOff: [...set] }) }
+  const notesKey = JSON.stringify(draft)
+  // Pages the client does not get: a saved list per client, or the default
+  // (the key-events-by-campaign and form pages stay off until switched on).
+  const hiddenArr = (client && Array.isArray(loadMReport(client.id).hidden)) ? loadMReport(client.id).hidden : MR_DEFAULT_HIDDEN
+  const togglePage = (key) => { if (!client) return; const set = new Set(hiddenArr); if (set.has(key)) set.delete(key); else set.add(key); saveMReport(client.id, { hidden: [...set] }) }
+  const deckAll = React.useMemo(() => (rep ? renderMonthlyDeck(rep, { currency, money, n0, pc, openDrill: (d) => setDrill(d), setFormDrill, notes: draft, keOff: new Set(keOffArr), onKeOff: canEdit && editing ? toggleKe : null }) : []), [rep, currency, notesKey, keOffArr.join('|'), editing])
+  const deck = React.useMemo(() => deckAll.filter((el) => !hiddenArr.includes(el.key)), [deckAll, hiddenArr.join('|')])
   const total = deck.length
   const cur = Math.max(0, Math.min(idx, total - 1))
   const slideTitle = (el, i) => (el && el.props && (el.props.title || el.props.kicker)) || (el && el.key === 'cover' ? 'Cover' : `Slide ${i + 1}`)
@@ -562,6 +714,7 @@ export function MonthlyReport({ clients, currency, authUser }) {
           <button className={view === 'scroll' ? 'on' : ''} onClick={() => setView('scroll')}>▦ Scroll</button>
         </div>
         {canToggleDownload && client && <button className={`mr-btn${clientDownloadOn(client.id) ? ' on' : ''}`} onClick={() => setClientDownload(client.id, !clientDownloadOn(client.id))} title={`Allow ${client.name} to download the PDF of their published reports. Off by default - per client.`}>{clientDownloadOn(client.id) ? `✓ ${client.name} PDF: On` : `⃠ ${client.name} PDF: Off`}</button>}
+        {canEdit && <button className={`mr-btn${editing ? ' on' : ''}`} onClick={() => setEditing((e) => !e)} disabled={!rep} title="Write notes for each page, and choose the key events the client sees on the creative screen">✎ Notes</button>}
         <button className="mr-btn" onClick={copyLink} title="Copy a direct link to this client + report - share it and it opens right here">{copied ? '✓ Link copied' : '🔗 Copy link'}</button>
         <button className="mr-btn" onClick={present} disabled={!rep} title="Present fullscreen (for screen-share)">{fs ? '⤢ Exit' : '⛶ Present'}</button>
         <button className="mr-btn" onClick={() => window.print()} disabled={!rep} title="Print / Save as PDF">🖨 Print</button>
@@ -590,10 +743,17 @@ export function MonthlyReport({ clients, currency, authUser }) {
       )}
 
       {genWarn && <div className="mr-note mr-warn">⚠ These sections didn’t load after a few tries: <b>{genWarn.join(', ')}</b>. They may be missing from this snapshot - click <b>Refresh snapshot</b> to try again (the data is usually cached by now).</div>}
-      {st.status === 'loading' && <div className="mr-note"><Spinner label="Loading report…" /></div>}
-      {st.status === 'err' && <div className="mr-note mr-err">Couldn’t build the report: {st.error}</div>}
+      {st.status === 'loading' && (
+        <div className="card pv-loading">
+          <Spinner big label={prog ? `Building ${client ? client.name : ''} · ${period.label}` : 'Loading the report…'} />
+          {prog ? <><div className="pv-prog"><span style={{ width: `${Math.round((prog.done / Math.max(1, prog.total)) * 100)}%` }} /></div><p className="cap">{prog.note}. Every part is read before the report shows, and a slow part is retried.</p></> : null}
+        </div>
+      )}
+      {st.status === 'err' && <div className="card"><p className="cap act-bad" style={{ margin: 0 }}>Couldn’t build the report: {st.error}</p><p style={{ margin: '10px 0 0' }}><button className="mr-btn primary" onClick={generate} disabled={busy}>Try again</button></p></div>}
       {st.status === 'empty' && <div className="mr-note mr-empty-deep"><div className="big">🗓️</div><b>No snapshot for {period.label} yet.</b><p>Pick the client and period (one month, or a range via the two pickers), then <b>Generate snapshot</b> to freeze these numbers. Wins are captured by the month a deal was marked won - so late-closing leads show in the month they closed.</p></div>}
 
+      <div className={'mr-split' + (editing && rep ? ' on' : '')}>
+        <div className="mr-main">
       {rep && view === 'slides' && total > 0 && (
         <div className="mr-nav no-print">
           <button className="mr-nav-arrow" onClick={() => setIdx((i) => Math.max(0, i - 1))} disabled={cur === 0} aria-label="Previous slide">‹</button>
@@ -609,6 +769,24 @@ export function MonthlyReport({ clients, currency, authUser }) {
           <div className="mr-track" style={view === 'slides' ? { transform: `translateX(-${cur * 100}%)` } : undefined}>{deck}</div>
         </div>
       )}
+        </div>
+        {editing && rep && (
+          <aside className="mr-notes-panel no-print">
+            <div className="mr-notes-panel-h"><b>Notes</b><span className="cap">A page shows its notes when they are filled in · saved as you type</span><button type="button" className="mr-btn sm" onClick={() => setEditing(false)}>Done</button></div>
+            <p className="cap mr-notes-panel-tip">The key events the client sees on the creative screen are ticked on that page while this panel is open.</p>
+            <div className="mr-pages-pick">
+              <span className="mr-notes-fld-lab">Pages in this client's reports</span>
+              {deckAll.filter((el) => el && el.key !== 'cover').map((el) => <label key={el.key} className={`pv-ke-box${hiddenArr.includes(el.key) ? '' : ' on'}`}><input type="checkbox" checked={!hiddenArr.includes(el.key)} onChange={() => togglePage(el.key)} />{(el.props && el.props.title) || el.key}</label>)}
+            </div>
+            {deck.map((el, i) => (el && el.props && el.props.title && el.key !== 'cover') ? (
+              <label key={el.key} className="mr-notes-fld">
+                <span>{i + 1} · {el.props.title}</span>
+                <textarea rows={4} value={draft[el.key] || ''} onChange={(e) => setNote(el.key, e.target.value)} onFocus={() => { if (view === 'slides') setIdx(i) }} placeholder="Nothing yet" />
+              </label>
+            ) : null)}
+          </aside>
+        )}
+      </div>
       {drill && <MRDrill drill={drill} currency={currency} campMap={rep && rep.campIdMap} medMap={rep && rep.mediumIdMap} onClose={() => setDrill(null)} />}
       {formDrill && rep && rep.client && <MRFormDrill clientId={rep.client.id} range={rep.period} form={formDrill.form} event={formDrill.event} pipeKey={formDrill.pipeKey} currency={currency} onClose={() => setFormDrill(null)} />}
     </div>
@@ -897,7 +1075,7 @@ export function MRCreative({ a, money, n0, clientId, range, channel, currency })
           </div>
         </div>
       ) : <div className="mr-cre-ke mr-cre-ke-empty">No CRM-attributed leads matched this creative’s UTM (utm_content).</div>}
-      {play && canPlay && (
+      {play && canPlay && createPortal(
         <div className="mr-play-overlay no-print" onClick={() => setPlay(false)}>
           <div className="mr-play-modal" onClick={(e) => e.stopPropagation()}>
             <div className="mr-play-head"><b title={a.name}>{a.name}</b><button className="mr-play-x" onClick={() => setPlay(false)} aria-label="Close">✕</button></div>
@@ -906,8 +1084,7 @@ export function MRCreative({ a, money, n0, clientId, range, channel, currency })
               : <iframe className="mr-play-frame" src={embed} title={a.name} scrolling="no" frameBorder="0" allow="autoplay; encrypted-media; clipboard-write; picture-in-picture" allowFullScreen />}
             {openHref && <a className="mr-play-open" href={openHref} target="_blank" rel="noreferrer">{a.preview ? 'Open the ad preview ↗' : 'Open on Instagram ↗'}</a>}
           </div>
-        </div>
-      )}
+        </div>, document.body)}
       {drill ? <KeyPeopleModal event={drill} clientId={clientId} channel={channel || 'meta'} ad={drill.ad} range={range} currency={currency} onClose={() => setDrill(null)} /> : null}
     </div>
   )
@@ -978,7 +1155,7 @@ export function MRDrillTable({ cols, rows, rowKey, childrenOf, renderChildren, m
   )
 }
 // Status donut (this period's leads by open / won / lost).
-export function MRDonut({ data, money }) {
+export function MRDonut({ data, money, isMoney = false }) {
   const total = data.reduce((a, d) => a + d.value, 0)
   if (!total) return <div className="mr-empty">No leads in this period.</div>
   return (
@@ -988,7 +1165,7 @@ export function MRDonut({ data, money }) {
           <Pie data={data} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={48} outerRadius={72} paddingAngle={2} stroke="none">
             {data.map((d, i) => <Cell key={i} fill={d.color} />)}
           </Pie>
-          <Tooltip contentStyle={{ fontSize: 12 }} formatter={(v, n) => [fmtNumber(v), n]} />
+          <Tooltip contentStyle={{ fontSize: 12 }} formatter={(v, n) => [isMoney && money ? money(v) : fmtNumber(v), n]} />
           <Legend wrapperStyle={{ fontSize: 11 }} />
         </PieChart>
       </ResponsiveContainer>
@@ -1066,7 +1243,20 @@ export function MRCreativeTable({ rows, o360cols, tsort, onTsort, currency, mone
   )
 }
 
-export function MRCreativeSection({ ads, oCre, o360cols, o360colsFor, pipeLabelFor, money, n0, currency, showTable = false, clientId, range, channel }) {
+export function MRCreativeSection({ ads, oCre, o360cols: o360colsAll, o360colsFor: o360colsForAll, pipeLabelFor, money, n0, currency, showTable = false, clientId, range, channel, keOff, onKeOff }) {
+  // Key events the client should not see on this screen (the agency's choice,
+  // per client): dropped from every card, sort chip and table column here.
+  const off = keOff instanceof Set ? keOff : new Set(keOff || [])
+  const filterCols = (cols) => {
+    if (!cols || !off.size) return cols
+    const groups = [], out = []; let ci = 0
+    for (const g of cols.groups) { const seg = cols.cols.slice(ci, ci + g.span); ci += g.span; if (off.has(g.label)) continue; groups.push(g); out.push(...seg) }
+    return { ...cols, groups, cols: out }
+  }
+  const o360cols = filterCols(o360colsAll)
+  const o360colsFor = o360colsForAll ? (c, a) => filterCols(o360colsForAll(c, a)) : null
+  const allLabels = [...new Set(((o360colsAll && o360colsAll.groups) || []).map((g) => g.label))]
+  const [tblOpen, setTblOpen] = useState(false)
   const groups = o360cols ? o360cols.groups : []
   // Enrich each creative: platform metrics + the per-client key-event counts + cash.
   // Each creative's key events come from the pipeline attached to its campaign
@@ -1164,6 +1354,13 @@ export function MRCreativeSection({ ads, oCre, o360cols, o360colsFor, pipeLabelF
     return arr
   })()
   const sortToken = sortK + '|' + dir
+  const kePick = onKeOff && allLabels.length ? (
+    <div className="mr-ke-pick no-print">
+      <span className="mr-ke-pick-lab">Key events shown to the client</span>
+      {allLabels.map((l) => <label key={l} className={`pv-ke-box${off.has(l) ? '' : ' on'}`}><input type="checkbox" checked={!off.has(l)} onChange={() => onKeOff(l)} />{l}</label>)}
+    </div>
+  ) : null
+  const tblToggle = showTable ? <button type="button" className="mr-collapse no-print" onClick={() => setTblOpen((o) => !o)}>{tblOpen ? '▾' : '▸'} Creative table</button> : null
   const sortCtl = (
     <div className="mr-cre-sort no-print">
       <span>Sort by</span>
@@ -1184,11 +1381,13 @@ export function MRCreativeSection({ ads, oCre, o360cols, o360colsFor, pipeLabelF
   if (pipeGroups) {
     return (
       <>
+        {kePick}
         {sortCtl}
         {pipeGroups.map((g) => (
           <MRCreativeCards key={'c-' + g.key} ads={g.items} doSort={doSort} sortToken={sortToken} sortLabel={m.label} label={g.label} money={money} n0={n0} currency={currency} clientId={clientId} range={range} channel={channel} />
         ))}
-        {showTable && pipeGroups.map((g) => (
+        {tblToggle}
+        {showTable && tblOpen && pipeGroups.map((g) => (
           <MRCreativeTable key={'t-' + g.key} rows={g.items.map(mapRow)} o360cols={o360cols} tsort={tsort} onTsort={onTsort} currency={currency} money={money} n0={n0} label={g.label} />
         ))}
       </>
@@ -1196,13 +1395,17 @@ export function MRCreativeSection({ ads, oCre, o360cols, o360colsFor, pipeLabelF
   }
   return (
     <>
+      {kePick}
       {sortCtl}
       <MRCreativeCards ads={enriched} doSort={doSort} sortToken={sortToken} sortLabel={m.label} money={money} n0={n0} currency={currency} clientId={clientId} range={range} channel={channel} />
-      {showTable && <MRCreativeTable rows={enriched.map(mapRow)} o360cols={o360cols} tsort={tsort} onTsort={onTsort} currency={currency} money={money} n0={n0} />}
+      {tblToggle}
+      {showTable && tblOpen && <MRCreativeTable rows={enriched.map(mapRow)} o360cols={o360cols} tsort={tsort} onTsort={onTsort} currency={currency} money={money} n0={n0} />}
     </>
   )
 }
 
+// Pages off by default for every client until switched on in the notes panel.
+export const MR_DEFAULT_HIDDEN = ['c360-camp', 'forms']
 // Pure renderer for the deck so it can be reused by both the live view and the
 // frozen snapshot (identical shape). Returns an array of <MRSlide> elements.
 export function renderMonthlyDeck(rep, h) {
@@ -1248,7 +1451,9 @@ export function renderMonthlyDeck(rep, h) {
 
   // Slide list (Google slides only when connected).
   const slides = []
-  const push = (el) => slides.push(el)
+  // A page's saved notes ride on the slide; a page without any shows none.
+  const notes = h.notes || null
+  const push = (el) => slides.push(notes && el && el.key && notes[el.key] && String(notes[el.key]).trim() ? React.cloneElement(el, { notes: notes[el.key] }) : el)
   // "Key events by campaign" is built in place but pushed later (after the Google ad
   // groups, before Users) so the deck reads platform → key events → forms → team.
   let keCampSlide = null
@@ -1357,31 +1562,22 @@ export function renderMonthlyDeck(rep, h) {
     ]
     const adsetsOf = (campName) => (meta.adsets || []).filter((a) => a.campaign === campName)
     push(
-      <MRSlide key="m-camp" kicker="Meta Ads · Platform" title="Campaign & ad set performance" sub={`${(meta.campaigns || []).length} campaign(s) · ${b.label} · click a campaign to drill into its ad sets`}>
-        <div className="mr-kpirow">
-          <MRKpi label="Spend" value={money(t.spend)} />
-          <MRKpi label="Impressions" value={n0(t.impressions)} />
-          <MRKpi label="Reach" value={n0(t.reach)} />
-          <MRKpi label="Frequency" value={t.reach ? (t.impressions / t.reach).toFixed(1) + 'x' : '-'} />
-          <MRKpi label="CTR" value={t.impressions ? fmtPct((t.clicks / t.impressions) * 100, 2) : '-'} />
-          <MRKpi label="Results" value={n0(t.results != null ? t.results : t.leads)} sub={t.resultBreakdown && t.resultBreakdown.length > 1 ? 'mixed objectives' : (t.resultBreakdown && t.resultBreakdown[0] ? t.resultBreakdown[0].label : null)} />
-          <MRKpi label="Cost / result" value={(t.results != null ? t.results : t.leads) ? money(t.spend / (t.results != null ? t.results : t.leads)) : '-'} strong />
-        </div>
+      <MRSlide key="m-camp" kicker="Meta Ads · Platform" title="Meta performance" sub={`${b.label} against the months before it · ${(meta.campaigns || []).length} campaign(s) · click a campaign to drill into its ad sets`}>
+        <MRMetaPerf trend={rep.trend} monthKey={String(b.to || b.from || '').slice(0, 7)} money={money} n0={n0} resultType={t.resultBreakdown && t.resultBreakdown.length === 1 ? t.resultBreakdown[0].label : null} />
+        <div className="mr-section-lab">Campaigns &amp; ad sets · {b.label}</div>
         <MRDrillTable
           cols={metaDrillCols('Campaign')} rows={meta.campaigns || []} max={16}
           rowKey={(r) => r.name}
           childrenOf={(r) => adsetsOf(r.name)}
           renderChildren={(kids) => <div className="mr-kids-inner"><div className="mr-kids-lab">Ad sets</div><MRTable cols={metaDrillCols('Ad set')} rows={kids} /></div>}
         />
-        <div className="mr-section-lab">6-month trend</div>
-        <MRTrend trend={rep.trend} currency={currency} />
       </MRSlide>
     )
     const spendAds = (meta.ads || []).filter((a) => (a.spend || 0) > 0)
     push(
       <MRSlide key="m-cre" kicker="Meta Ads · Creative" title="Creative performance" sub={`${spendAds.length} creative(s) with spend · sort & page through, 10 at a time`}>
         {spendAds.length
-          ? <MRCreativeSection ads={spendAds} oCre={oCre} o360cols={o360cols} o360colsFor={o360colsFor} pipeLabelFor={multiPipe ? pipeLabelFor : null} money={money} n0={n0} currency={currency} showTable clientId={rep.client && rep.client.id} range={b} channel="meta" />
+          ? <MRCreativeSection ads={spendAds} oCre={oCre} o360cols={o360cols} o360colsFor={o360colsFor} pipeLabelFor={multiPipe ? pipeLabelFor : null} money={money} n0={n0} currency={currency} showTable keOff={h.keOff} onKeOff={h.onKeOff} clientId={rep.client && rep.client.id} range={b} channel="meta" />
           : <div className="mr-empty">No creatives with spend for this period.</div>}
         <p className="mr-foot-note">All creatives that spent this period, sortable by any metric, 10 per page. <b>Leads</b> = Meta results; the key-event chips are the client's configured <b>key events</b> (Settings → Key events) for leads whose ad UTM (utm_content) matches the creative. ▶ plays the Instagram post inline where a permalink is available.</p>
       </MRSlide>
@@ -1536,77 +1732,62 @@ export function renderMonthlyDeck(rep, h) {
     const gctr = (r) => (r.impressions ? (r.clicks / r.impressions) * 100 : null)
     const gcpc = (r) => (r.clicks ? r.cost / r.clicks : null)
     const gcpa = (r) => (r.conversions ? r.cost / r.conversions : null)
-    const gCampCols = (nameLabel) => [
+    const n1 = (v) => (v == null || isNaN(v) ? '-' : fmtNumber(Math.round(v * 10) / 10))
+    const gSideCols = (nameLabel) => [
       { k: 'name', label: nameLabel, render: (r) => <span className="mr-name">{r.name}{r.campaign ? <small>{r.campaign}</small> : null}</span> },
       { k: 'cost', label: 'Cost', align: 'r', render: (r) => money(r.cost) },
-      { k: 'impressions', label: 'Impr.', align: 'r', render: (r) => n0(r.impressions) },
       { k: 'clicks', label: 'Clicks', align: 'r', render: (r) => n0(r.clicks) },
-      { k: 'ctr', label: 'CTR', align: 'r', render: (r) => { const v = gctr(r); return v == null ? '-' : fmtPct(v, 2) } },
-      { k: 'cpc', label: 'CPC', align: 'r', render: (r) => { const v = gcpc(r); return v == null ? '-' : money(v) } },
-      { k: 'conversions', label: 'Conv.', align: 'r', render: (r) => n0(r.conversions) },
-      { k: 'cpa', label: 'Cost / conv.', align: 'r', render: (r) => { const v = gcpa(r); return v == null ? '-' : money(v) } },
-    ]
-    // Conversion actions grouped by the campaign they were attributed to.
-    const caByCamp = {}
-    for (const r of (google.conversionActions || [])) { const cn = r.campaign || '-'; (caByCamp[cn] = caByCamp[cn] || []).push(r) }
-    const aggCa = (rows) => { const m = new Map(); for (const r of rows) { const e = m.get(r.name) || { name: r.name, category: r.category, conversions: 0, allConversions: 0, value: 0 }; e.conversions += r.conversions || 0; e.allConversions += r.allConversions || 0; e.value += r.value || 0; m.set(r.name, e) } return [...m.values()].sort((a, b) => b.allConversions - a.allConversions) }
-    const gDrillCols = [
-      { k: 'name', label: 'Campaign', render: (r) => <span className="mr-name">{r.name}</span> },
-      { k: 'cost', label: 'Cost', align: 'r', render: (r) => money(r.cost) },
-      { k: 'impressions', label: 'Impr.', align: 'r', render: (r) => n0(r.impressions) },
-      { k: 'clicks', label: 'Clicks', align: 'r', render: (r) => n0(r.clicks) },
-      { k: 'ctr', label: 'CTR', align: 'r', render: (r) => { const v = gctr(r); return v == null ? '-' : fmtPct(v, 2) } },
-      { k: 'conversions', label: 'Conv.', align: 'r', render: (r) => n0(r.conversions) },
+      { k: 'conversions', label: 'Conv.', align: 'r', render: (r) => n1(r.conversions) },
       { k: 'cpa', label: 'Cost/conv.', align: 'r', render: (r) => { const v = gcpa(r); return v == null ? '-' : money(v) } },
     ]
     // Primary conversion actions are the ones counted in Google's "Conversions"
     // column (conversions > 0); secondary actions only report All-conversions.
-    const caCols = [
-      { k: 'name', label: 'Conversion action', render: (r) => <span className="mr-name">{r.name}</span> },
-      { k: 'primary', label: 'Type', render: (r) => (r.conversions > 0 ? <span className="mr-pill-pri">Primary</span> : <span className="mr-pill-sec">Secondary</span>) },
-      { k: 'category', label: 'Category', render: (r) => <span className="mr-ca-cat">{r.category || '-'}</span> },
-      { k: 'conversions', label: 'Conv.', align: 'r', render: (r) => n0(r.conversions) },
-      { k: 'allConversions', label: 'All conv.', align: 'r', render: (r) => n0(r.allConversions) },
-      { k: 'value', label: 'Value', align: 'r', render: (r) => money(r.value) },
+    const caColsCompact = [
+      { k: 'name', label: 'Action', render: (r) => <span className="mr-name">{r.conversions > 0 ? <span className="mr-ca-star">★ </span> : null}{r.name}<small>{r.category || '-'} · {r.conversions > 0 ? 'primary' : 'secondary'}</small></span> },
+      { k: 'conversions', label: 'Conv.', align: 'r', render: (r) => n1(r.conversions) },
+      { k: 'value', label: 'Value', align: 'r', render: (r) => (r.value ? money(r.value) : '-') },
     ]
     const allCa = aggConvActions(google.conversionActions || [])
-    const gDaily = (google.daily || [])
+    const MT_COL = { Exact: '#22b07d', Phrase: '#4f7cff', Broad: '#f0a53a' }
+    const matchAgg = (google.matchTypes || []).filter((m) => m.cost > 0).map((m) => ({ name: m.type, value: Math.round(m.cost), color: MT_COL[m.type] || '#8b5cf6' }))
+    const locs = ((google.geo && google.geo.locations) || []).filter((l) => l.conversions > 0).slice(0, 12)
+    const locMax = Math.max(1, ...locs.map((l) => l.conversions))
+    // The fifteen keywords that converted most (clicks break the tie), clicks
+    // and conversions each on their own scale so conversions stay readable.
+    const topKw = (google.keywords || []).filter((k) => k.clicks > 0 || k.conversions > 0).slice().sort((x, y) => (y.conversions - x.conversions) || (y.clicks - x.clicks)).slice(0, 15).map((k) => ({ kw: k.text || k.term || '-', clicks: k.clicks || 0, conversions: Math.round((k.conversions || 0) * 10) / 10 }))
     push(
-      <MRSlide key="g-camp" kicker="Google Ads · Platform" title="Campaign performance & conversions" sub={`${(google.campaigns || []).length} campaign(s) · ${b.label} · click a campaign to see the conversion actions it drove`}>
-        <div className="mr-kpirow">
-          <MRKpi label="Cost" value={money(gt.cost)} />
-          <MRKpi label="Impressions" value={n0(gt.impressions)} />
-          <MRKpi label="Clicks" value={n0(gt.clicks)} />
-          <MRKpi label="CTR" value={gt.impressions ? fmtPct((gt.clicks / gt.impressions) * 100, 2) : '-'} />
-          <MRKpi label="Conversions" value={n0(gt.conversions)} />
-          <MRKpi label="Cost / conv." value={gt.conversions ? money(gt.cost / gt.conversions) : '-'} strong />
+      <MRSlide key="g-camp" kicker="Google Ads · Platform" title="Google Ads" sub={`${b.label} against the months before it · ${(google.campaigns || []).length} campaign(s) · ${(google.adGroups || []).length} ad group(s)`}>
+        <MRGooglePerf trend={rep.gtrend} monthKey={String(b.to || b.from || '').slice(0, 7)} money={money} n0={n0} />
+        <div className="mr-two">
+          <div><div className="mr-section-lab">Campaigns · {b.label}</div><MRTable cols={gSideCols('Campaign')} rows={google.campaigns || []} max={10} /></div>
+          <div><div className="mr-section-lab">Ad groups · {b.label}</div><MRTable cols={gSideCols('Ad group')} rows={google.adGroups || []} max={10} /></div>
         </div>
-        {gDaily.length > 1 && (
-          <div className="soc-chart">
-            <div className="mr-trend-lab">Daily - cost (bars) vs conversions (line)</div>
-            <ResponsiveContainer width="100%" height={190}>
-              <ComposedChart data={gDaily} margin={{ top: 6, right: 8, left: 0, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-                <XAxis dataKey="date" tick={{ fontSize: 10, fill: 'var(--muted)' }} tickFormatter={(d) => fmtDate(d).slice(0, 5)} axisLine={false} tickLine={false} minTickGap={24} />
-                <YAxis yAxisId="c" tick={{ fontSize: 10, fill: 'var(--muted)' }} axisLine={false} tickLine={false} width={44} tickFormatter={(v) => fmtCompact(v)} />
-                <YAxis yAxisId="v" orientation="right" tick={{ fontSize: 10, fill: 'var(--muted)' }} axisLine={false} tickLine={false} width={30} allowDecimals={false} />
-                <Tooltip contentStyle={{ fontSize: 12 }} labelFormatter={(d) => fmtDate(d)} formatter={(v, n) => (n === 'Cost' ? fmtCurrency(v, currency) : fmtNumber(v))} />
-                <Legend wrapperStyle={{ fontSize: 11 }} />
-                <Bar yAxisId="c" dataKey="cost" name="Cost" fill="#4285f4" radius={[3, 3, 0, 0]} maxBarSize={22} />
-                <Line yAxisId="v" type="monotone" dataKey="conversions" name="Conversions" stroke="#22b07d" strokeWidth={2.4} dot={false} />
-              </ComposedChart>
-            </ResponsiveContainer>
+        <div className="mr-three mr-gblocks">
+          <div><div className="mr-section-lab">Spend by match type</div>{matchAgg.length ? <MRDonut data={matchAgg} money={money} isMoney /> : <div className="mr-empty">No keyword spend this period.</div>}</div>
+          <div><div className="mr-section-lab">Conversion actions <span className="mr-lab-note">· ★ primary = counted in Conversions</span></div><MRTable cols={caColsCompact} rows={allCa} max={8} empty="No conversion actions recorded for this period." /></div>
+          <div><div className="mr-section-lab">Conversion locations{google.geo && google.geo.dim ? <span className="mr-lab-note"> · by {String(google.geo.dim).replace(/_/g, ' ')}</span> : null}</div>
+            {locs.length ? <div className="mr-locs">{locs.map((l) => <div className="loc-row" key={l.name}><span className="loc-nm" title={l.name}>{l.name}</span><span className="loc-bar"><span className="loc-fill" style={{ width: `${(l.conversions / locMax) * 100}%` }} /></span><span className="loc-ct">{n1(l.conversions)}</span></div>)}</div> : <div className="mr-empty">No location data this period.</div>}
           </div>
-        )}
-        <div className="mr-section-lab">Campaigns · click a row to drill into its conversion actions</div>
-        <MRDrillTable
-          cols={gDrillCols} rows={google.campaigns || []} max={16}
-          rowKey={(r) => r.name}
-          childrenOf={(r) => aggCa(caByCamp[r.name] || [])}
-          renderChildren={(kids) => <div className="mr-kids-inner"><div className="mr-kids-lab">Conversion actions attributed to this campaign</div><MRTable cols={caCols} rows={kids} empty="No conversion actions recorded for this campaign." /></div>}
-        />
-        <div className="mr-section-lab">Conversion actions <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>· green “Primary” = counted in the Conversions column above</span></div>
-        <MRTable cols={caCols} rows={allCa} max={16} empty="No conversion actions recorded for this period." />
+        </div>
+        {topKw.length ? (
+          <>
+            <div className="mr-section-lab">Top keywords <span className="mr-lab-note">· the {topKw.length} that converted most · clicks (bottom scale) and conversions (top scale)</span></div>
+            <div className="mr-kw-chart">
+              <ResponsiveContainer width="100%" height={Math.max(220, topKw.length * 30 + 56)}>
+                <BarChart data={topKw} layout="vertical" margin={{ top: 4, right: 24, left: 8, bottom: 4 }} barGap={2}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" horizontal={false} />
+                  <XAxis xAxisId="clicks" type="number" tick={{ fontSize: 10, fill: 'var(--muted)' }} axisLine={false} tickLine={false} tickFormatter={(v) => fmtCompact(v)} />
+                  <XAxis xAxisId="conv" type="number" orientation="top" tick={{ fontSize: 10, fill: 'var(--muted)' }} axisLine={false} tickLine={false} />
+                  <YAxis type="category" dataKey="kw" width={200} tick={{ fontSize: 11, fill: 'var(--text)' }} axisLine={false} tickLine={false} interval={0} />
+                  <Tooltip contentStyle={{ fontSize: 12 }} formatter={(v, name) => [name === 'Clicks' ? fmtNumber(v) : n1(v), name]} />
+                  <Legend wrapperStyle={{ fontSize: 11 }} />
+                  <Bar xAxisId="clicks" dataKey="clicks" name="Clicks" fill="#4f7cff" radius={[0, 3, 3, 0]} barSize={9} />
+                  <Bar xAxisId="conv" dataKey="conversions" name="Conversions" fill="var(--text)" radius={[0, 3, 3, 0]} barSize={9} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </>
+        ) : null}
       </MRSlide>
     )
     const kwCols = (first) => [
@@ -1616,9 +1797,7 @@ export function renderMonthlyDeck(rep, h) {
       { k: 'conversions', label: 'Conv.', align: 'r', render: (r) => n0(r.conversions) },
     ]
     push(
-      <MRSlide key="g-ag" kicker="Google Ads · Platform" title="Ad groups, keywords & search terms" sub="Ad-group performance, plus the top keywords and search terms with the campaign / ad group they came from">
-        <div className="mr-section-lab">Ad groups</div>
-        <MRTable cols={gCampCols('Ad group')} rows={google.adGroups || []} max={10} />
+      <MRSlide key="g-ag" kicker="Google Ads · Platform" title="Keywords & search terms" sub="The top keywords and search terms with the campaign / ad group they came from">
         <div className="mr-two">
           <div>
             <div className="mr-section-lab">Keywords</div>
@@ -1764,6 +1943,15 @@ export function renderMonthlyDeck(rep, h) {
       { name: 'Won', value: coWon.count || 0, color: '#22b07d' },
       { name: 'Lost', value: lost.total.count || 0, color: '#ef4444' },
     ].filter((d) => d.value)
+    // This month's leads that have an outcome: won, or lost (abandoned counts
+    // as lost in the CRM feed) - the rest are still open.
+    const cohortLost = crm.lost != null ? crm.lost : Math.max(0, (crm.leads || 0) - (coWon.count || 0) - (crm.open || 0))
+    const cohortResulted = (coWon.count || crm.won || 0) + cohortLost
+    const cohortDonut = [
+      { name: 'Won', value: coWon.count || crm.won || 0, color: '#22b07d' },
+      { name: 'Lost', value: cohortLost, color: '#ef4444' },
+      { name: 'Open', value: crm.open || 0, color: '#6d5efc' },
+    ].filter((d) => d.value)
 
     // ---- User performance + Lost reasons (combined) ----
     const ke = keyEventsRaw.filter((k) => k.kind === 'stage' || (k.kind === 'calendar' && k.stage)).slice(0, 5)
@@ -1855,7 +2043,7 @@ export function renderMonthlyDeck(rep, h) {
       />
     )
     push(
-      <MRSlide key="users" kicker="Caalano360 · Team" title="User performance & lost reasons" sub="Team performance this month, and why this month's closed-lost deals were lost - shown as two separate panels.">
+      <MRSlide key="users" kicker="Caalano360 · Sales" title="Sales Performance" sub="Each rep's month, then how this month's leads were resulted and why the deals marked lost were lost.">
         <section className="mr-bubble">
           <div className="mr-bubble-lab">👥 User performance</div>
           <p className="mr-bubble-sub">Ranked by revenue closed this month. Leads and key-event columns are each user's created-on cohort; “Closed this mo” is deals they marked won this month.</p>
@@ -1882,12 +2070,15 @@ export function renderMonthlyDeck(rep, h) {
         <section className="mr-bubble">
           <div className="mr-bubble-lab">📉 Lost reasons &amp; pipeline status</div>
           <p className="mr-bubble-sub">Why the deals marked lost this month were lost - by status change, whatever month the lead arrived, so it reads as what the team has just been through - and where this month's leads currently stand.</p>
-          <div className="mr-kpirow">
+          <div className="mr-kpirow mr-kpirow-wide">
             <MRKpi label="Deals lost" value={n0(lost.total.count)} sub="marked lost this month (status change)" />
             <MRKpi label="Value lost" value={money(lost.total.value)} />
             <MRKpi label="Win rate" value={pc(dealsWon, dealsWon + lost.total.count)} sub="won ÷ resulted this month" />
+            <MRKpi label="Resulted leads" value={n0(cohortResulted)} sub={`of ${n0(crm.leads)} leads this month · won, lost or abandoned`} />
+            <MRKpi label="Result rate" value={pc(cohortResulted, crm.leads)} sub="resulted ÷ this month's leads" strong />
             <MRKpi label="Still open" value={n0(crm.open)} sub={`${money(crm.openValue)} in pipeline`} />
           </div>
+          <div className="mr-two mr-lost-split">
           <div className="mr-lost-full">
             <div className="mr-viz-lab">Why deals were lost{multiPipe ? ' · by pipeline' : ''} · by channel</div>
             {(() => {
@@ -1910,7 +2101,8 @@ export function renderMonthlyDeck(rep, h) {
                         reasonCol((r) => `Lost - ${r.name} · ${g.name}`, (r) => g.deals.filter((d) => (d.reason || 'Not set') === r.name)),
                         { k: 'count', label: 'Deals', align: 'r', render: (r) => n0(r.count) },
                         { k: 'value', label: 'Value', align: 'r', render: (r) => money(r.value) },
-                        { k: 'share', label: '%', align: 'r', render: (r) => pc(r.count, g.count) },
+                        { k: 'share', label: '% of lost', align: 'r', render: (r) => pc(r.count, g.count) },
+                        { k: 'ofLeads', label: '% of leads', align: 'r', render: (r) => pc(r.count, crm.leads) },
                         ...chanCols,
                       ]}
                       rows={g.byReason} max={6}
@@ -1925,7 +2117,8 @@ export function renderMonthlyDeck(rep, h) {
                     reasonCol((r) => `Lost - ${r.name}`, (r) => (lost.deals || []).filter((d) => (d.reason || 'Not set') === r.name)),
                     { k: 'count', label: 'Deals', align: 'r', render: (r) => n0(r.count) },
                     { k: 'value', label: 'Value', align: 'r', render: (r) => money(r.value) },
-                    { k: 'share', label: '%', align: 'r', render: (r) => pc(r.count, lost.total.count) },
+                    { k: 'share', label: '% of lost', align: 'r', render: (r) => pc(r.count, lost.total.count) },
+                    { k: 'ofLeads', label: '% of leads', align: 'r', render: (r) => pc(r.count, crm.leads) },
                     ...(lostByReasonChan.hasChan ? chanCols : []),
                   ]}
                   rows={lostByReasonChan.rows} max={10}
@@ -1933,6 +2126,8 @@ export function renderMonthlyDeck(rep, h) {
               )
             })()}
             <p className="mr-foot-note" style={{ marginTop: 8 }}>Of {n0(crm.leads)} leads created this month: {n0(coWon.count)} won, {n0(crm.lost != null ? crm.lost : Math.max(0, n0(crm.leads) - n0(coWon.count) - n0(crm.open)))} lost, {n0(crm.open)} still open. The table above counts deals marked lost this month whatever month their lead arrived, so its total can differ. The Meta / Google / Other columns split each lost reason by the platform its lead first came from.</p>
+          </div>
+          <MRLostPie status={cohortDonut} reasons={lostByReasonChan.rows.map((r, k) => ({ name: r.name, value: r.count, color: PIE[k % PIE.length] }))} money={money} />
           </div>
         </section>
       </MRSlide>

@@ -18,6 +18,23 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.650.0 - 2026-09-15
+
+**Monthly Report: every part before the deck, notes on each page, Meta and Google month by month, Sales Performance** (commit PENDING)
+
+- **Loading.** Generating a report now reads every part (Meta, Google, the overview, CRM attribution, the 13-month trend, deals, forms) with twelve retries each, on the Caalano360 loading screen with a progress bar, and only builds the deck once all of them have answered. A part that still fails stops the build with a Try again button; nothing incomplete is saved. Until now a slow part was dropped and the snapshot frozen without it.
+- **Video preview** opens over the page you are on. It was drawn inside the slide track, whose transform pinned it to the cover.
+- **Meta performance** (was Campaign & ad set performance): the month's spend, CPM, impressions, link clicks, CTR, CPC, results and cost per result, each against the month before, the three-month average and the same month a year earlier; results, spend and cost per result over up to thirteen months on one chart; a month-by-month table; then the campaigns and ad sets. The 13-month trend now carries impressions, clicks, link clicks and reach.
+- **Google Ads** (was Campaign performance & conversions): the same month-by-month treatment for impressions, clicks, CTR, cost, conversions, cost per conversion, conversion rate and average CPC; campaigns and ad groups side by side; spend by match type, conversion actions and conversion locations in a row; the fifteen keywords that converted most, clicks and conversions on their own scales. The second Google page is now Keywords & search terms.
+- **Notes.** A ✎ Notes button opens a panel beside the deck with a field per page, saved as you type and kept with the client and report month. A page shows its notes at the bottom when they are filled in, for the client too; a page with none shows nothing.
+- **Pages shown.** The same panel lists the deck's pages with a tick each, per client. Key events by campaign and Form performance start off until switched on.
+- **Creative screen.** A Key events shown tick list (in the notes panel's edit mode) chooses which key events the client sees on the cards, sort chips and table; the creative table sits behind a collapsed toggle; key-event names show in full, wrapping where they need to.
+- **Sales Performance** (was User performance & lost reasons): Resulted leads and Result rate scorecards (this month's leads that are won or lost, and their share of all leads); the lost-reasons table gains a % of leads column beside % of lost, and sits beside a pie that flips between where this month's leads stand (won, lost, open) and the lost reasons.
+- **Won deals reach every stage.** A deal marked won while it sat on an early stage no longer shows 0 for the later stages on the rep table and elsewhere: no stage can have been reached by fewer than the wins.
+- Tests: the demo booking assertion no longer depends on the day it runs.
+
+---
+
 ## v3.649.0 - 2026-09-14
 
 **Action Centre: Deals & Actions as its own page, and the phone's front page** (commit 91c27e3)

@@ -36,7 +36,7 @@ const lazyView = (load, name) => {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-export const APP_VERSION = '3.670.0'
+export const APP_VERSION = '3.671.0'
 // The business clock. Every server window is cut on the client's local day
 // (Caalano Systems location timezone), so any day the app derives on its own -
 // preset ranges, "today", CSV dates - must use the same clock rather than the
@@ -8812,7 +8812,10 @@ export function ExecReach({ reach, multi, kef, cc, pcc, clientId, money, spend, 
     const t = (cc && cc.totals) || {}, pt = (pcc && pcc.totals) || null
     return { count: t.won || 0, base: t.leads || 0, spend: spend || 0, prevRate: pt && pt.leads ? (pt.won || 0) / pt.leads : null, split: v2ReachSplit(t.won || 0, cc && cc.paid ? cc.paid.metaWon : 0, cc && cc.paid ? cc.paid.googleWon : 0, subOf((cc && cc.pipeContribution) || [], 'won')) }
   }
-  const cacOf = (w) => (w && w.count && w.spend ? money(Math.round(w.spend / w.count)) : null)
+  // Whole dollars in the figure column: "$529" reads at a glance, "$529.00" is
+  // a receipt. money() keeps its cents elsewhere.
+  const m0 = (v) => money(Math.round(v)).replace(/\.00(?=\D|$)/, '')
+  const cacOf = (w) => (w && w.count && w.spend ? m0(w.spend / w.count) : null)
   return (
     <div className="card v2-reach" data-sec="reach">
       <div className="v2-sec-h">
@@ -8828,7 +8831,20 @@ export function ExecReach({ reach, multi, kef, cc, pcc, clientId, money, spend, 
         const lastIsWon = g.rows.length && g.rows[g.rows.length - 1].kind === 'won'
         const w = lastIsWon ? null : wonRow(g)
         const gSpend = spendOf(g.pid)
-        const cac = cacOf(w) || (lastIsWon && gSpend && g.rows[g.rows.length - 1].count ? money(Math.round(gSpend / g.rows[g.rows.length - 1].count)) : null)
+        const cac = cacOf(w) || (lastIsWon && gSpend && g.rows[g.rows.length - 1].count ? m0(gSpend / g.rows[g.rows.length - 1].count) : null)
+        // A calendar event counts everyone who booked OR reached its stage or
+        // any later one: a deal that is Qualified must have had its call, even
+        // when the booking was made by phone or on another calendar. So the
+        // shown count is the row's own or the largest later row's, whichever
+        // is higher; the hover says how many came by booking and how many by
+        // pipeline stage.
+        const effs = g.rows.map((r, i) => { let later = 0; for (let j = i + 1; j < g.rows.length; j++) later = Math.max(later, g.rows[j].count || 0); return r.kind === 'calendar' ? Math.max(r.count || 0, later) : (r.count || 0) })
+        const lastEff = effs.length ? effs[effs.length - 1] : g.base
+        // One figure per row - this period's leads that got there - and under it
+        // the share of leads, the share of the step before, and the cost each.
+        // Everything else (bookings on older leads, booking vs stage) is in the
+        // hover, so the column never shows four different counts for one row.
+        const under = (count, i, prev) => `${pc(g.base ? Math.min(1, count / g.base) : 0)} of leads${i > 0 ? ` · ${prev ? pc(Math.min(1, count / prev)) : '-'} of ${two ? fmtNumber(prev) : 'step before'}` : ''}`
         return (
           <div key={g.pid} className="v2-reach-g">
             {g.name || cac ? <div className="v2-pipe-lab">{g.name ? <><span className="c360-dot" /> {g.name} <span className="sub">· {fmtNumber(g.base)} leads</span></> : <span className="sub">All pipelines · {fmtNumber(g.base)} leads</span>}{cac ? <span className="v2-cac" title="Cost per won deal: this scope's ad spend ÷ deals won (spend allocated to a pipeline by its share of leads)">CAC {cac}</span> : null}</div> : null}
@@ -8837,35 +8853,27 @@ export function ExecReach({ reach, multi, kef, cc, pcc, clientId, money, spend, 
               <V2ReachBar label="Opportunities" count={g.base} split={leadsSplit(g.pid, g.base)} width={1} prevAt={g.rows[0] && g.rows[0].prevBase && g.base ? Math.min(1, g.rows[0].prevBase / g.base) : null} />
               <div className="rate">{fmtNumber(g.base)}<small>{g.rows[0] && g.rows[0].prevBase ? `was ${fmtNumber(g.rows[0].prevBase)}` : 'leads'}</small></div>
               {(() => {
-                // A calendar event counts everyone who booked OR reached its stage or
-                // any later one: a deal that is Qualified must have had its call, even
-                // when the booking was made by phone or on another calendar. So the
-                // shown count is the row's own or the largest later row's, whichever
-                // is higher, and the split under it says how many came by booking and
-                // how many by pipeline stage.
-                const effs = g.rows.map((r, i) => { let later = 0; for (let j = i + 1; j < g.rows.length; j++) later = Math.max(later, g.rows[j].count || 0); return r.kind === 'calendar' ? Math.max(r.count || 0, later) : (r.count || 0) })
                 return g.rows.map((r, i) => {
                   const eff = effs[i], prevEff = i === 0 ? g.base : effs[i - 1]
-                  // Bookings this period by leads from an earlier period: on the
-                  // row's total and in the hover split, not in the share of leads.
-                  const older = r.older || 0, total = eff + older
+                  // Bookings this period by leads from an earlier period: in the
+                  // hover only. The bar, its hover count and the figure all say eff.
+                  const older = r.older || 0
                   const ch = chanOf(g.pid, r.label)
-                  const split = ch ? v2ReachSplit(total, ch.meta, ch.google, ch.sub) : { meta: 0, google: 0, other: total, sub: null }
+                  const split = ch ? v2ReachSplit(eff, ch.meta, ch.google, ch.sub) : { meta: 0, google: 0, other: eff, sub: null }
                   const isBn = r === bn
                   const isCal = r.kind === 'calendar'
                   const byStage = isCal ? Math.max(r.stageReached || 0, eff > (r.fromCal || 0) ? eff : 0) : 0
                   const rateV = g.base ? Math.min(1, eff / g.base) : 0
-                  const stepV = prevEff ? eff / prevEff : null
                   const detail = isCal ? [
-                    { head: true, label: 'By booking', value: r.fromCal || 0 },
+                    { head: true, label: 'By booking', value: r.fromCal || 0, sub: byStage ? 'a deal can be both' : '' },
                     ...((r.perCal || []).map((p) => ({ label: p.name || 'Calendar', value: p.count, sub: p.occurred ? `${fmtNumber(p.shown)}/${fmtNumber(p.occurred)} shown` : '' }))),
                     { head: true, label: 'By pipeline stage', value: byStage, sub: r.stage ? 'linked stage or later' : 'a later stage' },
                   ] : null
                   return (
                     <React.Fragment key={i}>
                       <div className={`st${isBn ? ' bn' : ''}`}>{r.label.replace(/^📅 /, '')}<small>{isCal ? 'booked or reached the stage' : r.kind === 'won' ? 'won status' : 'stage reached'}{r.over ? ' · more than arrived' : ''}</small></div>
-                      <V2ReachBar label={r.label.replace(/^📅 /, '')} count={total} split={split} width={rateV} prevAt={r.prevRate} leak={isBn} detail={detail} note={older ? `${fmtNumber(eff)} new leads this period · ${fmtNumber(older)} booked on a lead from an earlier period` : null} />
-                      <div className={`rate${isBn ? ' bn' : ''}`}>{fmtNumber(eff)}{older ? <small className="v2-split v2-older">{two ? `+ ${fmtNumber(older)} older leads booked` : `+ ${fmtNumber(older)} booked on older leads · ${fmtNumber(total)} in all`}</small> : null}{isCal ? <small className="v2-split">{two ? `${fmtNumber(r.fromCal || 0)} booked${byStage ? ` · ${fmtNumber(byStage)} reached` : ''}` : `${fmtNumber(r.fromCal || 0)} by booking${byStage ? ` (${fmtNumber(byStage)} reached the stage)` : ''}`}</small> : null}<small>{i === 0 ? `${pc(rateV)} of leads` : stepV != null ? (two ? `${pc(Math.min(1, stepV))} of ${fmtNumber(prevEff)}` : `${pc(Math.min(1, stepV))} of the ${fmtNumber(prevEff)} before`) : '-'}{gSpend && eff ? ` · ${money(Math.round(gSpend / eff))}${two ? '' : ' each'}` : ''}</small></div>
+                      <V2ReachBar label={r.label.replace(/^📅 /, '')} count={eff} split={split} width={rateV} prevAt={r.prevRate} leak={isBn} detail={detail} note={older ? `${fmtNumber(older)} more booked this period on leads from an earlier period (not counted here)` : null} />
+                      <div className={`rate${isBn ? ' bn' : ''}`}>{fmtNumber(eff)}<small>{under(eff, i, prevEff)}</small>{gSpend && eff ? <small>{m0(gSpend / eff)}{two ? '' : ' each'}</small> : null}</div>
                     </React.Fragment>
                   )
                 })
@@ -8873,7 +8881,7 @@ export function ExecReach({ reach, multi, kef, cc, pcc, clientId, money, spend, 
               {w ? <>
                 <div className="st">Won<small>{wonBasis === 'closed' ? 'closed in period' : 'from leads created in period'}</small></div>
                 <V2ReachBar label="Won" count={w.count} split={w.split} width={w.base ? Math.min(1, w.count / w.base) : 0} prevAt={w.prevRate} />
-                <div className="rate">{fmtNumber(w.count)}<small>{w.base ? `${pc(w.count / w.base)} of leads` : '-'}{cacOf(w) ? ` · CAC ${cacOf(w)}` : ''}</small></div>
+                <div className="rate">{fmtNumber(w.count)}<small>{under(w.count, 1, lastEff)}</small>{cacOf(w) ? <small>CAC {cacOf(w)}</small> : null}</div>
               </> : null}
               {bn && !quiet ? <div className="v2-leakcard"><span className="tag">Biggest leak</span><p><b>{fmtNumber(missed)} {missed === 1 ? 'person' : 'people'} reached {before ? before.label.replace(/^📅 /, '') : 'the funnel'} and did not go on to {bn.label.replace(/^📅 /, '')}.</b> {bn.prevStep != null ? (wouldBe > 0 ? `At the previous period's ${pc(bn.prevStep)} this step would have produced ${fmtNumber(wouldBe)} more.` : `This step held at ${pc(bn.step)} against ${pc(bn.prevStep)} last period.`) : `${pc(bn.step)} of those who reached the step before went on.`}</p></div> : null}
             </div>

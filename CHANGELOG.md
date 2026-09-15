@@ -16,6 +16,13 @@ git commit that produced it, so any version can be redeployed or reverted to.
 
 The version number also appears in the app sidebar. Newest first.
 
+## v3.671.0 - 2026-09-15 (commit PENDING)
+
+Key event reach (Caalano360 overview and the Monthly Report's Account summary & ROI): one count per row.
+
+- **The figure column** shows one number per row - this period's leads that got there - and under it the share of leads, the share of the step before, and the cost each ($38 each), in whole dollars. The Won row reads the same way with CAC on its own line, matching the CAC pill.
+- **The four different counts** that a calendar row used to carry (new, booked on older leads, in all, by booking, reached the stage) are gone from the column. The bar, its hover count and the figure now all say the same number; the hover keeps the by-booking / by-stage split (noting a deal can be both) and how many bookings this period came from leads created earlier.
+
 ## v3.670.0 - 2026-09-15 (commit 4bbc3ff)
 
 The sign-in page now shows what the product does, and Visibility is laid out by the two views.

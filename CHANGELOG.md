@@ -16,7 +16,7 @@ git commit that produced it, so any version can be redeployed or reverted to.
 
 The version number also appears in the app sidebar. Newest first.
 
-## v3.678.0 - 2026-09-15 (commit PENDING)
+## v3.678.0 - 2026-09-15 (commit e4bb8da)
 
 Role defaults stop governing people. They are now a starting point, and every person carries their own set.
 

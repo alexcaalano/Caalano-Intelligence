@@ -20,7 +20,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ## v3.650.0 - 2026-09-15
 
-**Monthly Report: every part before the deck, notes on each page, Meta and Google month by month, Sales Performance** (commit PENDING)
+**Monthly Report: every part before the deck, notes on each page, Meta and Google month by month, Sales Performance** (commit 65612d6)
 
 - **Loading.** Generating a report now reads every part (Meta, Google, the overview, CRM attribution, the 13-month trend, deals, forms) with twelve retries each, on the Caalano360 loading screen with a progress bar, and only builds the deck once all of them have answered. A part that still fails stops the build with a Try again button; nothing incomplete is saved. Until now a slow part was dropped and the snapshot frozen without it.
 - **Video preview** opens over the page you are on. It was drawn inside the slide track, whose transform pinned it to the cover.

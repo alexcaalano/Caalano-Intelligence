@@ -20,7 +20,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ## v3.654.0 - 2026-09-15
 
-**Monthly Report: Insights and live Notes, Report settings, a tidier toolbar** (commit PENDING)
+**Monthly Report: Insights and live Notes, Report settings, a tidier toolbar** (commit 389aa3b)
 
 - **Insights** are the pre-meeting notes, one per page, written under ⚙ Report settings. They no longer print at the foot of a page.
 - **Notes** is a button that opens a narrow widget on the left of the deck for the page in view: its Insights (pre-meeting notes) on top, and under them a free box for what comes up live on the call. Both save as you type - the widget and the panel say "Auto-saved" with the time - and both are kept with the client and the report month whatever is regenerated.

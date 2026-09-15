@@ -5803,6 +5803,7 @@ body.hub-tv-on { overflow: hidden; }
 .vis-td .tgl { vertical-align: middle; }
 .vis-foot { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
 .vis-saved { color: var(--pos); }
+.vis-save-err { color: var(--neg); font-weight: 600; }
 .vis-pick { display: flex; flex-direction: column; gap: 5px; font-size: 12px; font-weight: 700; color: var(--muted); max-width: 420px; margin-bottom: 12px; }
 .vis-pick select { font: inherit; font-weight: 500; color: var(--text); background: var(--panel-2); border: 1px solid var(--border); border-radius: 9px; padding: 8px 10px; }
 @media (max-width: 640px) {

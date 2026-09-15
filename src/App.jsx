@@ -36,7 +36,7 @@ const lazyView = (load, name) => {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-export const APP_VERSION = '3.676.0'
+export const APP_VERSION = '3.677.0'
 // The business clock. Every server window is cut on the client's local day
 // (Caalano Systems location timezone), so any day the app derives on its own -
 // preset ranges, "today", CSV dates - must use the same clock rather than the
@@ -4496,8 +4496,22 @@ export const bumpSettings = () => { for (const fn of settingsSubs) fn() }
 function onSettings(fn) { settingsSubs.add(fn); return () => settingsSubs.delete(fn) }
 // Fire-and-forget partial save (localStorage is the instant cache; UI never
 // waits on the network).
+// Returns what the server said, so a caller that must not lie to the user
+// ("Saved.") can wait for it. Callers that fire and forget simply ignore the
+// promise; it never rejects.
 export function saveSettingsRemote(patch) {
-  try { fetch('/.netlify/functions/settings', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(patch) }).catch(() => {}) } catch {}
+  try {
+    return fetch('/.netlify/functions/settings', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(patch) })
+      .then((r) => r.json().catch(() => ({ ok: r.ok })))
+      .catch(() => ({ ok: false, error: 'Could not reach the server.' }))
+  } catch { return Promise.resolve({ ok: false, error: 'Could not reach the server.' }) }
+}
+// The shared settings as the server has them right now. Visibility saves read
+// this first so one Super Admin's save never overwrites another's.
+export function fetchSettingsRemote() {
+  try {
+    return fetch('/.netlify/functions/settings').then((r) => r.json()).then((j) => (j && j.ok && j.data ? j.data : null)).catch(() => null)
+  } catch { return Promise.resolve(null) }
 }
 // Per-client "clients may download the PDF" allow-list (admin-toggled, server-synced).
 // OFF by default for every client: a viewer/client only gets the download button for

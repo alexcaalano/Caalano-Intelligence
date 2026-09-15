@@ -16,6 +16,16 @@ git commit that produced it, so any version can be redeployed or reverted to.
 
 The version number also appears in the app sidebar. Newest first.
 
+## v3.677.0 - 2026-09-15 (commit PENDING)
+
+Visibility saves reliably, and two people editing it no longer overwrite each other.
+
+- **It waits for the settings to arrive.** The panel used to draw its matrix from whatever it had at the moment it opened. Opened before the shared settings finished loading (a direct link to Visibility, a cold cache, a slow connection) it showed every switch as on, and pressing Save wrote that emptiness over every saved rule. It now shows "Loading who sees what…" until the settings are in, and re-reads them when they land.
+- **Saves merge instead of replacing.** Save now reads the current settings from the server and writes only the rows this panel actually changed. Another Super Admin's edit, or your own change in a second tab, is kept instead of being overwritten by a stale copy.
+- **One Save, both scopes.** A flip under By role and a flip on a person are saved together; the footer names what is pending ("Unsaved changes to role defaults and 1 person"). Before, pressing Save on the people tab silently left role changes unsaved.
+- **A failed save says so.** The save waits for the server and reports "Could not save. Nothing was changed - try again." instead of showing "Saved." when the write was refused or the network dropped.
+- **One column per person.** Two stored records for the same email drew two columns that disagreed about that person; the list is now deduplicated by email.
+
 ## v3.676.0 - 2026-09-15 (commit cccd63b)
 
 Client settings live in the Account view.

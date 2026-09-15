@@ -16,6 +16,10 @@ git commit that produced it, so any version can be redeployed or reverted to.
 
 The version number also appears in the app sidebar. Newest first.
 
+## v3.665.0 - 2026-09-15 (commit PENDING)
+
+- **Daily Performance · Biggest movers** shows nine movers instead of eight, so the three-across grid fills its three rows.
+
 ## v3.664.0 - 2026-09-15 (commit bffbf92)
 
 - **Action Centre and Sales Hub, before a client is chosen.** The empty state is one line: "Choose a client to get started." A client-side person with several accounts reads "Choose a business to get started." and their picker is labelled Business.

@@ -36,7 +36,7 @@ const lazyView = (load, name) => {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-export const APP_VERSION = '3.664.0'
+export const APP_VERSION = '3.665.0'
 // The business clock. Every server window is cut on the client's local day
 // (Caalano Systems location timezone), so any day the app derives on its own -
 // preset ranges, "today", CSV dates - must use the same clock rather than the
@@ -1816,7 +1816,8 @@ function MoversPanel({ list, clients, currency, onPick }) {
       for (const m of clientMovers(r, t, win)) allMovers.push({ ...m, scrollId: trCardId(r.id) })
     }
   }
-  const movers = allMovers.filter((m) => Math.abs(m.cplPct) >= 8).sort((a, b) => Math.abs(b.cplPct) - Math.abs(a.cplPct)).slice(0, 8)
+  // Nine: three full rows of the three-across grid.
+  const movers = allMovers.filter((m) => Math.abs(m.cplPct) >= 8).sort((a, b) => Math.abs(b.cplPct) - Math.abs(a.cplPct)).slice(0, 9)
   const scrollToCard = (id) => {
     const el = id && document.getElementById(id)
     if (!el) return

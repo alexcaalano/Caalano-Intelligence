@@ -36,7 +36,7 @@ const lazyView = (load, name) => {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-export const APP_VERSION = '3.672.0'
+export const APP_VERSION = '3.673.0'
 // The business clock. Every server window is cut on the client's local day
 // (Caalano Systems location timezone), so any day the app derives on its own -
 // preset ranges, "today", CSV dates - must use the same clock rather than the
@@ -16569,6 +16569,7 @@ function clientTabList(client, cfg, authUser, isClinic) {
 // The account frame's sidebar: this client's areas and their pages, in the
 // order a lead travels. Its own component so the clinic probe (a hook) runs
 // beside the workspace's rather than inside the shell.
+const SECTION_ICON = { Overview: 'overview', Acquisition: 'acquisition', Audience: 'audience', Sales: 'sales', Appointments: 'appointments' }
 function AccountNav({ client, config, authUser, tab, onTab, canReports, onReports, reportsActive }) {
   useSettingsSync()
   const cfg = ((config && config.clients) || []).find((c) => c.id === client.id) || {}
@@ -16589,12 +16590,12 @@ function AccountNav({ client, config, authUser, tab, onTab, canReports, onReport
         const open = isActive && !folded
         return (
           <div key={gi} className={`nav-grp${isActive ? ' active' : ''}${open ? ' open' : ''}`}>
-            <button type="button" className={`nav-sec${isActive ? ' active' : ''}`} onClick={() => press(g)} aria-expanded={open}>{g.name || 'More'}<span className="nav-chev">{open ? '▾' : '▸'}</span></button>
+            <button type="button" className={`nav-sec${isActive ? ' active' : ''}`} onClick={() => press(g)} aria-expanded={open}><span className="ic"><NavIcon name={SECTION_ICON[g.name] || 'overview'} /></span><span className="nav-sec-l">{g.name || 'More'}</span><span className="nav-chev">{open ? '▾' : '▸'}</span></button>
             {open ? g.tabs.map((t) => <button key={t.id} className={`sub${tab === t.id && !reportsActive ? ' active' : ''}`} onClick={() => onTab(t.id)}><span className="nav-dot" />{t.label}</button>) : null}
           </div>
         )
       })}
-      {canReports ? <div className={`nav-grp${reportsActive ? ' active open' : ''}`}><button type="button" className={`nav-sec${reportsActive ? ' active' : ''}`} onClick={onReports}>Reports</button></div> : null}
+      {canReports ? <div className={`nav-grp${reportsActive ? ' active open' : ''}`}><button type="button" className={`nav-sec${reportsActive ? ' active' : ''}`} onClick={onReports}><span className="ic"><NavIcon name="reports" /></span><span className="nav-sec-l">Reports</span></button></div> : null}
     </>
   )
 }
@@ -19248,6 +19249,12 @@ function NavIcon({ name }) {
     monthly: <><rect x="3" y="4" width="18" height="17" rx="2" /><path d="M3 9h18M8 2v4M16 2v4" /></>,
     report: <><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><path d="M14 2v6h6M8 13h8M8 17h6" /></>,
     social: <><path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z" /></>,
+    // Account view sections.
+    acquisition: <><path d="M3 11v2a1 1 0 0 0 1 1h2l6 4V6L6 10H4a1 1 0 0 0-1 1z" /><path d="M16 9a3.5 3.5 0 0 1 0 6M18.5 6.5a7 7 0 0 1 0 11" /></>,
+    audience: <><circle cx="9" cy="8" r="3.5" /><path d="M2.5 20v-1a5.5 5.5 0 0 1 5.5-5.5h2A5.5 5.5 0 0 1 15.5 19v1" /><circle cx="17" cy="9" r="2.75" /><path d="M17.5 14.5A4.5 4.5 0 0 1 21.5 19v1" /></>,
+    sales: <><path d="M20.6 13.4L13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8z" /><circle cx="7.5" cy="7.5" r="1.5" /></>,
+    appointments: <><rect x="3" y="4" width="18" height="17" rx="2" /><path d="M3 9h18M8 2v4M16 2v4" /><path d="M8.5 15l2 2 4-4" /></>,
+    reports: <><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><path d="M14 2v6h6M8 13h8M8 17h6" /></>,
     settings: <><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.6 1.6 0 0 0 .32 1.77l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.6 1.6 0 0 0-2.73 1.13V21a2 2 0 0 1-4 0v-.08A1.6 1.6 0 0 0 7.13 19.4l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.6 1.6 0 0 0 3 13.87H3a2 2 0 0 1 0-4h.08A1.6 1.6 0 0 0 4.6 7.13l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.6 1.6 0 0 0 9.87 3H10a2 2 0 0 1 4 0v.08a1.6 1.6 0 0 0 2.73 1.13l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.6 1.6 0 0 0 21 9.87V10a2 2 0 0 1 0 4h-.08a1.6 1.6 0 0 0-1.52 1z" /></>,
   }[name] || null
   return <svg className="nav-svg" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{P}</svg>

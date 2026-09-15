@@ -16,7 +16,7 @@ git commit that produced it, so any version can be redeployed or reverted to.
 
 The version number also appears in the app sidebar. Newest first.
 
-## v3.671.0 - 2026-09-15 (commit PENDING)
+## v3.671.0 - 2026-09-15 (commit 680ef0e)
 
 Key event reach (Caalano360 overview and the Monthly Report's Account summary & ROI): one count per row.
 

@@ -4782,7 +4782,7 @@ export default async (req) => {
     // (Caalano360, Lost Reasons, or a custom dashboard that needs it); the old
     // blanket "Staff only" refusal here predated that and silently emptied every
     // drill-based section for a viewer, whatever they were granted.
-    if (!(await isConnected().catch(() => false))) return json({ scope: 'ccdrill', client, connected: false })
+    if (client !== DEMO_CLIENT_ID && !(await isConnected().catch(() => false))) return json({ scope: 'ccdrill', client, connected: false })
     const channel = url.searchParams.get('channel') || 'all'
     try {
       // The id→name maps hit Windsor, not GoHighLevel, and run alongside the two

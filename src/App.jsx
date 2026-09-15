@@ -36,7 +36,7 @@ const lazyView = (load, name) => {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-export const APP_VERSION = '3.650.0'
+export const APP_VERSION = '3.651.0'
 // The business clock. Every server window is cut on the client's local day
 // (Caalano Systems location timezone), so any day the app derives on its own -
 // preset ranges, "today", CSV dates - must use the same clock rather than the
@@ -6954,7 +6954,7 @@ function priorityActions(h, money, ca) {
 // shared between pipelines, so without this the other pipeline's "15 Minute
 // Call" would still resolve against the lensed funnel and appear twice.
 const ccKeyEventsOf = (cc, clientId) => (clientId ? keyEventsForPipe(loadKeyEvents(clientId), cc && cc.lens ? cc.lens.pipeline : 'all') : [])
-function ccKeyEventFunnel(cc, clientId, wonTotal, leadsFallback) {
+export function ccKeyEventFunnel(cc, clientId, wonTotal, leadsFallback) {
   const pipes = (cc && cc.pipelinesFunnel) || []
   const keList = ccKeyEventsOf(cc, clientId)
   const rmap = reachedByStage(pipes)
@@ -8197,7 +8197,7 @@ function intelAds(d, channel, money) {
 }
 
 // One model from a current and previous (lensed) drill payload.
-function buildIntel(cc, pcc, clientId, money, extra = null) {
+export function buildIntel(cc, pcc, clientId, money, extra = null) {
   if (!cc) return null
   const tot = cc.totals || {}, ptot = (pcc && pcc.totals) || {}
   const kef = ccKeyEventFunnel(cc, clientId, tot.won, tot.leads)
@@ -8381,6 +8381,110 @@ function IntelReach({ reach, multi, leadTotal, chanLabel, money, spend }) {
       </div>
     </div>)}
   </>
+}
+// The Channel performance table body: spend → key events → outcomes per paid
+// channel, from the command-centre drill. Shared by the Caalano360 tab (with
+// its More columns switch) and the Monthly Report's summary page.
+export function ChannelPerfBody({ cc, pipeOn = false, channels, adsOk, cashOn = false, moreCols = false, clientId, money }) {
+  const h = { channels: channels || {}, adsOk: adsOk || {} }
+          const ch = pipeOn ? { metaSpend: cc.spend.meta, googleSpend: cc.spend.google, metaLeads: cc.paid.metaLeads, googleConv: cc.paid.googleLeads } : (h.channels || {})
+          // A channel whose ad read failed has NO spend figure, which is a
+          // different thing from having spent nothing - and the difference matters,
+          // because $0.00 next to 140 leads reads as free leads rather than as a
+          // missing number. Never render a failed read as a measured zero.
+          const ok = h.adsOk || {}
+          const mDead = ok.meta === false, gDead = ok.google === false
+          const dead = (k) => (k === 'meta' ? mDead : gDead)
+          const hasCh = (ch.metaSpend || 0) > 0 || (ch.googleSpend || 0) > 0
+          if (!hasCh && (mDead || gDead)) return <div className="cap">Couldn’t load {mDead && gDead ? 'Meta or Google' : mDead ? 'Meta' : 'Google'} spend for this period - the ad read timed out. The CRM figures on this page are unaffected; try a shorter range or refresh.</div>
+          if (!hasCh) return <div className="cap">No paid channel spend in this period.</div>
+          const evLbl = (e) => (e.kind === 'calendar' ? '📅 ' : '') + (e.label.length > 16 ? e.label.slice(0, 15) + '…' : e.label)
+          const cashCols = cashOn && !!(cc && cc.cash)
+          // V2: the same columns under grouped headers, an inline bar on the win
+          // rate, the first column frozen, and Close %, CAC and Avg deal behind
+          // the More columns switch. Same rows, same figures.
+          const renderTableV2 = (evLabels, rows) => {
+            const tL = rows.reduce((a, r) => a + (r.leads || 0), 0), tW = rows.reduce((a, r) => a + (r.won || 0), 0)
+            const baseWin = tL ? tW / tL : 0
+            const idxOf = (r) => (r.leads >= INTEL_MIN_BASE && baseWin && r.leads ? Math.round(((r.won || 0) / r.leads / baseWin) * 100) : null)
+            const winOf = (r) => (r.leads ? (r.won || 0) / r.leads : null)
+            const maxWin = Math.max(0.0001, ...rows.map((r) => winOf(r) || 0))
+            const more = moreCols
+            const nKe = evLabels.length
+            return (
+            <div className="tbl-scroll"><table className="mini-tbl users-tbl v2-tbl">
+              <thead>
+                <tr className="v2-grp"><th className="lft"></th><th colSpan={2}><span>Spend</span></th>{nKe ? <th colSpan={nKe}><span>Key events</span></th> : null}<th colSpan={3}><span>Outcomes</span></th>{more ? <th colSpan={2}><span>Efficiency</span></th> : null}<th colSpan={2}><span>Return</span></th>{cashCols ? <th colSpan={2}><span>Cash</span></th> : null}</tr>
+                <tr><th className="lft">Channel</th><th>Spend</th><th title="CRM leads attributed to this channel">Leads</th>{evLabels.map((e, i) => <th key={i} className="fke-col" title={`Reached: ${e.label}`}>{evLbl(e)}</th>)}<th>Won</th><th title="Won ÷ leads, with its index against this table's blended win rate (100 = the blend)">Win rate</th><th>Revenue</th>{more ? <><th title="Won ÷ decided (won + lost)">Close %</th><th title="Revenue ÷ won deals">Avg deal</th></> : null}<th title="Revenue ÷ spend">ROAS</th><th title="Spend ÷ won deals">CAC</th>{cashCols ? <><th title="Cash collected on this channel's won deals">Cash</th><th title="Cash collected ÷ spend">Cash ROAS</th></> : null}</tr>
+              </thead>
+              <tbody>{rows.map((r) => {
+                const wr = winOf(r)
+                return (
+                <tr key={r.key}>
+                  <td className="lft"><span className="bn-src"><i style={{ background: sourceDotChan(r.key) }} />{r.label}</span></td>
+                  <td>{r.dead ? <span className="lrv-z" title="This channel's ad read didn't return, so there is no spend figure for the period - not a measured zero.">n/a</span> : money(r.spend)}</td>
+                  <td>{fmtNumber(r.leads || r.adLeads || 0)}</td>
+                  {evLabels.map((e, i) => <td key={i} className="fke-col">{fmtNumber((r.ke && r.ke[i]) || 0)}</td>)}
+                  <td>{fmtNumber(r.won)}</td>
+                  <td><span className="v2-ib"><span className="b"><span style={{ width: `${wr != null ? Math.round((wr / maxWin) * 100) : 0}%` }} /></span><span>{wr != null ? `${Math.round(wr * 100)}%` : '-'} {idxOf(r) != null ? <IdxChip v={idxOf(r)} /> : null}</span></span></td>
+                  <td>{money(r.revenue)}</td>
+                  {more ? <>
+                    <td>{r.closeRate == null ? '-' : `${r.closeRate}%`}</td>
+                    <td>{r.avgDeal != null ? money(Math.round(r.avgDeal)) : '-'}</td>
+                  </> : null}
+                  <td>{r.dead || !r.spend ? '-' : `${((r.revenue || 0) / r.spend).toFixed(1)}×`}</td>
+                  <td>{r.dead || r.cac == null ? '-' : money(Math.round(r.cac))}</td>
+                  {cashCols ? <><td>{money(r.cash || 0)}</td><td>{r.dead || !r.spend ? '-' : `${((r.cash || 0) / r.spend).toFixed(1)}×`}</td></> : null}
+                </tr>
+                )
+              })}</tbody>
+            </table></div>
+            )
+          }
+          const renderTable = renderTableV2
+          const pipesN = ((cc && cc.pipelinesFunnel) || []).length
+          // Multi-pipeline: one Channel-split table per pipeline, each with that
+          // pipeline's own key events (no duplicated columns) + its per-channel
+          // leads/won/revenue (from pipeContribution). Spend is allocated to each
+          // pipeline by its share of that channel's leads (no per-pipeline spend
+          // exists natively). Close% needs per-pipeline lost-by-channel, which we
+          // don't carry, so it shows "-" here.
+          if (pipesN > 1) {
+            const byPipe = channelKeyEventsByPipe(cc, clientId)
+            if (!byPipe.length) return <div className="cap">No key events configured for these pipelines.</div>
+            const contrib = new Map(((cc && cc.pipeContribution) || []).map((p) => [p.id, p]))
+            const totMeta = [...contrib.values()].reduce((s, p) => s + ((p.chan && p.chan.meta.leads) || 0), 0)
+            const totGoogle = [...contrib.values()].reduce((s, p) => s + ((p.chan && p.chan.google.leads) || 0), 0)
+            return <>
+              <p className="cap" style={{ marginTop: 0 }}>Split by pipeline · each channel's spend is allocated to a pipeline by its share of that channel's leads.</p>
+              {byPipe.map((pk) => {
+                const pc = contrib.get(pk.pipeId)
+                const mk = (key, label, ke, adSpendTot, leadTot) => {
+                  const cch = (pc && pc.chan && pc.chan[key]) || { leads: 0, won: 0, revenue: 0, cash: 0 }
+                  const spend = leadTot ? adSpendTot * ((cch.leads || 0) / leadTot) : 0
+                  const won = cch.won || 0, revenue = cch.revenue || 0
+                  return { key, label, spend, dead: dead(key), leads: cch.leads || 0, ke, won, revenue, cash: cch.cash || 0, closeRate: null, cac: won ? spend / won : null, avgDeal: won ? revenue / won : null }
+                }
+                const rows = [
+                  mk('meta', 'Meta', pk.meta, ch.metaSpend || 0, totMeta),
+                  mk('google', 'Google', pk.google, ch.googleSpend || 0, totGoogle),
+                ]
+                return <div key={pk.pipeId} style={{ marginTop: 12 }}>
+                  <div className="cc-pipe-lab"><span className="c360-dot" /> {pk.name}</div>
+                  {renderTable(pk.labels, rows)}
+                </div>
+              })}
+            </>
+          }
+          // Single-pipeline (or none): account-wide table by channel.
+          const cbc = {}; for (const c of ((cc && cc.closeByChannel) || [])) cbc[c.channel] = c
+          const cke = channelKeyEvents(cc, clientId)
+          const evLabels = cke ? cke.labels : []
+          const rows = [
+            { key: 'meta', label: 'Meta', spend: ch.metaSpend || 0, adLeads: ch.metaLeads || 0, ke: cke ? cke.meta : [] },
+            { key: 'google', label: 'Google', spend: ch.googleSpend || 0, adLeads: ch.googleConv || 0, ke: cke ? cke.google : [] },
+          ].map((r) => { const c = cbc[r.key] || {}; const won = c.won || 0, revenue = c.revenue || 0; return { ...r, dead: dead(r.key), leads: c.leads || 0, won, revenue, cash: c.cash || 0, closeRate: c.closeRate, cac: won ? r.spend / won : null, avgDeal: won ? revenue / won : null } })
+          return renderTable(evLabels, rows)
 }
 function IdxChip({ v, goodUp = true, title }) {
   if (v == null) return <span className="idx-chip idx-na" title="Too few to index (under 10 leads) or no baseline">-</span>
@@ -8639,7 +8743,7 @@ function V2ReachBar({ label, count, split, width, prevAt, leak, detail, note }) 
 // share of that pipeline's leads, split by channel, with the previous period as
 // a tick and the leak marked where it happens. Same rows and rules as the
 // reach cards (intelReach); the table view shows those cards.
-function ExecReach({ reach, multi, kef, cc, pcc, clientId, money, spend, chanLabel, leadTotal, wonBasis, quiet }) {
+export function ExecReach({ reach, multi, kef, cc, pcc, clientId, money, spend, chanLabel, leadTotal, wonBasis, quiet }) {
   const [table, setTable] = useState(false)
   const rows = reach || []
   if (!rows.length) return null
@@ -9256,106 +9360,7 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
           the bottleneck so the channel scoreboard reads first. (Internal figures.) */}
       {sec('channels', 'Channel performance', <div className="card x-internal" data-sec="channels">
         <div className="v2-sec-h"><h3>Channel performance <span className="sub">· spend → key events → outcomes, per paid channel · win rate is indexed against the table's blend</span></h3><div className="tools"><button type="button" className={moreCols ? 'on' : ''} onClick={() => setMoreCols((m) => !m)}>{moreCols ? 'Fewer columns' : 'More columns'}</button></div></div>
-        {(() => {
-          const ch = pipeOn ? { metaSpend: cc.spend.meta, googleSpend: cc.spend.google, metaLeads: cc.paid.metaLeads, googleConv: cc.paid.googleLeads } : (h.channels || {})
-          // A channel whose ad read failed has NO spend figure, which is a
-          // different thing from having spent nothing - and the difference matters,
-          // because $0.00 next to 140 leads reads as free leads rather than as a
-          // missing number. Never render a failed read as a measured zero.
-          const ok = h.adsOk || {}
-          const mDead = ok.meta === false, gDead = ok.google === false
-          const dead = (k) => (k === 'meta' ? mDead : gDead)
-          const hasCh = (ch.metaSpend || 0) > 0 || (ch.googleSpend || 0) > 0
-          if (!hasCh && (mDead || gDead)) return <div className="cap">Couldn’t load {mDead && gDead ? 'Meta or Google' : mDead ? 'Meta' : 'Google'} spend for this period - the ad read timed out. The CRM figures on this page are unaffected; try a shorter range or refresh.</div>
-          if (!hasCh) return <div className="cap">No paid channel spend in this period.</div>
-          const evLbl = (e) => (e.kind === 'calendar' ? '📅 ' : '') + (e.label.length > 16 ? e.label.slice(0, 15) + '…' : e.label)
-          const cashCols = cashOn && !!(cc && cc.cash)
-          // V2: the same columns under grouped headers, an inline bar on the win
-          // rate, the first column frozen, and Close %, CAC and Avg deal behind
-          // the More columns switch. Same rows, same figures.
-          const renderTableV2 = (evLabels, rows) => {
-            const tL = rows.reduce((a, r) => a + (r.leads || 0), 0), tW = rows.reduce((a, r) => a + (r.won || 0), 0)
-            const baseWin = tL ? tW / tL : 0
-            const idxOf = (r) => (r.leads >= INTEL_MIN_BASE && baseWin && r.leads ? Math.round(((r.won || 0) / r.leads / baseWin) * 100) : null)
-            const winOf = (r) => (r.leads ? (r.won || 0) / r.leads : null)
-            const maxWin = Math.max(0.0001, ...rows.map((r) => winOf(r) || 0))
-            const more = moreCols
-            const nKe = evLabels.length
-            return (
-            <div className="tbl-scroll"><table className="mini-tbl users-tbl v2-tbl">
-              <thead>
-                <tr className="v2-grp"><th className="lft"></th><th colSpan={2}><span>Spend</span></th>{nKe ? <th colSpan={nKe}><span>Key events</span></th> : null}<th colSpan={3}><span>Outcomes</span></th>{more ? <th colSpan={2}><span>Efficiency</span></th> : null}<th colSpan={2}><span>Return</span></th>{cashCols ? <th colSpan={2}><span>Cash</span></th> : null}</tr>
-                <tr><th className="lft">Channel</th><th>Spend</th><th title="CRM leads attributed to this channel">Leads</th>{evLabels.map((e, i) => <th key={i} className="fke-col" title={`Reached: ${e.label}`}>{evLbl(e)}</th>)}<th>Won</th><th title="Won ÷ leads, with its index against this table's blended win rate (100 = the blend)">Win rate</th><th>Revenue</th>{more ? <><th title="Won ÷ decided (won + lost)">Close %</th><th title="Revenue ÷ won deals">Avg deal</th></> : null}<th title="Revenue ÷ spend">ROAS</th><th title="Spend ÷ won deals">CAC</th>{cashCols ? <><th title="Cash collected on this channel's won deals">Cash</th><th title="Cash collected ÷ spend">Cash ROAS</th></> : null}</tr>
-              </thead>
-              <tbody>{rows.map((r) => {
-                const wr = winOf(r)
-                return (
-                <tr key={r.key}>
-                  <td className="lft"><span className="bn-src"><i style={{ background: sourceDotChan(r.key) }} />{r.label}</span></td>
-                  <td>{r.dead ? <span className="lrv-z" title="This channel's ad read didn't return, so there is no spend figure for the period - not a measured zero.">n/a</span> : money(r.spend)}</td>
-                  <td>{fmtNumber(r.leads || r.adLeads || 0)}</td>
-                  {evLabels.map((e, i) => <td key={i} className="fke-col">{fmtNumber((r.ke && r.ke[i]) || 0)}</td>)}
-                  <td>{fmtNumber(r.won)}</td>
-                  <td><span className="v2-ib"><span className="b"><span style={{ width: `${wr != null ? Math.round((wr / maxWin) * 100) : 0}%` }} /></span><span>{wr != null ? `${Math.round(wr * 100)}%` : '-'} {idxOf(r) != null ? <IdxChip v={idxOf(r)} /> : null}</span></span></td>
-                  <td>{money(r.revenue)}</td>
-                  {more ? <>
-                    <td>{r.closeRate == null ? '-' : `${r.closeRate}%`}</td>
-                    <td>{r.avgDeal != null ? money(Math.round(r.avgDeal)) : '-'}</td>
-                  </> : null}
-                  <td>{r.dead || !r.spend ? '-' : `${((r.revenue || 0) / r.spend).toFixed(1)}×`}</td>
-                  <td>{r.dead || r.cac == null ? '-' : money(Math.round(r.cac))}</td>
-                  {cashCols ? <><td>{money(r.cash || 0)}</td><td>{r.dead || !r.spend ? '-' : `${((r.cash || 0) / r.spend).toFixed(1)}×`}</td></> : null}
-                </tr>
-                )
-              })}</tbody>
-            </table></div>
-            )
-          }
-          const renderTable = renderTableV2
-          const pipesN = ((cc && cc.pipelinesFunnel) || []).length
-          // Multi-pipeline: one Channel-split table per pipeline, each with that
-          // pipeline's own key events (no duplicated columns) + its per-channel
-          // leads/won/revenue (from pipeContribution). Spend is allocated to each
-          // pipeline by its share of that channel's leads (no per-pipeline spend
-          // exists natively). Close% needs per-pipeline lost-by-channel, which we
-          // don't carry, so it shows "-" here.
-          if (pipesN > 1) {
-            const byPipe = channelKeyEventsByPipe(cc, clientId)
-            if (!byPipe.length) return <div className="cap">No key events configured for these pipelines.</div>
-            const contrib = new Map(((cc && cc.pipeContribution) || []).map((p) => [p.id, p]))
-            const totMeta = [...contrib.values()].reduce((s, p) => s + ((p.chan && p.chan.meta.leads) || 0), 0)
-            const totGoogle = [...contrib.values()].reduce((s, p) => s + ((p.chan && p.chan.google.leads) || 0), 0)
-            return <>
-              <p className="cap" style={{ marginTop: 0 }}>Split by pipeline · each channel's spend is allocated to a pipeline by its share of that channel's leads.</p>
-              {byPipe.map((pk) => {
-                const pc = contrib.get(pk.pipeId)
-                const mk = (key, label, ke, adSpendTot, leadTot) => {
-                  const cch = (pc && pc.chan && pc.chan[key]) || { leads: 0, won: 0, revenue: 0, cash: 0 }
-                  const spend = leadTot ? adSpendTot * ((cch.leads || 0) / leadTot) : 0
-                  const won = cch.won || 0, revenue = cch.revenue || 0
-                  return { key, label, spend, dead: dead(key), leads: cch.leads || 0, ke, won, revenue, cash: cch.cash || 0, closeRate: null, cac: won ? spend / won : null, avgDeal: won ? revenue / won : null }
-                }
-                const rows = [
-                  mk('meta', 'Meta', pk.meta, ch.metaSpend || 0, totMeta),
-                  mk('google', 'Google', pk.google, ch.googleSpend || 0, totGoogle),
-                ]
-                return <div key={pk.pipeId} style={{ marginTop: 12 }}>
-                  <div className="cc-pipe-lab"><span className="c360-dot" /> {pk.name}</div>
-                  {renderTable(pk.labels, rows)}
-                </div>
-              })}
-            </>
-          }
-          // Single-pipeline (or none): account-wide table by channel.
-          const cbc = {}; for (const c of ((cc && cc.closeByChannel) || [])) cbc[c.channel] = c
-          const cke = channelKeyEvents(cc, clientId)
-          const evLabels = cke ? cke.labels : []
-          const rows = [
-            { key: 'meta', label: 'Meta', spend: ch.metaSpend || 0, adLeads: ch.metaLeads || 0, ke: cke ? cke.meta : [] },
-            { key: 'google', label: 'Google', spend: ch.googleSpend || 0, adLeads: ch.googleConv || 0, ke: cke ? cke.google : [] },
-          ].map((r) => { const c = cbc[r.key] || {}; const won = c.won || 0, revenue = c.revenue || 0; return { ...r, dead: dead(r.key), leads: c.leads || 0, won, revenue, cash: c.cash || 0, closeRate: c.closeRate, cac: won ? r.spend / won : null, avgDeal: won ? revenue / won : null } })
-          return renderTable(evLabels, rows)
-        })()}
+        <ChannelPerfBody cc={cc} pipeOn={pipeOn} channels={h.channels} adsOk={h.adsOk} cashOn={cashOn} moreCols={moreCols} clientId={clientId} money={money} />
       </div>)}
 
       {/* Biggest movers and Indexing insights - from the same model as the reach above. */}

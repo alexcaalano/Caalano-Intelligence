@@ -18,6 +18,17 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.651.0 - 2026-09-15
+
+**Monthly Report: Account summary & ROI rebuilt** (commit PENDING)
+
+- Every scorecard reads against the period before: Meta, Google and total spend, paid results and cost per result, CRM leads, won and revenue on both bases, paid revenue, ROAS, cost per won and the open pipeline. The comparison comes from the overview's own previous period and from the Caalano360 drill for the month before, which the report now freezes alongside the month.
+- The old Overall (created on) summary is back in the report's own style: Meta and Google spend, results and cost each; the month's leads through every key event with the share of leads, the step from the row before and the cost per event; the business's revenue, average order value and MER; and Potential revenue - open and lost or abandoned leads, potential ROI and the potential additional revenue (open leads × this month's win rate among resulted leads × average order value), with the working stated under the table.
+- The Caalano360 tab's Channel performance table replaces ROI by channel, and its Key event reach bars (channel split per event, previous-period tick, the biggest leak flagged) replace the cohort funnel. Both come from the drill frozen with the report; a snapshot generated before this keeps the funnel it had.
+- The revenue matrix (status change vs created on) and the status donut stay, side by side at the bottom. The Channel performance table is one component now, shared with the Caalano360 tab.
+
+---
+
 ## v3.650.0 - 2026-09-15
 
 **Monthly Report: every part before the deck, notes on each page, Meta and Google month by month, Sales Performance** (commit 65612d6)

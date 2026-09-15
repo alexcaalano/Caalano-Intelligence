@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Bar, BarChart, CartesianGrid, Cell, ComposedChart, LabelList, Legend, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { C360GrpRow, Dlt, KeyEventsFunnel, KeyPeopleModal, MRKpi, O360ColGroup, O360Head, SortTh, Spinner, aliasedOutcomeMap, buildO360Cols, calCountMap, clientDownloadOn, fmtDate, formKeyEvents, isAdminishFE, isClientRoleFE, keyEventRows, campIsSplit, keyEventsForPipe, loadAdsetRules, loadCampMap, loadKeyEvents, loadMReport, mkOutcomeMap, mrFetch, o360Cells, o360ColClass, o360Fields, pipeOfAdset, rangeQuery, reachedByStage, readNavUrl, resolveKeyEvents, saveMReport, setClientDownload, sortRows, stagePosMap, stageReachOf, suggestPipeline, unorm, useSettingsSync, useSort, writeNavUrl } from '../App.jsx'
+import { C360GrpRow, ChannelPerfBody, Dlt, ExecReach, KeyEventsFunnel, KeyPeopleModal, MRKpi, O360ColGroup, O360Head, SortTh, Spinner, aliasedOutcomeMap, buildIntel, buildO360Cols, ccKeyEventFunnel, calCountMap, clientDownloadOn, fmtDate, formKeyEvents, isAdminishFE, isClientRoleFE, keyEventRows, campIsSplit, keyEventsForPipe, loadAdsetRules, loadCampMap, loadCashOn, loadKeyEvents, loadMReport, mkOutcomeMap, mrFetch, o360Cells, o360ColClass, o360Fields, pipeOfAdset, rangeQuery, reachedByStage, readNavUrl, resolveKeyEvents, saveMReport, setClientDownload, sortRows, stagePosMap, stageReachOf, suggestPipeline, unorm, useSettingsSync, useSort, writeNavUrl } from '../App.jsx'
 import { fmtCompact, fmtCurrency, fmtNumber, fmtPct } from '../lib/format.js'
 
 // ---------------------------------------------------------------------------
@@ -83,6 +83,15 @@ export function periodOf(a, b) {
   const label = single ? monthBounds(lo).label : `${monthBounds(lo).label} – ${monthBounds(hi).label}`
   return { from, to, label, key: single ? lo : `${lo}_${hi}`, single, lo, hi }
 }
+// The equal period before a report period: the month before a month, the
+// three months before a three-month range.
+export function prevPeriodOf(period) {
+  const shift = (m, n) => { const [y, mo] = m.split('-').map(Number); const d = new Date(Date.UTC(y, mo - 1 + n, 1)); return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}` }
+  const lo = period.lo || String(period.from).slice(0, 7), hi = period.hi || String(period.to).slice(0, 7)
+  const [ly, lm] = lo.split('-').map(Number), [hy, hm] = hi.split('-').map(Number)
+  const n = (hy - ly) * 12 + (hm - lm) + 1
+  return periodOf(shift(lo, -n), shift(lo, -1))
+}
 // Pretty label for a stored snapshot key - a single month ("2026-07") or a
 // range ("2026-06_2026-07"). Used by the reports lists / month pickers.
 export function snapLabel(key) {
@@ -144,6 +153,19 @@ export async function assembleMonthlyReport(client, period, onProgress) {
     wanted.push(label)
     return mrFetchTry(qs2, { tries: 12 }).then(pick).catch(() => { failed.push(label); return null }).finally(() => { done++; note(`${label} · ${done} of ${wanted.length} parts`) })
   }
+  // The Caalano360 tab's drill (channel performance, key event reach), for the
+  // period and the equal period before it, kept without its heavy people lists.
+  const trimCc = (d) => {
+    if (!d || d.connected === false || d.error || !d.totals) return null
+    const { lostFacts, oppFacts, lostBy, openByStage, daily, ...keep } = d
+    void lostFacts; void oppFacts; void lostBy; void openByStage; void daily
+    if (keep.open) keep.open = { total: keep.open.total, value: keep.open.value }
+    if (keep.revenue) keep.revenue = { total: keep.revenue.total, count: keep.revenue.count }
+    if (Array.isArray(keep.bookingByCalendar)) keep.bookingByCalendar = keep.bookingByCalendar.map(({ people, ...c }) => { void people; return c })
+    return keep
+  }
+  const prevP = prevPeriodOf(period)
+  const qPrev = `client=${encodeURIComponent(client.id)}&from=${prevP.from}&to=${prevP.to}`
   const parts = Promise.all([
     section('Meta Ads', client.meta, `channel=meta&${q}`, (r) => r.meta),
     section('Google Ads', client.google, `channel=google&${q}`, (r) => r.google),
@@ -152,9 +174,11 @@ export async function assembleMonthlyReport(client, period, onProgress) {
     section('13-month trend', client.meta || client.google, `scope=monthlytrend&months=13&${q}`, (r) => ({ trend: r.trend || [], gtrend: r.gtrend || [] })),
     section('CRM deals', client.ghl, `scope=monthlydeals&${q}`, (r) => r.deals),
     section('Form performance', client.ghl, `scope=forms&${q}`, (r) => ({ forms: r.forms, pipelines: r.pipelines })),
+    section('Channel performance', client.ghl, `scope=ccdrill&channel=all&wonBasis=closed&${q}`, trimCc),
+    section('Channel performance · period before', client.ghl, `scope=ccdrill&channel=all&wonBasis=closed&${qPrev}`, trimCc),
   ])
   note('Reading Meta, Google and the CRM…')
-  const [meta, google, blend, attribution, trendR, dealsR, formsR] = await parts
+  const [meta, google, blend, attribution, trendR, dealsR, formsR, ccR, ccPrevR] = await parts
   if (failed.length) throw new Error(`These parts did not answer after twelve tries: ${failed.join(', ')}. Nothing was saved - press Generate to try again.`)
   // Join CRM key-event outcomes (utm_content) onto each Meta creative so the
   // creative slide can show Leads → Booked → Shown → Won → Revenue per ad, the
@@ -216,7 +240,7 @@ export async function assembleMonthlyReport(client, period, onProgress) {
     v: 1, client: { id: client.id, name: client.name, industry: client.industry || null },
     month: period.key, period: b, currency: undefined,
     hasMeta: !!client.meta, hasGoogle: !!client.google, hasCrm: !!client.ghl,
-    meta, google, blend, attribution: attrTrim, trend: (trendR && trendR.trend) || [], gtrend: (trendR && trendR.gtrend) || [], deals: dealsR || null,
+    meta, google, blend, attribution: attrTrim, trend: (trendR && trendR.trend) || [], gtrend: (trendR && trendR.gtrend) || [], deals: dealsR || null, cc: ccR || null, ccPrev: ccPrevR || null, prevPeriod: prevP,
     // ID→name folds so Google's utm_campaign / utm_content (which carry the numeric
     // campaign / ad-group ID, not the name) resolve to the live campaign name - the
     // exact map the Meta/Google views pass to aliasedOutcomeMap. Without it the
@@ -2134,70 +2158,118 @@ export function renderMonthlyDeck(rep, h) {
     )
 
     // ---- Account summary & ROI ----
-    const roiRows = ['meta', 'google'].map((cKey) => ({
-      label: cKey === 'meta' ? 'Meta' : 'Google',
-      spend: (cKey === 'meta' ? paid.metaSpend : paid.googleSpend) || 0,
-      rev: (scWon.byChannel && scWon.byChannel[cKey] && scWon.byChannel[cKey].revenue) || 0,
-      won: (scWon.byChannel && scWon.byChannel[cKey] && scWon.byChannel[cKey].count) || 0,
-      close: (scWon.byChannel && scWon.byChannel[cKey] && scWon.byChannel[cKey].avgCloseDays != null) ? scWon.byChannel[cKey].avgCloseDays : null,
-    })).filter((r) => r.spend || r.rev)
+    const prevB = blend && blend.prev ? blend.prev : null
+    const prevCrm = (prevB && prevB.crm) || null
+    const cc = rep.cc || null, pcc = rep.ccPrev || null
+    const ccTot = (cc && cc.totals) || null, pccTot = (pcc && pcc.totals) || null
+    const paidRevOf = (d) => (d && Array.isArray(d.closeByChannel) ? d.closeByChannel.filter((c) => c.channel === 'meta' || c.channel === 'google').reduce((t, c) => t + (c.revenue || 0), 0) : null)
+    const prevPaidRev = paidRevOf(pcc), prevSpend = prevB ? prevB.adSpend : null
+    const prevRoas = prevPaidRev != null && prevSpend ? prevPaidRev / prevSpend : null
+    const prevLabel = rep.prevPeriod && rep.prevPeriod.label ? rep.prevPeriod.label : 'the period before'
+    const prevResults = prevB ? (prevB.metaLeads || 0) + (prevB.googleConv || 0) : null
+    const Tile = ({ label, value, cur, prev, good = 'up', sub, strong, dp = 1 }) => (
+      <div className={`mr-kpi${strong ? ' mr-kpi-strong' : ''}`}>
+        <span className="mr-kpi-lab">{label}</span>
+        <b className="mr-kpi-val">{value}</b>
+        {prev != null && cur != null ? <span className="mr-cmp-row"><Dlt cur={cur} prev={prev} good={good} dp={dp} /><small>vs {prevLabel}</small></span> : null}
+        {sub ? <span className="mr-kpi-sub">{sub}</span> : null}
+      </div>
+    )
+    // Overall (created on): the old summary table, read top to bottom - what
+    // the platforms cost and returned, how the month's leads moved through the
+    // key events, what the business banked, and what the open leads could add.
+    const overallRows = keyEventRows(rawKeyEvents, rmap, calMap, stagePos, coWon.count || 0)
+    const cohortLeads = crm.leads || 0
+    const winOfResulted = cohortResulted ? (coWon.count || 0) / cohortResulted : 0
+    const aov = coWon.avgValue || (coWon.count ? coWon.revenue / coWon.count : 0)
+    const potentialRev = (crm.open || 0) * winOfResulted * aov
+    const mer = totalSpend ? (coWon.revenue / totalSpend) * 100 : null
+    const potentialRoi = totalSpend ? ((coWon.revenue + potentialRev) / totalSpend) * 100 : null
+    const funnelGroups = [
+      rep.hasMeta && { name: 'Meta', cls: 'g-meta', rows: [['Spend', money(paid.metaSpend || 0)], ['Results', n0(metaResults)], ['Cost / result', metaResults ? money((paid.metaSpend || 0) / metaResults) : '-']] },
+      rep.hasGoogle && { name: 'Google', cls: 'g-google', rows: [['Spend', money(paid.googleSpend || 0)], ['Conversions', n0(gConv)], ['Cost / conversion', gConv ? money((paid.googleSpend || 0) / gConv) : '-']] },
+      rep.hasCrm && { name: 'Caalano Systems', cls: 'g-crm', wide: true, rows: [
+        ['New leads', n0(cohortLeads), '100%', '100%', cohortLeads ? money(totalSpend / cohortLeads) : '-'],
+        ...overallRows.map((r, i) => { const prev = i === 0 ? cohortLeads : overallRows[i - 1].count; return [r.label.replace(/^📅 /, ''), n0(r.count), pc(r.count, cohortLeads), prev ? pc(r.count, prev) : '-', r.count ? money(totalSpend / r.count) : '-'] }),
+      ] },
+      rep.hasCrm && { name: 'Business', cls: 'g-biz', rows: [['Revenue', money(coWon.revenue)], ['Average order value', money(aov)], ['MER', mer == null ? '-' : fmtPct(mer, 0)]] },
+      rep.hasCrm && { name: 'Potential revenue', cls: 'g-pot', rows: [['Open', n0(crm.open)], ['Lost / abandoned', n0(cohortLost)], ['Potential ROI', potentialRoi == null ? '-' : fmtPct(potentialRoi, 0)], ['Potential additional revenue', money(potentialRev)]] },
+    ].filter(Boolean)
+    // The Caalano360 tab's channel table and key event reach, from the drill
+    // frozen with the report; older snapshots fall back to the cohort funnel.
+    let reachBlock = null
+    if (cc && rep.hasCrm) {
+      try {
+        const intel = buildIntel(cc, pcc, rep.client.id, money)
+        const kef = ccKeyEventFunnel(cc, rep.client.id, ccTot && ccTot.won, ccTot && ccTot.leads)
+        if (intel && kef && kef.rows && kef.rows.length) reachBlock = <ExecReach quiet reach={intel.reach} multi={kef.multi} kef={kef} cc={cc} pcc={pcc} clientId={rep.client.id} money={money} spend={totalSpend} leadTotal={kef.leadTotal} wonBasis="closed" />
+      } catch { reachBlock = null }
+    }
     push(
-      <MRSlide key="c360" kicker="Caalano360" title="Account summary & ROI" sub="Ad platform + CRM. Spend & leads are this month's; ROAS is measured only on revenue from deals attributed to a paid channel (Meta/Google) via UTM - never total business.">
+      <MRSlide key="c360" kicker="Caalano360" title="Account summary & ROI" sub={`The month in one place, each figure against ${prevLabel}. ROAS is measured only on revenue from deals attributed to a paid channel (Meta / Google) via UTM - never total business.`}>
         <div className="mr-kpirow mr-kpirow-wide">
-          <MRKpi label="Total ad spend" value={money(totalSpend)} />
-          <MRKpi label="Paid results" value={n0(paidLeads)} sub="Meta results + Google conv · not CRM leads" />
-          <MRKpi label="Cost / result" value={paidLeads ? money(totalSpend / paidLeads) : '-'} sub="spend ÷ ad results" />
-          <MRKpi label="Deals won · created" value={n0(coWon.count)} sub="this month's leads" />
-          <MRKpi label="Deals won · closed" value={n0(dealsWon)} sub="closed this month" />
-          <MRKpi label="Paid revenue" value={money(paidRev)} strong sub="closed this month" />
-          <MRKpi label="ROAS (paid)" value={roas != null ? roas.toFixed(1) + 'x' : '-'} sub="cash / status change" />
-          <MRKpi label="Cost / won (paid)" value={paidWon ? money(totalSpend / paidWon) : '-'} />
-          <MRKpi label="Avg time to close" value={scWon.avgCloseDays != null ? `${scWon.avgCloseDays} days` : '-'} sub="lead → won" />
-          <MRKpi label="Open pipeline" value={money(crm.openValue)} sub={`${n0(crm.open)} open`} />
+          {rep.hasMeta ? <Tile label="Meta spend" value={money(paid.metaSpend || 0)} cur={paid.metaSpend || 0} prev={prevB ? prevB.metaSpend : null} good="neu" /> : null}
+          {rep.hasGoogle ? <Tile label="Google spend" value={money(paid.googleSpend || 0)} cur={paid.googleSpend || 0} prev={prevB ? prevB.googleSpend : null} good="neu" /> : null}
+          <Tile label="Total ad spend" value={money(totalSpend)} cur={totalSpend} prev={prevSpend} good="neu" />
+          <Tile label="Paid results" value={n0(paidLeads)} cur={paidLeads} prev={prevResults} sub="Meta results + Google conversions" />
+          <Tile label="Cost / result" value={paidLeads ? money(totalSpend / paidLeads) : '-'} cur={paidLeads ? totalSpend / paidLeads : null} prev={prevResults && prevSpend ? prevSpend / prevResults : null} good="down" />
+          {rep.hasCrm ? <>
+            <Tile label="CRM leads" value={n0(crm.leads)} cur={crm.leads} prev={prevCrm ? prevCrm.leads : null} sub="created this month" />
+            <Tile label="Won · created" value={n0(coWon.count)} cur={coWon.count} prev={prevCrm ? prevCrm.won : null} sub="this month's leads" />
+            <Tile label="Revenue · created" value={money(coWon.revenue)} cur={coWon.revenue} prev={prevCrm ? prevCrm.revenue : null} />
+            <Tile label="Won · closed" value={n0(dealsWon)} cur={dealsWon} prev={pccTot ? pccTot.won : null} sub="closed this month" />
+            <Tile label="Revenue · closed" value={money(realisedRev)} cur={realisedRev} prev={pcc && pcc.revenue ? pcc.revenue.total : null} />
+            <Tile label="Paid revenue" value={money(paidRev)} cur={paidRev} prev={prevPaidRev} strong sub="closed · Meta + Google" />
+            <Tile label="ROAS (paid)" value={roas != null ? roas.toFixed(1) + 'x' : '-'} cur={roas} prev={prevRoas} />
+            <Tile label="Cost / won (paid)" value={paidWon ? money(totalSpend / paidWon) : '-'} cur={paidWon ? totalSpend / paidWon : null} prev={pcc && pcc.paid && pcc.paid.paidWon && prevSpend ? prevSpend / pcc.paid.paidWon : null} good="down" />
+            <Tile label="Avg time to close" value={scWon.avgCloseDays != null ? `${scWon.avgCloseDays} days` : '-'} sub="lead → won" />
+            <Tile label="Open pipeline" value={money(crm.openValue)} cur={crm.openValue} prev={prevCrm ? prevCrm.openValue : null} good="neu" sub={`${n0(crm.open)} open`} />
+          </> : null}
         </div>
+        <div className="mr-section-lab">Overall · {b.label} · created on</div>
+        <div className="table-wrap"><table className="mr-table mr-funnel-tbl">
+          <thead><tr><th className="lft">Funnel</th><th className="lft">Metric</th><th className="r">Total</th><th className="r" title="Share of this month's leads">CVR</th><th className="r" title="Share of the row before">Next step</th><th className="r" title="Total ad spend ÷ the count">CPA</th></tr></thead>
+          <tbody>{funnelGroups.map((g) => g.rows.map((r, i) => (
+            <tr key={g.name + i} className={g.cls}>
+              {i === 0 ? <td className="lft mr-funnel-grp" rowSpan={g.rows.length}><span>{g.name}</span></td> : null}
+              <td className="lft">{r[0]}</td>
+              <td className="r"><b>{r[1]}</b></td>
+              <td className="r">{r[2] || ''}</td>
+              <td className="r">{r[3] || ''}</td>
+              <td className="r">{r[4] || ''}</td>
+            </tr>
+          )))}</tbody>
+        </table></div>
+        <p className="mr-foot-note">Potential additional revenue = open leads × this month's win rate among resulted leads ({pc(coWon.count, cohortResulted)}) × average order value. Potential ROI = (revenue + that) ÷ ad spend. MER = revenue ÷ ad spend.</p>
+        {cc ? <>
+          <div className="mr-section-lab">Channel performance <span className="mr-lab-note">· spend → key events → outcomes per paid channel · closed this month</span></div>
+          <ChannelPerfBody cc={cc} channels={{ metaSpend: paid.metaSpend || 0, googleSpend: paid.googleSpend || 0, metaLeads: paid.metaLeads || 0, googleConv: paid.googleConv || 0 }} adsOk={{}} cashOn={loadCashOn(rep.client.id)} clientId={rep.client.id} money={money} />
+        </> : null}
+        {reachBlock ? <div className="mr-reach">{reachBlock}</div>
+          : funnelPipes.length
+            ? <>
+              <div className="mr-section-lab">This month's leads → key events (created-on cohort){multiPipe && funnelPipes.length > 1 ? ' · one funnel per pipeline' : ''}</div>
+              {multiPipe && funnelPipes.length > 1
+                ? <div className="mr-funnel-split">{funnelPipes.map((f) => (
+                  <div className="mr-funnel-big" key={f.pipe.id}>
+                    <KeyEventsFunnel rows={f.rows} total={f.leads} spend={funnelSpendOf(f)} currency={currency} title={f.pipe.name} sub={`${n0(f.leads)} leads created this month in this pipeline · spend allocated by lead share`} caveat="One cohort: this pipeline's leads created this month and how far they've progressed." />
+                  </div>
+                ))}</div>
+                : <div className="mr-funnel-big"><KeyEventsFunnel rows={funnelPipes[0].rows} total={funnelPipes[0].leads} spend={totalSpend} currency={currency} caveat="One cohort: leads created this month and how far they've progressed." /></div>}
+            </>
+            : null}
         <div className="mr-two mr-two-viz">
           <div>
             <div className="mr-section-lab">Revenue - status change vs created on</div>
             <div className="mr-revmatrix-wrap"><MRRevMatrix sc={scWon} co={coWon} spend={totalSpend} money={money} n0={n0} onDrill={openDrill} lostSc={md ? md.lost : null} lostCo={md && md.lostCreatedOn ? md.lostCreatedOn : null} /></div>
-            {roiRows.length > 0 && (
-              <>
-                <div className="mr-section-lab">ROI by channel (closed this month)</div>
-                <MRTable
-                  cols={[
-                    { k: 'label', label: 'Channel', render: (r) => <span className="mr-name">{r.label}</span> },
-                    { k: 'spend', label: 'Spend', align: 'r', render: (r) => money(r.spend) },
-                    { k: 'won', label: 'Won', align: 'r', render: (r) => n0(r.won) },
-                    { k: 'rev', label: 'Revenue', align: 'r', render: (r) => money(r.rev) },
-                    { k: 'roas', label: 'ROAS', align: 'r', render: (r) => (r.spend ? (r.rev / r.spend).toFixed(1) + 'x' : '-') },
-                    { k: 'cac', label: 'CAC', align: 'r', render: (r) => (r.won ? money(r.spend / r.won) : '-') },
-                    { k: 'close', label: 'Avg close', align: 'r', render: (r) => (r.close != null ? `${r.close} days` : '-') },
-                  ]}
-                  rows={roiRows}
-                />
-              </>
-            )}
           </div>
           <div>
             <div className="mr-viz-lab">Leads by status (this month)</div>
-            {statusDonut.length ? <MRDonut data={statusDonut} money={money} /> : <div className="mr-empty">No leads this month.</div>}
-            <p className="mr-foot-note" style={{ marginTop: 6 }}>Of {n0(crm.leads)} leads created this month: {n0(coWon.count)} won, {n0(lost.total.count)} lost, {n0(crm.open)} still open.</p>
+            {cohortDonut.length ? <MRDonut data={cohortDonut} money={money} /> : <div className="mr-empty">No leads this month.</div>}
+            <p className="mr-foot-note" style={{ marginTop: 6 }}>Of {n0(crm.leads)} leads created this month: {n0(coWon.count)} won, {n0(cohortLost)} lost or abandoned, {n0(crm.open)} still open.</p>
           </div>
         </div>
-        <p className="mr-foot-note">Status change = deals marked won this month (cash banked, any lead date). Created on = deals whose lead came in this month and are won. Total business closed this month was {money(realisedRev)} across {n0(dealsWon)} deal(s){otherRev > 0 ? `, of which ${money(otherRev)} came from organic / referral / untracked sources (excluded from paid ROAS)` : ''}.</p>
-        <div className="mr-section-lab">This month's leads → key events (created-on cohort){multiPipe && funnelPipes.length > 1 ? ' · one funnel per pipeline' : ''}</div>
-        {funnelPipes.length
-          ? (multiPipe && funnelPipes.length > 1
-            ? <div className="mr-funnel-split">
-              {funnelPipes.map((f) => (
-                <div className="mr-funnel-big" key={f.pipe.id}>
-                  <KeyEventsFunnel rows={f.rows} total={f.leads} spend={funnelSpendOf(f)} currency={currency}
-                    title={f.pipe.name} sub={`${n0(f.leads)} leads created this month in this pipeline · spend allocated by lead share`}
-                    caveat="One cohort: this pipeline's leads created this month and how far they've progressed. “Cost / event” spreads that pipeline's share of ad spend across every event - a blended guide, not paid-only CAC." />
-                </div>
-              ))}
-            </div>
-            : <div className="mr-funnel-big"><KeyEventsFunnel rows={funnelPipes[0].rows} total={funnelPipes[0].leads} spend={totalSpend} currency={currency} caveat="One cohort: leads created this month and how far they've progressed. “Cost / event” spreads total ad spend across every event, so it's a blended guide, not paid-only CAC." /></div>)
-          : <div className="mr-empty">No key events configured - set them in Settings → Key events.</div>}
+        <p className="mr-foot-note">Status change = deals marked won this month (cash banked, any lead date). Created on = deals whose lead came in this month and are won. Total business closed this month was {money(realisedRev)} across {n0(dealsWon)} deal(s){otherRev > 0 ? `, of which ${money(otherRev)} came from non-paid or unattributed sources` : ''}.</p>
       </MRSlide>
     )
   }

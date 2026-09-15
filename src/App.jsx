@@ -36,7 +36,7 @@ const lazyView = (load, name) => {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-export const APP_VERSION = '3.663.0'
+export const APP_VERSION = '3.664.0'
 // The business clock. Every server window is cut on the client's local day
 // (Caalano Systems location timezone), so any day the app derives on its own -
 // preset ranges, "today", CSV dates - must use the same clock rather than the
@@ -18352,7 +18352,10 @@ const PivotReport = lazyView(() => import('./views/pivot.jsx'), 'PivotReport')
 // and nothing is read until a client is chosen (or the link carries one), so
 // opening the page never loads a client nobody asked for. The list is only the
 // clients this person can reach with a CRM.
-function useHubClient(view, clients) {
+function useHubClient(view, clients, authUser) {
+  // An agency person chooses a client; a client-side person with several
+  // accounts chooses between their own businesses.
+  const noun = authUser && isClientRoleFE(authUser.role) ? 'business' : 'client'
   const list = useMemo(() => (clients || []).slice().sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base' })), [clients])
   const [clientId, setClientId] = useState(() => { const c = readNavUrl().c; if (c && list.some((x) => x.id === c)) return c; return list.length === 1 ? list[0].id : '' })
   // The view rides along with the client, or a ?c= alone would read as a
@@ -18360,33 +18363,33 @@ function useHubClient(view, clients) {
   useEffect(() => { writeNavUrl({ v: view, c: clientId || null }, false) }, [clientId, view])
   const client = list.find((c) => c.id === clientId) || (list.length === 1 ? list[0] : null)
   const picker = list.length > 1 ? (
-    <div className="hub-bar"><label className="act-sel">Client <select value={client ? client.id : ''} onChange={(e) => setClientId(e.target.value)}>
-      <option value="">Choose a client…</option>
+    <div className="hub-bar"><label className="act-sel">{noun === 'business' ? 'Business' : 'Client'} <select value={client ? client.id : ''} onChange={(e) => setClientId(e.target.value)}>
+      <option value="">Choose a {noun}…</option>
       {list.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
     </select></label></div>
   ) : null
-  return { list, client, picker }
+  return { list, client, picker, noun }
 }
-function HubChoose({ what }) {
-  return <div className="card empty-deep hub-choose"><div className="big">☰</div><b>Choose a client to open their {what}.</b><p style={{ maxWidth: 460 }}>Nothing is read until you pick one, so this page opens instantly.</p></div>
+function HubChoose({ noun }) {
+  return <div className="card empty-deep hub-choose"><b>Choose a {noun} to get started.</b></div>
 }
 function ActionHubPage({ clients, currency, authUser, nonce }) {
-  const { list, client, picker } = useHubClient('actionhub', clients)
+  const { list, client, picker, noun } = useHubClient('actionhub', clients, authUser)
   if (!list.length) return <div className="card empty-deep"><div className="big">✓</div><b>No client with a CRM connection.</b></div>
   return (
     <div className="hub-page">
       {picker}
-      {client ? <DealsActionsView key={client.id} clientId={client.id} authUser={authUser} currency={currency} nonce={nonce} /> : <HubChoose what={ACTION_HUB_LABEL} />}
+      {client ? <DealsActionsView key={client.id} clientId={client.id} authUser={authUser} currency={currency} nonce={nonce} /> : <HubChoose noun={noun} />}
     </div>
   )
 }
 function SalesHubPage({ clients, currency, authUser, nonce }) {
-  const { list, client, picker } = useHubClient('saleshub', clients)
+  const { list, client, picker, noun } = useHubClient('saleshub', clients, authUser)
   if (!list.length) return <div className="card empty-deep"><div className="big">✓</div><b>No client with a CRM connection.</b></div>
   return (
     <div className="hub-page">
       {picker}
-      {client ? <SalesHubView key={client.id} clientId={client.id} authUser={authUser} currency={currency} nonce={nonce} /> : <HubChoose what="Sales Hub" />}
+      {client ? <SalesHubView key={client.id} clientId={client.id} authUser={authUser} currency={currency} nonce={nonce} /> : <HubChoose noun={noun} />}
     </div>
   )
 }

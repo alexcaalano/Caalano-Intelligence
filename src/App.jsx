@@ -36,7 +36,7 @@ const lazyView = (load, name) => {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-export const APP_VERSION = '3.660.0'
+export const APP_VERSION = '3.661.0'
 // The business clock. Every server window is cut on the client's local day
 // (Caalano Systems location timezone), so any day the app derives on its own -
 // preset ranges, "today", CSV dates - must use the same clock rather than the
@@ -19438,8 +19438,8 @@ function Dashboard({ authUser, authEnabled, onLogout, realUser, onViewAs }) {
         )}
         <nav className="nav">
           {!isViewer && <>
-            {canHub && <button className={curView === 'actionhub' ? 'active' : ''} onClick={() => go('actionhub')}><span className="ic"><NavIcon name="actionhub" /></span>{ACTION_HUB_LABEL}</button>}
             {showView('overview') && <button className={curView === 'overview' ? 'active' : ''} onClick={() => go('overview')}><span className="ic"><NavIcon name="overview" /></span>Agency Overview</button>}
+            {canHub && <button className={curView === 'actionhub' ? 'active' : ''} onClick={() => go('actionhub')}><span className="ic"><NavIcon name="actionhub" /></span>{ACTION_HUB_LABEL}</button>}
             {showView('trends') && <button className={curView === 'trends' ? 'active' : ''} onClick={() => go('trends')}><span className="ic"><NavIcon name="trends" /></span>Daily Performance</button>}
             {showView('weekly') && <button className={curView === 'weekly' ? 'active' : ''} onClick={() => go('weekly')}><span className="ic"><NavIcon name="weekly" /></span>Weekly Traffic Light</button>}
             {showView('forecast') && <button className={curView === 'forecast' ? 'active' : ''} onClick={() => go('forecast')}><span className="ic"><NavIcon name="forecast" /></span>Funnel Forecaster</button>}

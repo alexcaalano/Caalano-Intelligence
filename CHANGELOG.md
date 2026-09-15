@@ -16,6 +16,10 @@ git commit that produced it, so any version can be redeployed or reverted to.
 
 The version number also appears in the app sidebar. Newest first.
 
+## v3.661.0 - 2026-09-15 (commit PENDING)
+
+- **Action Centre in the menu.** For agency users it now sits one below Agency Overview instead of at the top. Client-side users, who have no Agency Overview, keep it first. The client picker on the page still shows only when the person can reach more than one client with a CRM.
+
 ## v3.660.0 - 2026-09-15 (commit 4e4b149)
 
 Speed to lead grows touch and contact rates, attempts per contact and to close, and a by-rep table; the Monthly Report's Sales Performance page gets the consolidated version.

@@ -16,6 +16,19 @@ git commit that produced it, so any version can be redeployed or reverted to.
 
 The version number also appears in the app sidebar. Newest first.
 
+## v3.658.0 - 2026-09-15 (commit f993bd0)
+
+Monthly Report: Meta on one page, a calmer Account summary, meeting notes in one place, and a tidier present mode.
+
+- **Meta on one page.** Creative performance now sits under Campaigns & ad sets on the Meta performance page (both boxed), so the Creative page is gone from the deck.
+- **Account summary & ROI, consolidated.** One line of scorecards in three labelled groups: Paid media (total ad spend with the Meta / Google split beneath, total leads, cost per result), This month's leads · created on (CRM leads, won, revenue) and Closed this month · status change (won, revenue, ROAS with paid revenue beneath, CAC, average time to close). Then Channel performance, Key event reach, the Overall table, and at the bottom Revenue status change vs created on beside a new Potential revenue box that shows the whole working (open leads × win rate × order value, then the ROI on top of ad spend). Potential revenue leaves the Overall table.
+- **Sales Performance.** The status / lost-reason pie box is the same height as the lost-reasons table, chart centred.
+- **Notes widget.** Sits level with the report (under the slide chips) and just below the toolbar however it wraps; labels are now Insights and Meeting notes.
+- **Report settings.** Scrolls on its own, and gains a Meeting notes section listing every page's meeting notes with its insights, with Copy all and Download .txt.
+- **Present mode.** Only the slide chips, the deck and the notes stay on screen; Esc leaves.
+
+---
+
 ## v3.657.0 - 2026-09-15 (commit 513a995)
 
 Monthly Report: every block now sits in the same box, and cash collected joins the Sales Performance page.

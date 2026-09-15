@@ -18,6 +18,15 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.655.0 - 2026-09-15
+
+**Monthly Report: one side panel, on the right** (commit PENDING)
+
+- Notes and Report settings both open on the right of the deck, and only one is open at a time: pressing Notes closes Report settings, pressing Report settings closes Notes. Nothing sits to the left of the deck any more, for clients too.
+- The Report settings panel scrolls within the window rather than stretching the page.
+
+---
+
 ## v3.654.0 - 2026-09-15
 
 **Monthly Report: Insights and live Notes, Report settings, a tidier toolbar** (commit 389aa3b)

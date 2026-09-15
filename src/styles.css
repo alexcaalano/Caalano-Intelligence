@@ -5899,7 +5899,7 @@ body.hub-tv-on { overflow: hidden; }
 .mr-notes-txt { white-space: pre-wrap; font-size: 13.5px; line-height: 1.5; }
 .mr-split { display: flex; gap: 16px; align-items: flex-start; }
 .mr-split .mr-main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 16px; }
-.mr-notes-panel { flex: 0 0 320px; position: sticky; top: 64px; max-height: calc(100vh - 80px); overflow: auto; background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+.mr-notes-panel { flex: 0 0 320px; position: sticky; top: 70px; height: calc(100vh - 90px); overflow: auto; overscroll-behavior: contain; background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
 .mr-notes-panel-h { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .mr-notes-panel-h b { font-size: 14px; }
 .mr-notes-panel-h .mr-btn { margin-left: auto; }
@@ -5953,7 +5953,7 @@ body.hub-tv-on { overflow: hidden; }
 .mr-mp-tbl-wrap { max-height: 192px; overflow-y: auto; }
 .mr-mp-tbl thead th { position: sticky; top: 0; background: var(--panel); z-index: 1; }
 /* The live widget beside the deck: the page's insights and a notes box. */
-.mr-live { flex: 0 0 15%; min-width: 190px; position: sticky; top: 64px; max-height: calc(100vh - 80px); overflow: auto; background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+.mr-live { flex: 0 0 300px; position: sticky; top: 70px; max-height: calc(100vh - 90px); overflow: auto; overscroll-behavior: contain; background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
 .mr-live-h { font-size: 12px; font-weight: 800; letter-spacing: -.01em; }
 .mr-live-lab { font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; color: var(--brand); margin-top: 4px; }
 .mr-live-lab small { text-transform: none; letter-spacing: 0; font-weight: 500; color: var(--faint); margin-left: 4px; }

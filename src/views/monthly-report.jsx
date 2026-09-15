@@ -591,8 +591,8 @@ export function ClientReports({ clients, currency }) {
       )}
       {rep && (
         <div className={'mr-split' + (insightC && view === 'slides' ? ' on' : '')}>
-          {insightC && view === 'slides' ? <aside className="mr-live no-print"><div className="mr-live-h">Insights</div><div className="mr-live-txt">{insightC}</div></aside> : null}
           <div className="mr-main"><div className={'mr-deck' + (view === 'slides' ? ' mr-slides' : '')} ref={deckRef}><div className="mr-track" style={view === 'slides' ? { transform: `translateX(-${cur * 100}%)` } : undefined}>{deck}</div></div></div>
+          {insightC && view === 'slides' ? <aside className="mr-live no-print"><div className="mr-live-h">Insights</div><div className="mr-live-txt">{insightC}</div></aside> : null}
         </div>
       )}
       {drill && <MRDrill drill={drill} currency={currency} campMap={rep && rep.campIdMap} medMap={rep && rep.mediumIdMap} onClose={() => setDrill(null)} />}
@@ -776,8 +776,8 @@ export function MonthlyReport({ clients, currency, authUser }) {
           <button className={view === 'scroll' ? 'on' : ''} onClick={() => setView('scroll')}>▦ Scroll</button>
         </div>
         <div className="mr-btn-grp">
-          {canEdit && <button className={`mr-btn${showNotes ? ' on' : ''}`} onClick={() => setShowNotes((v) => !v)} disabled={!rep} title="The page's insights beside the deck, with a notes box for what comes up on the call">Notes</button>}
-          {canEdit && <button className={`mr-btn${editing ? ' on' : ''}`} onClick={() => setEditing((e) => !e)} disabled={!rep} title="Insights for each page of this report, and the settings for every report of this client">⚙ Report settings</button>}
+          {canEdit && <button className={`mr-btn${showNotes ? ' on' : ''}`} onClick={() => { setShowNotes((v) => !v); setEditing(false) }} disabled={!rep} title="The page's insights beside the deck, with a notes box for what comes up on the call">Notes</button>}
+          {canEdit && <button className={`mr-btn${editing ? ' on' : ''}`} onClick={() => { setEditing((e) => !e); setShowNotes(false) }} disabled={!rep} title="Insights for each page of this report, and the settings for every report of this client">⚙ Report settings</button>}
           <button className="mr-btn" onClick={present} disabled={!rep} title="Present fullscreen (for screen-share)">{fs ? '⤢ Exit' : '⛶ Present'}</button>
           <button className="mr-btn" onClick={downloadPdf} disabled={!rep || exporting} title="Download as PDF">{exporting ? 'Exporting…' : '⤓ PDF'}</button>
           <details className="mr-more">
@@ -822,21 +822,6 @@ export function MonthlyReport({ clients, currency, authUser }) {
       {st.status === 'empty' && <div className="mr-note mr-empty-deep"><div className="big">🗓️</div><b>No snapshot for {period.label} yet.</b><p>Pick the client and period (one month, or a range via the two pickers), then <b>Generate snapshot</b> to freeze these numbers. Wins are captured by the month a deal was marked won - so late-closing leads show in the month they closed.</p></div>}
 
       <div className={'mr-split' + ((editing || showNotes) && rep ? ' on' : '')}>
-        {showNotes && rep && (() => {
-          const curEl = deck[cur]; const k = curEl ? curEl.key : null
-          const title = curEl && curEl.props && curEl.props.title ? curEl.props.title : 'Cover'
-          const ins = k && draft[k] && String(draft[k]).trim() ? String(draft[k]).trim() : ''
-          return (
-            <aside className="mr-live no-print">
-              <div className="mr-live-h">{title}</div>
-              <div className="mr-live-lab">Insights <small>pre-meeting notes</small></div>
-              {ins ? <div className="mr-live-txt">{ins}</div> : <div className="mr-live-empty">No insights for this page.</div>}
-              <div className="mr-live-lab">Notes <small>live on the call</small></div>
-              {k ? <textarea className="mr-live-box" rows={8} value={liveDraft[k] || ''} onChange={(e) => setLive(k, e.target.value)} placeholder="What came up on the call…" /> : null}
-              <div className="mr-live-foot">{savedTag}</div>
-            </aside>
-          )
-        })()}
         <div className="mr-main">
       {rep && view === 'slides' && total > 0 && (
         <div className="mr-nav no-print">
@@ -854,6 +839,21 @@ export function MonthlyReport({ clients, currency, authUser }) {
         </div>
       )}
         </div>
+        {showNotes && rep && (() => {
+          const curEl = deck[cur]; const k = curEl ? curEl.key : null
+          const title = curEl && curEl.props && curEl.props.title ? curEl.props.title : 'Cover'
+          const ins = k && draft[k] && String(draft[k]).trim() ? String(draft[k]).trim() : ''
+          return (
+            <aside className="mr-live no-print">
+              <div className="mr-live-h">{title}</div>
+              <div className="mr-live-lab">Insights <small>pre-meeting notes</small></div>
+              {ins ? <div className="mr-live-txt">{ins}</div> : <div className="mr-live-empty">No insights for this page.</div>}
+              <div className="mr-live-lab">Notes <small>live on the call</small></div>
+              {k ? <textarea className="mr-live-box" rows={8} value={liveDraft[k] || ''} onChange={(e) => setLive(k, e.target.value)} placeholder="What came up on the call…" /> : null}
+              <div className="mr-live-foot">{savedTag}</div>
+            </aside>
+          )
+        })()}
         {editing && rep && (
           <aside className="mr-notes-panel no-print">
             <div className="mr-notes-panel-h"><b>Report settings</b>{savedTag}<button type="button" className="mr-btn sm" onClick={() => setEditing(false)}>Done</button></div>

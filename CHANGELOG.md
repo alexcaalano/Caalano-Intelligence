@@ -16,6 +16,11 @@ git commit that produced it, so any version can be redeployed or reverted to.
 
 The version number also appears in the app sidebar. Newest first.
 
+## v3.675.0 - 2026-09-15 (commit PENDING)
+
+- **Biggest movers and Account health fold.** On Agency Overview the two section titles are switches: press one to hide its body, press again to bring it back; each browser remembers the choice.
+- **Sidebar rhythm.** Account sections sit at the same spacing as the agency entries (there was an extra 4px between sections). Font, weight, size, colour and padding were already identical.
+
 ## v3.674.0 - 2026-09-15 (commit 9d97271)
 
 Less text on screen, Reporting in the sidebar, and no purple flash on reload.

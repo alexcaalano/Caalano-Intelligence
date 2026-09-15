@@ -186,6 +186,11 @@ body {
 .section-title > .sub, .v2-sec-h h3 > .sub, .cc-group-lab > .sub { display: inline-grid; place-items: center; width: 16px; height: 16px; border-radius: 50%; border: 1px solid var(--border-2); font-size: 0; line-height: 0; color: transparent; vertical-align: middle; cursor: help; margin-left: 2px; overflow: hidden; }
 .section-title > .sub::before, .v2-sec-h h3 > .sub::before, .cc-group-lab > .sub::before { content: 'i'; font-size: 10.5px; font-weight: 800; font-family: Georgia, 'Times New Roman', serif; font-style: italic; color: var(--faint); line-height: 1; }
 .section-title, .v2-sec-h h3, .cc-group-lab { position: relative; }
+/* Foldable Overview sections: the title is the switch. */
+.section-title .sec-fold-btn { display: inline-flex; align-items: center; gap: 6px; background: none; border: 0; padding: 0; margin: 0; font: inherit; color: inherit; cursor: pointer; }
+.section-title .sec-fold-btn:hover { color: var(--brand); }
+.section-title .sec-chev { font-size: 11px; color: var(--faint); }
+.section-title.sec-fold.closed { margin-bottom: 8px; }
 .section-title:hover > .sub, .v2-sec-h h3:hover > .sub, .cc-group-lab:hover > .sub { position: absolute; z-index: 30; top: calc(100% + 4px); left: 0; display: block; width: max-content; max-width: min(440px, 80vw); height: auto; overflow: visible; border-radius: 10px; border: 1px solid var(--border-2); background: var(--elev, var(--panel)); box-shadow: var(--shadow); padding: 8px 11px; font-size: 12px; line-height: 1.45; color: var(--muted); font-weight: 500; text-transform: none; letter-spacing: 0; margin: 0; }
 .section-title:hover > .sub::before, .v2-sec-h h3:hover > .sub::before, .cc-group-lab:hover > .sub::before { content: none; }
 
@@ -6151,7 +6156,7 @@ body.hub-tv-on { overflow: hidden; }
 .mr-btn-dot::after { content: ''; position: absolute; top: 6px; right: 6px; width: 7px; height: 7px; border-radius: 50%; background: #f0a53a; }
 /* Account frame: the client's areas in the sidebar, pages indented beneath */
 .nav-grp { display: flex; flex-direction: column; gap: 2px; }
-.nav-grp + .nav-grp { margin-top: 4px; }
+.nav-grp + .nav-grp { margin-top: 0; }
 /* Account sections: a pressable header per section; the open one lists its pages. */
 .nav button.nav-sec { gap: 12px; color: var(--muted); }
 .nav button.nav-sec .nav-sec-l { flex: 1; min-width: 0; }

@@ -36,7 +36,7 @@ const lazyView = (load, name) => {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-export const APP_VERSION = '3.674.0'
+export const APP_VERSION = '3.675.0'
 // The business clock. Every server window is cut on the client's local day
 // (Caalano Systems location timezone), so any day the app derives on its own -
 // preset ranges, "today", CSV dates - must use the same clock rather than the
@@ -420,6 +420,22 @@ const PHASE_COLOR = { contact: '#4f7cff', 'appt-set': '#6d5efc', 'at-risk': '#f0
 function Delta({ cur, prev, goodWhenDown = false }) {
   const pct = pctChange(cur, prev); const up = pct >= 0; const good = goodWhenDown ? !up : up
   return <span className={`delta ${good ? 'up' : 'down'}`}>{up ? '▲' : '▼'} {fmtPct(Math.abs(pct))}<span className="vs">vs prev</span></span>
+}
+// An Agency Overview section that folds: the title row stays, with a chevron
+// that hides or shows the body; open or closed is remembered per browser.
+const OV_SEC_KEY = 'caalano_ov_sections'
+function OvSection({ id, title, sub, children }) {
+  const [open, setOpen] = useState(() => { try { const j = JSON.parse(localStorage.getItem(OV_SEC_KEY) || '{}'); return j[id] !== false } catch { return true } })
+  const toggle = () => setOpen((o) => { const nx = !o; try { const j = JSON.parse(localStorage.getItem(OV_SEC_KEY) || '{}'); j[id] = nx; localStorage.setItem(OV_SEC_KEY, JSON.stringify(j)) } catch { /* private mode */ } return nx })
+  return (
+    <>
+      <div className={`section-title sec-fold${open ? '' : ' closed'}`}>
+        <button type="button" className="sec-fold-btn" onClick={toggle} aria-expanded={open} title={open ? 'Collapse' : 'Expand'}>{title}<span className="sec-chev">{open ? '▾' : '▸'}</span></button>
+        {sub ? <span className="sub">· {sub}</span> : null}
+      </div>
+      {open ? children : null}
+    </>
+  )
 }
 function Kpi({ label, value, tag, cur, prev, goodWhenDown, flat, onClick }) {
   const clickable = typeof onClick === 'function'
@@ -841,16 +857,16 @@ function Overview({ rows, currency, periodLabel, live, alerts, range, nonce, won
         <Kpi label={<>Revenue Generated <WonBasisChip basis={wonBasis} /></>} tag="CRM" value={crmIds.length ? (crmReady ? fmtCurrency(totalRev, currency) : '…') : '-'} flat={crmPending > 0 ? `${crmReady}/${crmIds.length} clients loaded` : undefined} />
         <Kpi label="ROAS" tag="CRM" value={crmReady && t.spend ? `${roas.toFixed(2)}×` : '-'} flat={crmPending > 0 ? 'loading CRM…' : undefined} />
       </div>
-      <div className="section-title">Biggest movers <span className="sub">· what changed most across every client vs the prior equal window</span></div>
-      <AgencyMovers rows={rows} currency={currency} nonce={nonce} onPick={onPick} />
-      {alerts && (alerts.meta || alerts.google) && <>
-        <div className="section-title">Account health <span className="sub">· $0 spend yesterday with an active prior week - likely paused / failed payment</span></div>
+      <OvSection id="movers" title="Biggest movers" sub="what changed most across every client vs the prior equal window">
+        <AgencyMovers rows={rows} currency={currency} nonce={nonce} onPick={onPick} />
+      </OvSection>
+      {alerts && (alerts.meta || alerts.google) && <OvSection id="health" title="Account health" sub="$0 spend yesterday with an active prior week - likely paused / failed payment">
         <div className="grid alerts-2">
           {/* Only surface alerts for active clients - inactive ones are hidden everywhere. */}
           <AlertCol title="Meta" color="#4f7cff" list={(alerts.meta || []).filter((a) => rowById[a.id])} checked={alerts.metaChecked !== false} />
           <AlertCol title="Google" color="#12b886" list={(alerts.google || []).filter((a) => rowById[a.id])} checked={alerts.googleChecked !== false} />
         </div>
-      </>}
+      </OvSection>}
       <div className="section-title">Client leaderboard <span className="sub">· results, funnel &amp; revenue per client vs the previous period · click a row to open the client</span></div>
       <AgencyComparison rows={rows} currency={currency} range={range} nonce={nonce} onPick={onPick} ov={ov} />
     </>

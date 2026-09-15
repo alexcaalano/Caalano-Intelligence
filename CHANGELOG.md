@@ -16,7 +16,7 @@ git commit that produced it, so any version can be redeployed or reverted to.
 
 The version number also appears in the app sidebar. Newest first.
 
-## v3.660.0 - 2026-09-15 (commit PENDING)
+## v3.660.0 - 2026-09-15 (commit 4e4b149)
 
 Speed to lead grows touch and contact rates, attempts per contact and to close, and a by-rep table; the Monthly Report's Sales Performance page gets the consolidated version.
 

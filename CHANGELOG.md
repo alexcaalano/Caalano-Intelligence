@@ -16,6 +16,12 @@ git commit that produced it, so any version can be redeployed or reverted to.
 
 The version number also appears in the app sidebar. Newest first.
 
+## v3.662.0 - 2026-09-15 (commit PENDING)
+
+- **Sidebar in two sections.** Agency first (the client picker, Agency Overview, Daily Performance, Weekly Traffic Light, Funnel Forecaster, Creative Cockpit, Meta Insights, Client Update, Reporting, Organic Social), then a rule and an Account section with Action Centre and Sales Hub. Sales Hub opens the client on screen (or the first client with a CRM) straight on its Sales Hub tab. Client-side users get the Account section above their Monthly Reports and dashboards.
+- **Action Centre loading.** Uses the Caalano360 loading screen while the CRM is read.
+- **Access table: Terms column.** Each person shows the Terms of Use version they signed and when, or *Not signed*. An account is Active once the invite is accepted; the terms are signed on the first sign-in after that, and until then the person sees only the signing screen. Last active now says "signed in · stopped at the terms" for someone in that state.
+
 ## v3.661.0 - 2026-09-15 (commit 1d9ccef)
 
 - **Action Centre in the menu.** For agency users it now sits one below Agency Overview instead of at the top. Client-side users, who have no Agency Overview, keep it first. The client picker on the page still shows only when the person can reach more than one client with a CRM.

@@ -36,7 +36,7 @@ const lazyView = (load, name) => {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-export const APP_VERSION = '3.661.0'
+export const APP_VERSION = '3.662.0'
 // The business clock. Every server window is cut on the client's local day
 // (Caalano Systems location timezone), so any day the app derives on its own -
 // preset ranges, "today", CSV dates - must use the same clock rather than the
@@ -17369,6 +17369,7 @@ export function UsersAdmin({ authUser, authEnabled, clients }) {
     if (key === 'email') return (u.email || '').toLowerCase()
     // Never seen sorts last on a descending "most recent first" click.
     if (key === 'seen') return u.lastSeen ? Date.parse(u.lastSeen) : -1
+    if (key === 'terms') return u.termsAcceptedAt ? Date.parse(u.termsAcceptedAt) : -1
     if (key === 'time') return recentMins(u)
     if (key === 'place') return placeOf(lastSession(u)) || 'zzz'   // unknown sorts last
     return (u.name || u.email || '').toLowerCase()
@@ -17411,8 +17412,8 @@ export function UsersAdmin({ authUser, authEnabled, clients }) {
           {acctF !== 'all' || roleF !== 'all' ? <span className="cap">{sortedTeam.length} of {team.length} people</span> : null}
         </div>
         <div className="table-wrap"><table className="mini-tbl appt-tbl users-tbl" style={{ marginTop: 12 }}>
-          <thead><tr><Th k="name" label="Name" /><Th k="email" label="Email" /><Th k="role" label="Role" /><Th k="access" label="Access" />{seeActivity && <><Th k="seen" label="Last active" /><Th k="time" label="Time (30d)" /><Th k="place" label="Sign-in location" /></>}<Th k="status" label="Status" /><th className="lft"></th></tr></thead>
-          <tbody>{state.status === 'loading' ? <tr><td colSpan={seeActivity ? 9 : 6}><Spinner label="Loading team…" /></td></tr> : sortedTeam.map((u) => {
+          <thead><tr><Th k="name" label="Name" /><Th k="email" label="Email" /><Th k="role" label="Role" /><Th k="access" label="Access" />{seeActivity && <><Th k="seen" label="Last active" /><Th k="time" label="Time (30d)" /><Th k="place" label="Sign-in location" /></>}<Th k="status" label="Status" /><Th k="terms" label="Terms" /><th className="lft"></th></tr></thead>
+          <tbody>{state.status === 'loading' ? <tr><td colSpan={seeActivity ? 10 : 7}><Spinner label="Loading team…" /></td></tr> : sortedTeam.map((u) => {
             const self = u.email === (authUser && authUser.email)
             const seen = seeActivity ? ago(u.lastSeen) : null
             const ls = seeActivity ? lastSession(u) : null
@@ -17426,7 +17427,7 @@ export function UsersAdmin({ authUser, authEnabled, clients }) {
                 <td className="lft"><span className="cap">{accessSummary(u)}</span></td>
                 {seeActivity && <>
                   <td className="lft" title={u.lastSeen ? `Last active ${new Date(u.lastSeen).toLocaleString('en-AU')}${u.lastLogin ? ` · last signed in ${new Date(u.lastLogin).toLocaleString('en-AU')}` : ''}${ls && ls.ip ? ` · IP ${ls.ip}` : ''}` : (u.status === 'invited' ? 'Hasn\u2019t accepted their invite yet' : 'No activity recorded')}>
-                    {seen ? <span className="u-seen">{seen}{ls && ls.mins > 0 ? <small>{mins(ls.mins)} session</small> : null}</span> : <span className="cap">{u.status === 'invited' ? 'never' : '-'}</span>}
+                    {seen ? <span className="u-seen">{seen}{ls && ls.mins > 0 ? <small>{mins(ls.mins)} session</small> : (!u.termsVersion && u.status === 'active' ? <small>signed in · stopped at the terms</small> : null)}</span> : <span className="cap">{u.status === 'invited' ? 'never' : '-'}</span>}
                   </td>
                   <td className="lft" title={tot ? `${(u.sessions || []).filter((x) => Date.parse(x.start) >= Date.now() - 30 * 86400000).length} session(s) in the last 30 days` : ''}>
                     {tot ? <span className="u-seen">{mins(tot)}</span> : <span className="cap">-</span>}
@@ -17443,6 +17444,16 @@ export function UsersAdmin({ authUser, authEnabled, clients }) {
                   </td>
                 </>}
                 <td className="lft">{badge(u)}</td>
+                {/* Whether they have signed the Terms of Use. An account is Active
+                    once the invite is accepted; the terms are signed on the first
+                    sign-in after that, and until then the person sees only the
+                    signing screen - so Active with no signature means they have
+                    logged in and stopped there. */}
+                <td className="lft">{u.termsVersion
+                  ? <span className="u-terms ok" title={`Signed version ${u.termsVersion}${u.termsAcceptedAt ? ` on ${new Date(u.termsAcceptedAt).toLocaleString('en-AU')}` : ''} - the record is in Settings → Terms of Use`}>✓ v{u.termsVersion}{u.termsAcceptedAt ? <small>{new Date(u.termsAcceptedAt).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}</small> : null}</span>
+                  : u.status === 'invited'
+                    ? <span className="cap" title="Signs the Terms of Use on their first sign-in">-</span>
+                    : <span className="u-terms no" title="Has an account and has signed in, but has not accepted the Terms of Use - they see the signing screen and nothing else until they do">Not signed</span>}</td>
                 <td className="lft">{canManageRoleFE(actorRole, u.role) ? <button className="btn-ghost sm" onClick={() => setModal({ user: u })}>Edit access</button> : <span className="cap" title="Only a Super Admin can manage an Admin">🔒 locked</span>}</td>
               </tr>
             )
@@ -19115,6 +19126,7 @@ function SocialDashboard({ clients, range, nonce }) {
 function NavIcon({ name }) {
   const P = {
     actionhub: <><path d="M9 11l3 3L22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></>,
+    saleshub: <><circle cx="12" cy="8" r="4" /><path d="M4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1" /><path d="M16 3l1.5 1.5L20 2" /></>,
     overview: <><rect x="3" y="3" width="7" height="7" rx="1.5" /><rect x="14" y="3" width="7" height="7" rx="1.5" /><rect x="3" y="14" width="7" height="7" rx="1.5" /><rect x="14" y="14" width="7" height="7" rx="1.5" /></>,
     trends: <><polyline points="3 16 9 10 13 14 21 6" /><polyline points="15 6 21 6 21 12" /></>,
     weekly: <><rect x="3" y="4" width="18" height="17" rx="2" /><path d="M3 9h18M8 2v4M16 2v4" /><path d="M8.5 15l2 2 4-4" /></>,
@@ -19390,6 +19402,9 @@ function Dashboard({ authUser, authEnabled, onLogout, realUser, onViewAs }) {
   const cfgMerged = config ? { ...config, clients: [...(config.clients || []).map(applyOv), ...extras.filter((cu) => !(config.clients || []).some((c) => c.id === cu.id))] } : config
   const go = (v) => { setView(v); setPicked(null); setNavOpen(false); writeNavUrl({ v, c: null, t: null, p: null, m: null, s: v === 'settings' ? undefined : null }, true) }
   const openClient = (c) => { setPicked(c); setView('clients'); setClientTab('overall'); setNavOpen(false); writeNavUrl({ v: 'clients', c: c.id, t: 'overall', p: null, m: null, s: null }, true) }
+  // The Sales Hub of the client on screen (or the first client with a CRM), from
+  // the Account section of the sidebar.
+  const openSalesHub = (c) => { setPicked(c); setView('clients'); setClientTab('saleshub'); setNavOpen(false); writeNavUrl({ v: 'clients', c: c.id, t: 'saleshub', p: null, m: null, s: null }, true) }
   // Access role gates the whole shell. Viewers (clients) never reach agency-wide
   // views - they land straight in their assigned client(s).
   const role = authEnabled && authUser ? authUser.role : 'admin'
@@ -19438,8 +19453,8 @@ function Dashboard({ authUser, authEnabled, onLogout, realUser, onViewAs }) {
         )}
         <nav className="nav">
           {!isViewer && <>
+            <div className="nav-lab">Agency</div>
             {showView('overview') && <button className={curView === 'overview' ? 'active' : ''} onClick={() => go('overview')}><span className="ic"><NavIcon name="overview" /></span>Agency Overview</button>}
-            {canHub && <button className={curView === 'actionhub' ? 'active' : ''} onClick={() => go('actionhub')}><span className="ic"><NavIcon name="actionhub" /></span>{ACTION_HUB_LABEL}</button>}
             {showView('trends') && <button className={curView === 'trends' ? 'active' : ''} onClick={() => go('trends')}><span className="ic"><NavIcon name="trends" /></span>Daily Performance</button>}
             {showView('weekly') && <button className={curView === 'weekly' ? 'active' : ''} onClick={() => go('weekly')}><span className="ic"><NavIcon name="weekly" /></span>Weekly Traffic Light</button>}
             {showView('forecast') && <button className={curView === 'forecast' ? 'active' : ''} onClick={() => go('forecast')}><span className="ic"><NavIcon name="forecast" /></span>Funnel Forecaster</button>}
@@ -19448,9 +19463,20 @@ function Dashboard({ authUser, authEnabled, onLogout, realUser, onViewAs }) {
             {showView('update') && <button className={curView === 'update' ? 'active' : ''} onClick={() => go('update')}><span className="ic"><NavIcon name="update" /></span>Client Update</button>}
             {showView('monthly') && <button className={curView === 'monthly' ? 'active' : ''} onClick={() => go('monthly')}><span className="ic"><NavIcon name="monthly" /></span>Reporting</button>}
             {showView('social') && <button className={curView === 'social' ? 'active' : ''} onClick={() => go('social')}><span className="ic"><NavIcon name="social" /></span>Organic Social Media</button>}
+            {canHub && <>
+              <div className="nav-sep" />
+              <div className="nav-lab">Account</div>
+              <button className={curView === 'actionhub' ? 'active' : ''} onClick={() => go('actionhub')}><span className="ic"><NavIcon name="actionhub" /></span>{ACTION_HUB_LABEL}</button>
+              {(() => { const sc = (curPicked && curPicked.ghl) ? curPicked : hubClients[0]; return sc ? <button className={curView === 'clients' && clientTab === 'saleshub' ? 'active' : ''} onClick={() => openSalesHub(sc)} title={`Sales Hub · ${sc.name}`}><span className="ic"><NavIcon name="saleshub" /></span>Sales Hub</button> : null })()}
+            </>}
           </>}
           {isViewer && <>
-            {canHub && <button className={curView === 'actionhub' ? 'active' : ''} onClick={() => go('actionhub')}><span className="ic"><NavIcon name="actionhub" /></span>{ACTION_HUB_LABEL}</button>}
+            {canHub && <>
+              <div className="nav-lab">Account</div>
+              <button className={curView === 'actionhub' ? 'active' : ''} onClick={() => go('actionhub')}><span className="ic"><NavIcon name="actionhub" /></span>{ACTION_HUB_LABEL}</button>
+              {hasDashTabs && !isHiddenTab(hid, 'saleshub') ? (() => { const sc = (curPicked && curPicked.ghl) ? curPicked : hubClients[0]; return sc ? <button className={curView === 'clients' && clientTab === 'saleshub' ? 'active' : ''} onClick={() => openSalesHub(sc)} title={`Sales Hub · ${sc.name}`}><span className="ic"><NavIcon name="saleshub" /></span>Sales Hub</button> : null })() : null}
+              {(canReports || hasDashTabs) && <div className="nav-sep" />}
+            </>}
             {canReports && <button className={curView === 'reports' ? 'active' : ''} onClick={() => go('reports')}><span className="ic"><NavIcon name="monthly" /></span>Monthly Reports</button>}
             {hasDashTabs && <>
               <div className="nav-lab">My dashboards</div>

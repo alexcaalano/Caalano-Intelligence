@@ -1491,7 +1491,7 @@ export function DealsActionsView({ clientId, authUser, currency, nonce }) {
     </div>
   )
   const st7 = data.staleTiers || {}
-  if (st.status === 'loading') return <div className="card"><Spinner label="Reading the CRM…" /></div>
+  if (st.status === 'loading') return <div className="card pv-loading"><Spinner big label="Reading the CRM…" /></div>
   if (st.status === 'err') return <div className="card"><p className="cap act-bad">Could not load: {data.error || 'unknown error'}</p><button type="button" className="btn-ghost sm" onClick={() => setTick((t) => t + 1)}>Try again</button></div>
   if (data.ghl === false) return <div className="card"><p className="cap">{data.error || 'This account has no Caalano Systems connection.'}</p></div>
   return (

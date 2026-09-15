@@ -6065,3 +6065,11 @@ body.hub-tv-on { overflow: hidden; }
 .tm-contact-sub { margin-top: 10px; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); }
 .tm-contact .tm-oc.warn { border-color: color-mix(in srgb, #ef4444 40%, var(--border)); }
 .tm-contact .tm-oc.warn b { color: #ef4444; }
+/* Sidebar: Agency section above, a rule, then the Account section */
+.nav-sep { height: 1px; background: var(--border); margin: 10px 8px 4px; }
+.nav .nav-lab:first-child { padding-top: 2px; }
+/* Access table: Terms of Use column */
+.u-terms { display: inline-flex; flex-direction: column; line-height: 1.2; font-size: 12px; font-weight: 700; padding: 3px 9px; border-radius: 999px; }
+.u-terms small { font-weight: 500; font-size: 10.5px; opacity: .8; }
+.u-terms.ok { color: #0b7a4b; background: color-mix(in srgb, #22b07d 15%, transparent); }
+.u-terms.no { color: #b42318; background: color-mix(in srgb, #ef4444 14%, transparent); }

@@ -16,7 +16,7 @@ git commit that produced it, so any version can be redeployed or reverted to.
 
 The version number also appears in the app sidebar. Newest first.
 
-## v3.673.0 - 2026-09-15 (commit PENDING)
+## v3.673.0 - 2026-09-15 (commit c5838de)
 
 - **Account sidebar icons.** Each section carries an icon, in the same style as the agency sidebar: Overview (grid), Acquisition (megaphone), Audience (people), Sales (tag), Appointments (calendar with a tick), Reports (document). The open section's icon takes the brand colour; section labels now read in the same weight and size as the agency entries, with the pages indented beneath.
 

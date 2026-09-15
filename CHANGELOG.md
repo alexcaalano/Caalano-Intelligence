@@ -18,6 +18,14 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.652.0 - 2026-09-15
+
+**Potential revenue on the trailing three months** (commit PENDING)
+
+- The Account summary's Potential revenue now uses the trailing three months (the report month and the two before it) for both the win rate among resulted leads and the average order value, read a month at a time on the created-on basis when the report is generated. One month's own figures swing early in the month and on a single large deal; three months steady them. The note under the table states the months, the wins over the resulted leads and the order value used. A snapshot generated before this keeps the month's own figures.
+
+---
+
 ## v3.651.0 - 2026-09-15
 
 **Monthly Report: Account summary & ROI rebuilt** (commit 159e32f)

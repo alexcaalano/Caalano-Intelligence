@@ -166,6 +166,13 @@ export async function assembleMonthlyReport(client, period, onProgress) {
   }
   const prevP = prevPeriodOf(period)
   const qPrev = `client=${encodeURIComponent(client.id)}&from=${prevP.from}&to=${prevP.to}`
+  // The trailing three months (the report month and the two before it) on the
+  // created-on basis, one month per read so a busy account is never capped:
+  // the win rate and average order value behind Potential revenue.
+  const shiftM = (m, n) => { const [y, mo] = m.split('-').map(Number); const d = new Date(Date.UTC(y, mo - 1 + n, 1)); return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}` }
+  const hiM = period.hi || String(period.to).slice(0, 7)
+  const trailMonths = [shiftM(hiM, -2), shiftM(hiM, -1), hiM]
+  const trailPick = (r) => { const bk = r && r.buckets && r.buckets[0]; const c = bk && bk.crm; return c ? { month: bk.key, leads: (c.leads && c.leads.all) || 0, won: (c.won && c.won.all) || 0, lost: (c.lost && c.lost.all) || 0, revenue: (c.revenue && c.revenue.all) || 0 } : null }
   const parts = Promise.all([
     section('Meta Ads', client.meta, `channel=meta&${q}`, (r) => r.meta),
     section('Google Ads', client.google, `channel=google&${q}`, (r) => r.google),
@@ -176,9 +183,11 @@ export async function assembleMonthlyReport(client, period, onProgress) {
     section('Form performance', client.ghl, `scope=forms&${q}`, (r) => ({ forms: r.forms, pipelines: r.pipelines })),
     section('Channel performance', client.ghl, `scope=ccdrill&channel=all&wonBasis=closed&${q}`, trimCc),
     section('Channel performance · period before', client.ghl, `scope=ccdrill&channel=all&wonBasis=closed&${qPrev}`, trimCc),
+    ...trailMonths.map((m) => section(`CRM · ${m}`, client.ghl, `scope=pivot&by=month&src=crm&client=${encodeURIComponent(client.id)}&from=${monthBounds(m).from}&to=${monthBounds(m).to}`, trailPick)),
   ])
   note('Reading Meta, Google and the CRM…')
-  const [meta, google, blend, attribution, trendR, dealsR, formsR, ccR, ccPrevR] = await parts
+  const [meta, google, blend, attribution, trendR, dealsR, formsR, ccR, ccPrevR, ...trailR] = await parts
+  const trail3 = trailR.filter(Boolean)
   if (failed.length) throw new Error(`These parts did not answer after twelve tries: ${failed.join(', ')}. Nothing was saved - press Generate to try again.`)
   // Join CRM key-event outcomes (utm_content) onto each Meta creative so the
   // creative slide can show Leads → Booked → Shown → Won → Revenue per ad, the
@@ -240,7 +249,7 @@ export async function assembleMonthlyReport(client, period, onProgress) {
     v: 1, client: { id: client.id, name: client.name, industry: client.industry || null },
     month: period.key, period: b, currency: undefined,
     hasMeta: !!client.meta, hasGoogle: !!client.google, hasCrm: !!client.ghl,
-    meta, google, blend, attribution: attrTrim, trend: (trendR && trendR.trend) || [], gtrend: (trendR && trendR.gtrend) || [], deals: dealsR || null, cc: ccR || null, ccPrev: ccPrevR || null, prevPeriod: prevP,
+    meta, google, blend, attribution: attrTrim, trend: (trendR && trendR.trend) || [], gtrend: (trendR && trendR.gtrend) || [], deals: dealsR || null, cc: ccR || null, ccPrev: ccPrevR || null, prevPeriod: prevP, trail3,
     // ID→name folds so Google's utm_campaign / utm_content (which carry the numeric
     // campaign / ad-group ID, not the name) resolve to the live campaign name - the
     // exact map the Meta/Google views pass to aliasedOutcomeMap. Without it the
@@ -2182,7 +2191,16 @@ export function renderMonthlyDeck(rep, h) {
     const cohortLeads = crm.leads || 0
     const winOfResulted = cohortResulted ? (coWon.count || 0) / cohortResulted : 0
     const aov = coWon.avgValue || (coWon.count ? coWon.revenue / coWon.count : 0)
-    const potentialRev = (crm.open || 0) * winOfResulted * aov
+    // Potential revenue on the trailing three months' resulted win rate and
+    // average order value (steadier than one month's own, which swings early in
+    // the month); a snapshot without the trailing reads uses the month's own.
+    const trail = Array.isArray(rep.trail3) && rep.trail3.length ? rep.trail3 : null
+    const tWon = trail ? trail.reduce((t, m) => t + (m.won || 0), 0) : 0, tLost = trail ? trail.reduce((t, m) => t + (m.lost || 0), 0) : 0, tRev = trail ? trail.reduce((t, m) => t + (m.revenue || 0), 0) : 0
+    const trailOk = !!(trail && tWon + tLost > 0 && tWon > 0)
+    const potWin = trailOk ? tWon / (tWon + tLost) : winOfResulted
+    const potAov = trailOk ? tRev / tWon : aov
+    const trailLab = trailOk ? trail.map((m) => monthShort(m.month)).join(', ') : null
+    const potentialRev = (crm.open || 0) * potWin * potAov
     const mer = totalSpend ? (coWon.revenue / totalSpend) * 100 : null
     const potentialRoi = totalSpend ? ((coWon.revenue + potentialRev) / totalSpend) * 100 : null
     const funnelGroups = [
@@ -2240,7 +2258,7 @@ export function renderMonthlyDeck(rep, h) {
             </tr>
           )))}</tbody>
         </table></div>
-        <p className="mr-foot-note">Potential additional revenue = open leads × this month's win rate among resulted leads ({pc(coWon.count, cohortResulted)}) × average order value. Potential ROI = (revenue + that) ÷ ad spend. MER = revenue ÷ ad spend.</p>
+        <p className="mr-foot-note">Potential additional revenue = open leads × the win rate among resulted leads × average order value{trailOk ? <>, both over the trailing three months ({trailLab}): {n0(tWon)} won of {n0(tWon + tLost)} resulted ({fmtPct(potWin * 100, 1)}) at {money(potAov)} a deal</> : <> for this month ({pc(coWon.count, cohortResulted)} and {money(aov)})</>}. Potential ROI = (revenue + that) ÷ ad spend. MER = revenue ÷ ad spend.</p>
         {cc ? <>
           <div className="mr-section-lab">Channel performance <span className="mr-lab-note">· spend → key events → outcomes per paid channel · closed this month</span></div>
           <ChannelPerfBody cc={cc} channels={{ metaSpend: paid.metaSpend || 0, googleSpend: paid.googleSpend || 0, metaLeads: paid.metaLeads || 0, googleConv: paid.googleConv || 0 }} adsOk={{}} cashOn={loadCashOn(rep.client.id)} clientId={rep.client.id} money={money} />

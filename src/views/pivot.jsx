@@ -200,6 +200,8 @@ function baseOf(b, keBySrc) {
     c_leads: n(c.leads, 'all'), c_leads_meta: n(c.leads, 'meta'), c_leads_google: n(c.leads, 'google'), c_leads_other: n(c.leads, 'other'),
     c_booked: n(c.booked, 'all'), c_won: n(c.won, 'all'), c_revenue: n(c.revenue, 'all'), c_lost: n(c.lost, 'all'),
     c_won_closed: n(c.wonClosed, 'all'), c_rev_closed: n(c.revenueClosed, 'all'), c_cash: n(c.cash, 'all'), c_cash_closed: n(c.cashClosed, 'all'),
+    // Won revenue by the lead's source (created-on basis), for the by-source rows.
+    c_rev_meta: n(c.revenue, 'meta'), c_rev_google: n(c.revenue, 'google'), c_rev_other: n(c.revenue, 'other'),
   }
   for (const src in keBySrc) for (const r of keBySrc[src]) base[`ke:${r.label}:${src}`] = r.count || 0
   return base
@@ -445,7 +447,15 @@ export function PivotReport({ clients, currency }) {
       { id: `ke:${l}:${src}`, g: 'Key events', label: l, src, kind: 'count', good: 'up', calc: (b) => b[`ke:${l}:${src}`] || 0, need: 'crm' },
       ...(src === 'other' ? [] : [{ id: `kec:${l}:${src}`, g: 'Key events', label: `Cost / ${l}`, src, kind: 'money', good: 'down', calc: (b) => { const sp = spendOf(b, src); return sp == null ? null : div(sp, b[`ke:${l}:${src}`] || 0) }, need: 'crmads' }]),
     ]))
-    return [...PV_METRICS, ...ke]
+    // Revenue and ROAS by lead source: won revenue from that source's leads
+    // (created-on basis, like Revenue above), and that ÷ the source's spend.
+    // Meta on its own against Google, or Paid against everything.
+    const revOf = (b, src) => (src === 'meta' ? b.c_rev_meta : src === 'google' ? b.c_rev_google : src === 'other' ? b.c_rev_other : src === 'paid' ? b.c_rev_meta + b.c_rev_google : b.c_revenue)
+    const rev = PV_SRC.flatMap(([src]) => [
+      { id: `rev:${src}`, g: 'Key events', label: 'Revenue', src, kind: 'money', good: 'up', calc: (b) => revOf(b, src) || 0, need: 'crm' },
+      ...(src === 'other' ? [] : [{ id: `roas:${src}`, g: 'Key events', label: 'ROAS', src, kind: 'x', good: 'up', calc: (b) => { const sp = spendOf(b, src); return sp == null ? null : div(revOf(b, src) || 0, sp) }, need: 'crmads' }]),
+    ])
+    return [...PV_METRICS, ...ke, ...rev]
   }, [keLabels])
   const byId = useMemo(() => Object.fromEntries(metrics.map((m) => [m.id, m])), [metrics])
   const has = { meta: !!(data && data.hasMeta), google: !!(data && data.hasGoogle), crm: !!(data && data.hasCrm) }
@@ -576,17 +586,26 @@ export function PivotReport({ clients, currency }) {
                 )}
               </div>
             ))}
-          {keLabels.length && has.crm ? (
+          {has.crm ? (
             <div className="pv-ke pv-pick-col">
-              <div className="set-sec-t">Key events <span className="cap" style={{ textTransform: 'none', letterSpacing: 0, fontWeight: 400 }}>· by lead source · # = count, $ = cost per event</span></div>
+              <div className="set-sec-t">Key events <span className="cap" style={{ textTransform: 'none', letterSpacing: 0, fontWeight: 400 }}>· by lead source · # = count, $ = cost per event · Revenue = won revenue from that source's leads, ROAS = that ÷ the source's spend</span></div>
               <div className="pv-wrap"><table className="mini-tbl pv-ke-tbl">
                 <thead><tr><th className="lft">Key event</th>{PV_SRC.map(([src]) => <th key={src}><SrcTag src={src} /></th>)}</tr></thead>
                 <tbody>{keLabels.map((l) => (
                   <tr key={l}><td className="lft">{l}</td>{PV_SRC.map(([src]) => {
                     const cid = `ke:${l}:${src}`, kid = `kec:${l}:${src}`
-                    return <td key={src}><label className={`pv-ke-box${ids.includes(cid) ? ' on' : ''}`} title={`${l} · ${srcOf(src)[1]} · count`}><input type="checkbox" checked={ids.includes(cid)} onChange={() => toggle(cid)} />#</label>{src === 'other' ? null : <label className={`pv-ke-box${ids.includes(kid) ? ' on' : ''}`} title={`Cost / ${l} · ${srcOf(src)[1]}`}><input type="checkbox" checked={ids.includes(kid)} onChange={() => toggle(kid)} />$</label>}</td>
+                    return <td key={src}><label className={`pv-ke-box${ids.includes(cid) ? ' on' : ''}`} title={`${l} · ${srcOf(src)[1]} · count`}><input type="checkbox" checked={ids.includes(cid)} onChange={() => toggle(cid)} />#</label>{src === 'other' ? null : <label className={`pv-ke-box${ids.includes(kid) ? ' on' : ''}`} title={`Cost per ${l} · ${srcOf(src)[1]} spend ÷ count`}><input type="checkbox" checked={ids.includes(kid)} onChange={() => toggle(kid)} />$</label>}</td>
                   })}</tr>
-                ))}</tbody>
+                ))}
+                <tr className="pv-ke-rev"><td className="lft">Revenue <span className="cap" style={{ textTransform: 'none', letterSpacing: 0, fontWeight: 400 }}>· by created date</span></td>{PV_SRC.map(([src]) => {
+                  const rid = `rev:${src}`
+                  return <td key={src}><label className={`pv-ke-box${ids.includes(rid) ? ' on' : ''}`} title={`Won revenue from ${srcOf(src)[1]} leads`}><input type="checkbox" checked={ids.includes(rid)} onChange={() => toggle(rid)} />$</label></td>
+                })}</tr>
+                <tr className="pv-ke-rev"><td className="lft">ROAS</td>{PV_SRC.map(([src]) => {
+                  const oid = `roas:${src}`
+                  return <td key={src}>{src === 'other' ? <span className="cap" title="No spend behind non-paid leads">–</span> : <label className={`pv-ke-box${ids.includes(oid) ? ' on' : ''}`} title={`Revenue from ${srcOf(src)[1]} leads ÷ ${srcOf(src)[1]} spend`}><input type="checkbox" checked={ids.includes(oid)} onChange={() => toggle(oid)} />×</label>}</td>
+                })}</tr>
+                </tbody>
               </table></div>
             </div>
           ) : null}

@@ -85,7 +85,7 @@ ok('optlog under acquisition', g[1].tabs.map((t) => t.id).join() === 'meta,optlo
 ok('forms under audience', g[2].tabs.map((t) => t.id).join() === 'forms')
 ok('unknown trails', g[4].tabs[0].id === 'mystery')
 ok('no crm tabs no sales group', v2TabGroups([{ id: 'overall' }, { id: 'meta' }]).map((x) => x.name).join('|') === 'Overview|Acquisition')
-ok('sales pages and appointments group', v2TabGroups([{ id: 'actionhub' }, { id: 'saleshub' }, { id: 'cohorts' }, { id: 'appts' }]).map((x) => x.name + ':' + x.tabs.map((t) => t.id).join()).join('|') === 'Sales:actionhub,saleshub|Appointments:appts,cohorts')
+ok('sales pages and appointments group', v2TabGroups([{ id: 'actionhub' }, { id: 'saleshub' }, { id: 'cohorts' }, { id: 'appts' }]).map((x) => x.name + ':' + x.tabs.map((t) => t.id).join()).join('|') === 'Audience:cohorts|Sales:actionhub,saleshub|Appointments:appts')
 ok('empty', v2TabGroups([]).length === 0 && v2TabGroups(null).length === 0)
 
 console.log(`v2story_test: ${n - bad}/${n} passed`)

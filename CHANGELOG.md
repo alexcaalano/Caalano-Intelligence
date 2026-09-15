@@ -16,6 +16,14 @@ git commit that produced it, so any version can be redeployed or reverted to.
 
 The version number also appears in the app sidebar. Newest first.
 
+## v3.672.0 - 2026-09-15 (commit PENDING)
+
+Account sidebar as sections, Revenue and ROAS by lead source in the Trend Report, and a plainer sign-in page.
+
+- **Account sidebar.** Five sections - Overview, Acquisition, Audience, Sales, Appointments - and only the section holding the open page lists its pages. Pressing another section opens its first page; pressing the open section folds or unfolds it. Reports (client-side users) is its own section. Cohorts moves from Appointments to Audience (Visibility follows).
+- **Trend Report · Key events.** Two new rows under the key events, by lead source: Revenue (won revenue from that source's leads, created-on basis) and ROAS (that revenue ÷ the source's spend) for All, Paid, Meta and Google; Non-paid has Revenue only. Meta on its own against Google, or Paid against everything, period by period.
+- **Sign-in page.** The picture beside the form is now the account overview as it is on screen: six tiles (Ad spend, Leads, Cost / lead, Appointments, Won, ROAS, with their ADS / CRM tags and previous-period deltas) and the Key event reach bars. The creative, speed-to-lead, movers and trend panels are gone.
+
 ## v3.671.0 - 2026-09-15 (commit 680ef0e)
 
 Key event reach (Caalano360 overview and the Monthly Report's Account summary & ROI): one count per row.

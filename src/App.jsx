@@ -36,7 +36,7 @@ const lazyView = (load, name) => {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-export const APP_VERSION = '3.671.0'
+export const APP_VERSION = '3.672.0'
 // The business clock. Every server window is cut on the client's local day
 // (Caalano Systems location timezone), so any day the app derives on its own -
 // preset ranges, "today", CSV dates - must use the same clock rather than the
@@ -8902,9 +8902,9 @@ export function ExecReach({ reach, multi, kef, cc, pcc, clientId, money, spend, 
 const V2_TAB_GROUPS = [
   ['Overview', ['overall', 'custom', 'clinic']],
   ['Acquisition', ['meta', 'google', 'optlog']],
-  ['Audience', ['analytics', 'forms', 'location']],
+  ['Audience', ['analytics', 'forms', 'location', 'cohorts']],
   ['Sales', ['actionhub', 'saleshub', 'timing', 'calls', 'users', 'lostreasons']],
-  ['Appointments', ['appts', 'calperf', 'cohorts']],
+  ['Appointments', ['appts', 'calperf']],
 ]
 function v2TabGroups(tabs) {
   const list = Array.isArray(tabs) ? tabs : []
@@ -16575,15 +16575,26 @@ function AccountNav({ client, config, authUser, tab, onTab, canReports, onReport
   const isClinic = useIsClinic(client.id, !!cfg.ghl)
   const tabs = clientTabList(client, cfg, authUser, isClinic)
   const groups = v2TabGroups(tabs)
+  // The sidebar lists the account's sections; only the section holding the
+  // open page shows its pages. Pressing another section opens its first page
+  // (and so expands it); pressing the open section folds or unfolds it.
+  const activeName = reportsActive ? 'Reports' : ((groups.find((g) => g.tabs.some((t) => t.id === tab)) || {}).name || null)
+  const [folded, setFolded] = useState(false)
+  useEffect(() => { setFolded(false) }, [activeName, client.id])
+  const press = (g) => { if (g.name === activeName) setFolded((f) => !f); else if (g.tabs[0]) onTab(g.tabs[0].id) }
   return (
     <>
-      {groups.map((g, gi) => (
-        <div key={gi} className="nav-grp">
-          {g.name ? <div className="nav-lab">{g.name}</div> : null}
-          {g.tabs.map((t) => <button key={t.id} className={`sub${tab === t.id && !reportsActive ? ' active' : ''}`} onClick={() => onTab(t.id)}><span className="nav-dot" />{t.label}</button>)}
-        </div>
-      ))}
-      {canReports ? <div className="nav-grp"><div className="nav-lab">Reports</div><button className={`sub${reportsActive ? ' active' : ''}`} onClick={onReports}><span className="nav-dot" />Monthly Reports</button></div> : null}
+      {groups.map((g, gi) => {
+        const isActive = g.name === activeName
+        const open = isActive && !folded
+        return (
+          <div key={gi} className={`nav-grp${isActive ? ' active' : ''}${open ? ' open' : ''}`}>
+            <button type="button" className={`nav-sec${isActive ? ' active' : ''}`} onClick={() => press(g)} aria-expanded={open}>{g.name || 'More'}<span className="nav-chev">{open ? '▾' : '▸'}</span></button>
+            {open ? g.tabs.map((t) => <button key={t.id} className={`sub${tab === t.id && !reportsActive ? ' active' : ''}`} onClick={() => onTab(t.id)}><span className="nav-dot" />{t.label}</button>) : null}
+          </div>
+        )
+      })}
+      {canReports ? <div className={`nav-grp${reportsActive ? ' active open' : ''}`}><button type="button" className={`nav-sec${reportsActive ? ' active' : ''}`} onClick={onReports}>Reports</button></div> : null}
     </>
   )
 }
@@ -16822,60 +16833,8 @@ export function AnnotationToggle() {
 // Sign-in screen: the value of the product on the left, drawn as the kinds of
 // insight it produces, and the form on the right. The figures are illustrative
 // (a sample account), not anybody's live numbers, and the card says so.
-const HERO_FUNNEL = [
-  { k: 'Ad spend', v: '$18,400', w: 100, sub: 'Meta + Google' },
-  { k: 'Leads', v: '312', w: 78, sub: '$59 each' },
-  { k: 'Contacted ≤ 5 min', v: '71%', w: 55, sub: 'first touch' },
-  { k: 'Appointments', v: '148', w: 40, sub: '47% of leads' },
-  { k: 'Closed', v: '41', w: 22, sub: '28% of booked' },
-  { k: 'Cash collected', v: '$96,200', w: 100, sub: '5.2× spend', cash: true },
-]
-const HERO_SPEED = [['< 5 min', 71], ['5–30 min', 12], ['30 min–2 h', 7], ['2–24 h', 6], ['24 h +', 4]]
-const HERO_MOVERS = [
-  { k: 'Cost per lead', a: '$42', b: '$34', d: '−19%', good: true },
-  { k: 'Appointments booked', a: '121', b: '148', d: '+22%', good: true },
-  { k: 'Speed to first touch', a: '48 min', b: '9 min', d: '−81%', good: true },
-  { k: 'Lost · no-show', a: '18%', b: '11%', d: '−7 pt', good: true },
-  { k: 'Frequency · top ad set', a: '2.1', b: '3.8', d: '+81%', good: false },
-]
-const HERO_TREND = { spend: [8, 9, 9, 11, 10, 12, 13, 12, 14, 15, 15, 17, 18], rev: [26, 30, 28, 38, 41, 48, 55, 52, 63, 70, 74, 88, 96] }
-function HeroTrend() {
-  const W = 300, H = 92, pad = 6
-  const maxV = Math.max(...HERO_TREND.rev) * 1.05
-  const x = (i) => pad + (i * (W - pad * 2)) / (HERO_TREND.rev.length - 1)
-  const y = (v) => H - pad - (v / maxV) * (H - pad * 2)
-  const line = (arr) => arr.map((v, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' ')
-  const area = line(HERO_TREND.rev) + ` L${x(HERO_TREND.rev.length - 1).toFixed(1)},${H - pad} L${x(0)},${H - pad} Z`
-  const last = HERO_TREND.rev.length - 1
-  return (
-    <svg className="hero-trend" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" aria-hidden="true">
-      <defs><linearGradient id="heroRev" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="var(--google)" stopOpacity=".38" /><stop offset="1" stopColor="var(--google)" stopOpacity="0" /></linearGradient></defs>
-      {[0.25, 0.5, 0.75].map((f) => <line key={f} x1={pad} x2={W - pad} y1={y(maxV * f)} y2={y(maxV * f)} className="hero-grid" />)}
-      <path d={area} fill="url(#heroRev)" />
-      <path d={line(HERO_TREND.rev)} className="hero-line rev" />
-      <path d={line(HERO_TREND.spend)} className="hero-line spend" />
-      <circle cx={x(last)} cy={y(HERO_TREND.rev[last])} r="3.2" className="hero-dot rev" />
-      <circle cx={x(last)} cy={y(HERO_TREND.spend[last])} r="3.2" className="hero-dot spend" />
-    </svg>
-  )
-}
-const HERO_KPIS = [
-  { k: 'Customer acquisition cost', v: 312, fmt: (n) => '$' + Math.round(n), d: '−12%', good: true, sub: 'ad spend ÷ closed' },
-  { k: 'Cost per booked call', v: 124, fmt: (n) => '$' + Math.round(n), d: '−19%', good: true, sub: 'ad spend ÷ appointments' },
-  { k: 'Return on ad spend', v: 5.2, fmt: (n) => n.toFixed(1) + '×', d: '+0.6', good: true, sub: 'cash collected ÷ spend' },
-  { k: 'Speed to lead', v: 9, fmt: (n) => Math.round(n) + ' min', d: '−81%', good: true, sub: 'median first touch' },
-  { k: 'Show rate', v: 78, fmt: (n) => Math.round(n) + '%', d: '+6 pt', good: true, sub: 'booked → attended' },
-  { k: 'Cash collected', v: 96.2, fmt: (n) => '$' + n.toFixed(1) + 'k', d: '+38%', good: true, sub: 'vs same month last year' },
-]
-const HERO_CREATIVES = [
-  { n: 'Before & after · 15s', roas: 8.4, cpl: '$28', sw: 'linear-gradient(135deg,#6d5efc,#12b886)' },
-  { n: 'Founder to camera', roas: 6.1, cpl: '$36', sw: 'linear-gradient(135deg,#f5a524,#f0435b)' },
-  { n: 'Patient story · UGC', roas: 4.7, cpl: '$41', sw: 'linear-gradient(135deg,#4f7cff,#9b8cff)' },
-  { n: 'Price anchor · static', roas: 2.9, cpl: '$58', sw: 'linear-gradient(135deg,#12b886,#4f7cff)' },
-  { n: 'Testimonial carousel', roas: 1.6, cpl: '$94', sw: 'linear-gradient(135deg,#939cae,#626b7d)' },
-]
 // A number that counts up on first paint (skipped when the viewer prefers
-// reduced motion), so the KPI strip reads as live rather than printed.
+// reduced motion), so the tiles read as live rather than printed.
 function HeroNum({ v, fmt }) {
   const [n, setN] = useState(() => { try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches ? v : 0 } catch { return v } })
   useEffect(() => {
@@ -16887,62 +16846,48 @@ function HeroNum({ v, fmt }) {
   }, [v]) // eslint-disable-line react-hooks/exhaustive-deps
   return <>{fmt(n)}</>
 }
+// The sign-in page's picture of the product: the account overview as it is on
+// screen - a row of tiles and the Key event reach bars - with illustrative
+// figures. Same classes as the real tiles so it stays true to the app.
+const HERO_TILES = [
+  { k: 'Ad spend', tag: 'ads', v: 18400, fmt: (n) => '$' + Math.round(n).toLocaleString('en-AU'), d: '+4%', up: true, good: true },
+  { k: 'Leads', tag: 'crm', v: 312, fmt: (n) => Math.round(n).toLocaleString('en-AU'), d: '+12%', up: true, good: true },
+  { k: 'Cost / lead', tag: 'ads', v: 59, fmt: (n) => '$' + Math.round(n), d: '−8%', up: false, good: true },
+  { k: 'Appointments', tag: 'crm', v: 148, fmt: (n) => Math.round(n), d: '+22%', up: true, good: true },
+  { k: 'Won', tag: 'crm', v: 41, fmt: (n) => Math.round(n), d: '+9%', up: true, good: true },
+  { k: 'ROAS', tag: 'crm', v: 5.2, fmt: (n) => n.toFixed(1) + '×', d: '+0.6', up: true, good: true },
+]
+const HERO_REACH = [
+  { k: 'Opportunities', sub: 'new this period', n: 312, w: 1, m: .55, g: .32, prev: .92, r: 'was 287' },
+  { k: 'Booked', sub: 'booked or reached the stage', n: 148, w: .47, m: .58, g: .3, prev: .41, r: '47% of leads' },
+  { k: 'Attended', sub: 'stage reached', n: 116, w: .37, m: .6, g: .29, prev: .33, r: '37% of leads · 78% of step before' },
+  { k: 'Won', sub: 'closed in period', n: 41, w: .13, m: .62, g: .28, prev: .11, r: '13% of leads · CAC $449' },
+]
 function AuthHero() {
   return (
     <section className="auth-hero" aria-label="What Caalano360 does">
       <p className="hero-eyebrow">Reporting for agencies and the businesses they grow</p>
       <h1 className="hero-h">Every dollar of ad spend, followed through to the cash it collected.</h1>
-      <p className="hero-sub">Meta, Google, Analytics and your CRM in one account view: what you spent, who it brought in, how fast they were contacted, what they booked and what closed.</p>
-      <div className="hero-tags"><span>Meta · Google · Analytics · CRM</span><span>Agency view and Account view</span><span>Speed to lead, per rep</span><span>Monthly reports that write the insights</span></div>
+      <p className="hero-sub">Meta, Google, Analytics and your CRM in one account view: what you spent, who it brought in, what they booked and what closed.</p>
       <div className="hero-dash" aria-hidden="true">
         <div className="hero-dash-bar"><i /><i /><i /><span>Norwest Multi-Disciplinary · Overview · Last 30 days</span><b>live</b></div>
         <div className="hero-kpis">
-          {HERO_KPIS.map((k) => <div key={k.k} className="hk">
-            <div className="hk-k">{k.k}</div>
-            <div className="hk-v"><HeroNum v={k.v} fmt={k.fmt} /><span className={'hk-d ' + (k.good ? 'good' : 'bad')}>{k.d}</span></div>
-            <div className="hk-sub">{k.sub}</div>
+          {HERO_TILES.map((t) => <div key={t.k} className="card kpi hk">
+            <div className="top"><span className="label">{t.k}</span><span className={`tag ${t.tag}`}>{t.tag}</span></div>
+            <div className="value"><HeroNum v={t.v} fmt={t.fmt} /></div>
+            <span className={`delta ${t.good ? 'up' : 'down'}`}>{t.up ? '▲' : '▼'} {t.d.replace(/^[+−]/, '')}<span className="vs">vs previous</span></span>
           </div>)}
         </div>
-        <div className="hero-grid">
-          <div className="hero-card">
-            <div className="hero-card-h"><b>ROAS by creative</b><span>cash ÷ spend · CPL</span></div>
-            <div className="hero-cre">
-              {HERO_CREATIVES.map((c) => <div key={c.n} className="hc-row">
-                <span className="hc-thumb" style={{ background: c.sw }} />
-                <span className="hc-n">{c.n}</span>
-                <span className="hc-bar"><i style={{ width: (c.roas / 8.4) * 100 + '%' }} /></span>
-                <span className="hc-v">{c.roas.toFixed(1)}×</span>
-                <span className="hc-cpl">{c.cpl}</span>
-              </div>)}
-            </div>
+        <div className="card hero-reach">
+          <div className="hero-card-h"><b>Key event reach</b><span>share of 312 leads · tick = previous period</span></div>
+          <div className="hero-funnel">
+            {HERO_REACH.map((r) => <div key={r.k} className="hf-row">
+              <span className="hf-k">{r.k}<small>{r.sub}</small></span>
+              <span className="hf-bar"><i className="fill" style={{ width: (r.w * 100) + '%' }}><b className="m" style={{ flex: r.m }} /><b className="g" style={{ flex: r.g }} /><b className="o" style={{ flex: Math.max(0, 1 - r.m - r.g) }} /></i><i className="prev" style={{ left: (r.prev * 100) + '%' }} /></span>
+              <span className="hf-v">{r.n}<small>{r.r}</small></span>
+            </div>)}
           </div>
-          <div className="hero-card">
-            <div className="hero-card-h"><b>Acquisition → cash</b><span>one account</span></div>
-            <div className="hero-funnel">
-              {HERO_FUNNEL.map((r) => <div key={r.k} className={'hf-row' + (r.cash ? ' cash' : '')}>
-                <span className="hf-k">{r.k}</span>
-                <span className="hf-bar"><i style={{ width: r.w + '%' }} /></span>
-                <span className="hf-v">{r.v}</span>
-              </div>)}
-            </div>
-          </div>
-          <div className="hero-card">
-            <div className="hero-card-h"><b>Speed to lead</b><span>time to first touch</span></div>
-            <div className="hero-speed">
-              {HERO_SPEED.map(([k, v]) => <div key={k} className="hs-row"><span className="hs-k">{k}</span><span className="hs-bar"><i style={{ width: v + '%' }} /></span><span className="hs-v">{v}%</span></div>)}
-            </div>
-            <div className="hero-chips"><span><b>64%</b> contact rate</span><span><b>91%</b> touch rate</span><span><b>3.4</b> touches to close</span></div>
-          </div>
-          <div className="hero-card">
-            <div className="hero-card-h"><b>Biggest movers</b><span>this month vs last</span></div>
-            <div className="hero-movers">
-              {HERO_MOVERS.map((m) => <div key={m.k} className="hm-row"><span className="hm-k">{m.k}</span><span className="hm-ab">{m.a} <i>→</i> {m.b}</span><span className={'hm-d ' + (m.good ? 'good' : 'bad')}>{m.d}</span></div>)}
-            </div>
-          </div>
-          <div className="hero-card span2">
-            <div className="hero-card-h"><b>Revenue against spend</b><span>13 months · <i className="hero-key rev">revenue</i> <i className="hero-key spend">spend</i></span></div>
-            <HeroTrend />
-          </div>
+          <div className="hero-leg"><span><i className="m" />Meta</span><span><i className="g" />Google</span><span><i className="o" />Organic, referral, direct</span><span><i className="pv" />Previous period</span></div>
         </div>
       </div>
       <p className="hero-note">Illustrative figures from a sample account.</p>

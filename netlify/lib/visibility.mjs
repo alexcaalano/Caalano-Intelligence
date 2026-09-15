@@ -65,9 +65,9 @@ export const VIS_TABS = [
 export const VIS_ACCOUNT_GROUPS = [
   ['Overview', ['overall', 'custom', 'clinic']],
   ['Acquisition', ['meta', 'google', 'optlog']],
-  ['Audience', ['analytics', 'forms', 'location']],
+  ['Audience', ['analytics', 'forms', 'location', 'cohorts']],
   ['Sales', ['actionhub', 'saleshub', 'timing', 'calls', 'users', 'lostreasons']],
-  ['Appointments', ['appts', 'calperf', 'cohorts']],
+  ['Appointments', ['appts', 'calperf']],
 ]
 // Settings tabs. Only the agency-level ones: My Profile (My Account,
 // Appearance) is for everyone, and the Super Admin pages (Visibility, Terms of

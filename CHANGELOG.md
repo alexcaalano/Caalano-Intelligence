@@ -16,6 +16,14 @@ git commit that produced it, so any version can be redeployed or reverted to.
 
 The version number also appears in the app sidebar. Newest first.
 
+## v3.668.0 - 2026-09-15 (commit PENDING)
+
+Client workspace tabs regrouped in the order a lead travels.
+
+- **Overview** · Caalano360, Custom dashboard, Clinic. **Acquisition** · Meta Ads, Google Ads, Change Log. **Audience** · Analytics, Forms, Location (Google Analytics' own Acquisition / Audience split). **Sales** · Action Centre, Sales Hub, Speed to Lead, Call Reporting, Reps, Lost Reasons. **Appointments** · Appointments, Calendars, Cohorts.
+- **Action Centre and Sales Hub inside the client.** Both are Sales tabs for the client on screen, the same pages as the sidebar's Account section. The sidebar switches that show or hide them govern the tabs too.
+- **Renames.** Timing is Speed to Lead; Users is Reps. Tab ids and links are unchanged.
+
 ## v3.667.0 - 2026-09-15 (commit 9c308c5)
 
 - **Creative cards show CPM and CVR.** Each card now reads Spend, Impressions, CPM, Frequency, CTR, CVR (results ÷ link clicks), Results and Cost per result, two rows of four. The collapsed creative table gains the same two columns.

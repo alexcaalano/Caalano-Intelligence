@@ -78,12 +78,14 @@ ok('other sections unaffected', v2SecOpen({ channels: false }, 'movers') === tru
 // Tab groups: every tab kept, in group order, unknown tabs trail, empty groups dropped.
 const tabs = [{ id: 'overall', label: 'Caalano360' }, { id: 'meta', label: 'Meta Ads' }, { id: 'users', label: 'Users' }, { id: 'forms', label: 'Forms' }, { id: 'timing', label: 'Timing' }, { id: 'mystery', label: 'New' }, { id: 'optlog', label: 'Change Log' }]
 const g = v2TabGroups(tabs)
-ok('four groups plus rest', g.map((x) => x.name).join('|') === 'Overview|Acquisition|Pipeline|Audience|', g.map((x) => x.name))
+ok('groups plus rest', g.map((x) => x.name).join('|') === 'Overview|Acquisition|Audience|Sales|', g.map((x) => x.name))
 ok('every tab kept once', g.flatMap((x) => x.tabs.map((t) => t.id)).sort().join() === tabs.map((t) => t.id).sort().join())
-ok('pipeline order', g[2].tabs.map((t) => t.id).join() === 'users,timing')
+ok('sales order', g[3].tabs.map((t) => t.id).join() === 'timing,users')
 ok('optlog under acquisition', g[1].tabs.map((t) => t.id).join() === 'meta,optlog')
+ok('forms under audience', g[2].tabs.map((t) => t.id).join() === 'forms')
 ok('unknown trails', g[4].tabs[0].id === 'mystery')
-ok('no crm tabs no pipeline group', v2TabGroups([{ id: 'overall' }, { id: 'meta' }]).map((x) => x.name).join('|') === 'Overview|Acquisition')
+ok('no crm tabs no sales group', v2TabGroups([{ id: 'overall' }, { id: 'meta' }]).map((x) => x.name).join('|') === 'Overview|Acquisition')
+ok('sales pages and appointments group', v2TabGroups([{ id: 'actionhub' }, { id: 'saleshub' }, { id: 'cohorts' }, { id: 'appts' }]).map((x) => x.name + ':' + x.tabs.map((t) => t.id).join()).join('|') === 'Sales:actionhub,saleshub|Appointments:appts,cohorts')
 ok('empty', v2TabGroups([]).length === 0 && v2TabGroups(null).length === 0)
 
 console.log(`v2story_test: ${n - bad}/${n} passed`)

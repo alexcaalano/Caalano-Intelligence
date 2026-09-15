@@ -36,7 +36,7 @@ const lazyView = (load, name) => {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-export const APP_VERSION = '3.667.0'
+export const APP_VERSION = '3.668.0'
 // The business clock. Every server window is cut on the client's local day
 // (Caalano Systems location timezone), so any day the app derives on its own -
 // preset ranges, "today", CSV dates - must use the same clock rather than the
@@ -5146,13 +5146,13 @@ export const DASH_MODULES = [
   { type: 'tab:meta', label: 'Meta Ads', group: 'Tabs', hint: 'The whole Meta Ads tab', needs: 'meta' },
   { type: 'tab:google', label: 'Google Ads', group: 'Tabs', hint: 'The whole Google Ads tab', needs: 'google' },
   { type: 'tab:analytics', label: 'Analytics', group: 'Tabs', hint: 'The whole Analytics tab (GA4)', needs: 'ga4' },
-  { type: 'tab:users', label: 'Users', group: 'Tabs', hint: 'The whole Users tab: scorecards, leaderboard, funnel by rep', needs: 'ghl' },
+  { type: 'tab:users', label: 'Reps', group: 'Tabs', hint: 'The whole Reps tab: scorecards, leaderboard, funnel by rep', needs: 'ghl' },
   { type: 'tab:appts', label: 'Appointments', group: 'Tabs', needs: 'ghl' },
   { type: 'tab:calperf', label: 'Calendars', group: 'Tabs', needs: 'ghl' },
   { type: 'tab:calls', label: 'Call Reporting', group: 'Tabs', needs: 'ghl' },
   { type: 'tab:forms', label: 'Forms', group: 'Tabs', needs: 'ghl' },
   { type: 'tab:location', label: 'Location', group: 'Tabs', needs: 'ghl' },
-  { type: 'tab:timing', label: 'Timing', group: 'Tabs', needs: 'ghl' },
+  { type: 'tab:timing', label: 'Speed to Lead', group: 'Tabs', needs: 'ghl' },
   { type: 'tab:lostreasons', label: 'Lost Reasons', group: 'Tabs', needs: 'ghl' },
   { type: 'tab:cohorts', label: 'Cohorts', group: 'Tabs', needs: 'ghl' },
   { type: 'tab:clinic', label: 'Clinic', group: 'Tabs', hint: 'Clinic clients only', needs: 'ghl' },
@@ -5813,7 +5813,7 @@ function TeamPerformance({ clientId, range, nonce, money }) {
 }
 
 // Compact speed-to-lead summary for Caalano360 (scope=speed). Renders only when
-// there are measured leads; links out to the full Timing tab.
+// there are measured leads; links out to the full Speed to Lead tab.
 // Why deals were lost, on the Caalano360 tab. The monthly report had this and
 // the live view did not, so the question "what is killing our deals" meant
 // waiting for a report or opening the Users tab and reading it per rep.
@@ -5883,7 +5883,7 @@ function TimingSummary({ clientId, range, nonce, onNav }) {
         {d.after && d.after.count ? <div className="tm-sc"><span className="tm-lab">After-hours leads</span><b>{fmtNumber(d.after.count)}</b><span className="tm-sub">{d.after.measured ? `${d.after.within5Pct}% answered within 5 min of opening` : 'arrived outside work hours'}</span></div> : null}
         {d.noOutbound ? <div className="tm-sc warn"><span className="tm-lab">No outreach yet</span><b>{fmtNumber(d.noOutbound)}</b><span className="tm-sub">no outbound at all</span></div> : null}
       </div>
-      {onNav ? <div className="exec-nav"><button className="link-btn" onClick={() => onNav('timing')}>Open the Timing tab →</button></div> : null}
+      {onNav ? <div className="exec-nav"><button className="link-btn" onClick={() => onNav('timing')}>Open Speed to Lead →</button></div> : null}
     </div>
   )
 }
@@ -8888,11 +8888,15 @@ export function ExecReach({ reach, multi, kef, cc, pcc, clientId, money, spend, 
 // The client tabs under four areas (V2), so the strip stops scrolling on a
 // laptop. Every allowed tab keeps its id and label; a tab outside the known
 // groups goes in a trailing unlabelled group rather than being dropped.
+// Five areas in the order a lead travels: how are we doing, what did we buy,
+// who came in (Google Analytics' own Acquisition / Audience split), what did
+// the team do with them, did they book and show.
 const V2_TAB_GROUPS = [
   ['Overview', ['overall', 'custom', 'clinic']],
-  ['Acquisition', ['meta', 'google', 'analytics', 'optlog']],
-  ['Pipeline', ['cohorts', 'users', 'calls', 'appts', 'calperf', 'timing', 'lostreasons']],
-  ['Audience', ['forms', 'location']],
+  ['Acquisition', ['meta', 'google', 'optlog']],
+  ['Audience', ['analytics', 'forms', 'location']],
+  ['Sales', ['actionhub', 'saleshub', 'timing', 'calls', 'users', 'lostreasons']],
+  ['Appointments', ['appts', 'calperf', 'cohorts']],
 ]
 function v2TabGroups(tabs) {
   const list = Array.isArray(tabs) ? tabs : []
@@ -16578,7 +16582,14 @@ function ClientWorkspace({ client, index, data, config, range, nonce, wonBasis =
   if (cfg.meta || client.meta) allTabs.push({ id: 'meta', label: 'Meta Ads' })
   if (cfg.google || client.google) allTabs.push({ id: 'google', label: 'Google Ads' })
   if (cfg.ga4 || client.ga4) allTabs.push({ id: 'analytics', label: 'Analytics' })
-  if (cfg.ghl) allTabs.push({ id: 'cohorts', label: 'Cohorts' }, { id: 'users', label: 'Users' }, { id: 'calls', label: 'Call Reporting' }, { id: 'forms', label: 'Forms' }, { id: 'location', label: 'Location' }, { id: 'appts', label: 'Appointments' }, { id: 'calperf', label: 'Calendars' }, { id: 'timing', label: 'Timing' }, { id: 'lostreasons', label: 'Lost Reasons' })
+  if (cfg.ghl) {
+    // Action Centre and Sales Hub are the same pages as the sidebar's Account
+    // section, for this client; the sidebar switches govern them here too.
+    const hidV = userHidden(authUser)
+    if (!isHiddenView(hidV, 'actionhub')) allTabs.push({ id: 'actionhub', label: ACTION_HUB_LABEL })
+    if (!isHiddenView(hidV, 'saleshub')) allTabs.push({ id: 'saleshub', label: 'Sales Hub' })
+    allTabs.push({ id: 'cohorts', label: 'Cohorts' }, { id: 'users', label: 'Reps' }, { id: 'calls', label: 'Call Reporting' }, { id: 'forms', label: 'Forms' }, { id: 'location', label: 'Location' }, { id: 'appts', label: 'Appointments' }, { id: 'calperf', label: 'Calendars' }, { id: 'timing', label: 'Speed to Lead' }, { id: 'lostreasons', label: 'Lost Reasons' })
+  }
   // Change log: the platform change histories plus the Optimisation Log sheet.
   // Shows for any client with an ad account OR a linked sheet - either source is
   // enough to have something to say. The tab id stays `optlog` so existing viewer
@@ -16654,6 +16665,8 @@ function ClientWorkspace({ client, index, data, config, range, nonce, wonBasis =
         {curTab === 'analytics' && (live.status === 'loading' ? <TabLoading kind="ads" label={deepLoadLabel(live.progress, 'Analytics', range)} />
           : (live.status === 'err' && !liveOK('ganalytics')) ? <DeepError channel="Google Analytics" error={live.data && live.data.error} range={range} onRetry={() => setDeepRetry((n) => n + 1)} />
             : <><LiveBadge mode={liveOK('ganalytics') ? 'live' : null} label={presetLabel} /><AnalyticsDeep deep={srcFor('ganalytics')} currency={data.currency} attr={attr} clientId={client.id} range={range} nonce={nonce} /></>)}
+        {curTab === 'actionhub' && <DealsActionsView clientId={client.id} authUser={authUser} currency={data.currency} nonce={nonce} />}
+        {curTab === 'saleshub' && <SalesHubView clientId={client.id} authUser={authUser} currency={data.currency} nonce={nonce} pipe={pipe} onPipe={setPipe} pipes={pipes} />}
         {curTab === 'cohorts' && <CohortView clientId={client.id} currency={data.currency} nonce={nonce} />}
         {curTab === 'forms' && <FormsView clientId={client.id} currency={data.currency} range={range} nonce={nonce} pipe={pipe} onPipe={setPipe} authUser={authUser} />}
         {curTab === 'location' && <LocationView clientId={client.id} currency={data.currency} range={range} nonce={nonce} pipe={pipe} onPipe={setPipe} />}
@@ -17016,10 +17029,10 @@ function AcceptInvite({ token, onSignedIn }) {
 const VIEWER_DEFAULT_TABS = ['users']
 export const TAB_OPTIONS = [
   { id: 'overall', label: 'Caalano360' }, { id: 'custom', label: 'Custom dashboard' }, { id: 'meta', label: 'Meta Ads' }, { id: 'google', label: 'Google Ads' },
-  { id: 'analytics', label: 'Analytics' }, { id: 'cohorts', label: 'Cohorts' }, { id: 'users', label: 'Users' },
+  { id: 'analytics', label: 'Analytics' }, { id: 'cohorts', label: 'Cohorts' }, { id: 'users', label: 'Reps' },
   { id: 'calls', label: 'Call Reporting' }, { id: 'forms', label: 'Forms' }, { id: 'location', label: 'Location' },
   { id: 'appts', label: 'Appointments' }, { id: 'calperf', label: 'Calendars' }, { id: 'clinic', label: 'Clinic' },
-  { id: 'timing', label: 'Timing' }, { id: 'lostreasons', label: 'Lost Reasons' }, { id: 'optlog', label: 'Optimisation Log' },
+  { id: 'timing', label: 'Speed to Lead' }, { id: 'lostreasons', label: 'Lost Reasons' }, { id: 'optlog', label: 'Optimisation Log' },
 ]
 function ClientPicker({ clients, selected, onToggle }) {
   if (!clients || !clients.length) return <div className="cap">No clients available.</div>
@@ -17039,7 +17052,7 @@ function offeredTabsFor(c) {
   if (c.meta) out.push({ id: 'meta', label: 'Meta Ads' })
   if (c.google) out.push({ id: 'google', label: 'Google Ads' })
   if (c.ga4) out.push({ id: 'analytics', label: 'Analytics' })
-  if (c.ghl) out.push({ id: 'cohorts', label: 'Cohorts' }, { id: 'users', label: 'Users' }, { id: 'calls', label: 'Call Reporting' }, { id: 'forms', label: 'Forms' }, { id: 'location', label: 'Location' }, { id: 'appts', label: 'Appointments' }, { id: 'calperf', label: 'Calendars' }, { id: 'timing', label: 'Timing' }, { id: 'lostreasons', label: 'Lost Reasons' })
+  if (c.ghl) out.push({ id: 'cohorts', label: 'Cohorts' }, { id: 'users', label: 'Reps' }, { id: 'calls', label: 'Call Reporting' }, { id: 'forms', label: 'Forms' }, { id: 'location', label: 'Location' }, { id: 'appts', label: 'Appointments' }, { id: 'calperf', label: 'Calendars' }, { id: 'timing', label: 'Speed to Lead' }, { id: 'lostreasons', label: 'Lost Reasons' })
   // The Change Log was offered by the workspace but never by this list, so it
   // could not be ticked for a viewer at all - a tab that existed for admins and
   // was ungrantable to anyone else. Same condition as the workspace uses.

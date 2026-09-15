@@ -16,7 +16,7 @@ git commit that produced it, so any version can be redeployed or reverted to.
 
 The version number also appears in the app sidebar. Newest first.
 
-## v3.669.0 - 2026-09-15 (commit PENDING)
+## v3.669.0 - 2026-09-15 (commit 6439e4a)
 
 Agency view and Account view, the way a sub-account platform splits them.
 

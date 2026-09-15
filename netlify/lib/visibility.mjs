@@ -11,9 +11,12 @@
 // A user entry REPLACES the role default for that person (it is a full
 // statement of what is off for them); deleting it returns them to the default.
 
-// Sidebar views. Agency roles get the agency views; client roles get the two
-// things their sidebar can hold - published reports and their client
-// workspaces. Settings is never hidden.
+// Sidebar views. The Agency view lists the agency tools (agency roles only).
+// Action Centre and Sales Hub are pages inside the Account view, under Sales,
+// for every role; they keep their place here (`views`) so saved settings and
+// the server checks stay as they were. Client roles also get the two things
+// their sidebar can hold - published reports and the Account view itself.
+// Settings is never hidden.
 // The action page's name lives here so the sidebar, the header and the
 // Visibility list say the same thing; the id stays put if the name changes.
 export const ACTION_HUB_LABEL = 'Action Centre'
@@ -33,11 +36,11 @@ export const VIS_VIEWS = [
   { id: 'reporting_trend', label: 'Reporting · Trend Report', roles: ['superadmin', 'admin', 'user'] },
   { id: 'social', label: 'Organic Social Media', roles: ['superadmin', 'admin', 'user'] },
   { id: 'reports', label: 'Monthly Reports', roles: ['account_admin', 'account_user'] },
-  { id: 'dashboards', label: 'Client workspaces (My dashboards)', roles: ['account_admin', 'account_user'] },
+  { id: 'dashboards', label: 'Account view (their accounts)', roles: ['account_admin', 'account_user'] },
 ]
-// Client-workspace tabs. Sales Hub and Deals & Actions are sidebar pages now
-// (views above), not tabs. An Account User holds the Action Centre and nothing
-// else by design, so they have no client tabs at all.
+// Account view pages (the client's tabs). An Account User holds the Action
+// Centre (and Sales Hub when on) and nothing else by design, so they have no
+// client tabs at all.
 export const VIS_TABS = [
   { id: 'overall', label: 'Caalano360' },
   { id: 'custom', label: 'Custom dashboard' },
@@ -55,6 +58,16 @@ export const VIS_TABS = [
   { id: 'timing', label: 'Speed to Lead' },
   { id: 'lostreasons', label: 'Lost Reasons' },
   { id: 'optlog', label: 'Change Log' },
+]
+// The Account view's sidebar groups, in order, with the page ids each holds.
+// Mirrors V2_TAB_GROUPS in the app (a test keeps the two identical); the
+// Visibility chart lays its Account view rows out by these.
+export const VIS_ACCOUNT_GROUPS = [
+  ['Overview', ['overall', 'custom', 'clinic']],
+  ['Acquisition', ['meta', 'google', 'optlog']],
+  ['Audience', ['analytics', 'forms', 'location']],
+  ['Sales', ['actionhub', 'saleshub', 'timing', 'calls', 'users', 'lostreasons']],
+  ['Appointments', ['appts', 'calperf', 'cohorts']],
 ]
 // Settings tabs. Only the agency-level ones: My Profile (My Account,
 // Appearance) is for everyone, and the Super Admin pages (Visibility, Terms of

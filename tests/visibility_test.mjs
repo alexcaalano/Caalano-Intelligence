@@ -1,4 +1,5 @@
 // @needs-fake-blobs
+import fs from 'node:fs'
 // Who sees what: a role default hides views and tabs for everyone of that
 // role; a person's own entry replaces the default and deleting it returns
 // them to it; only ids that apply to the role count; Super Admins are never
@@ -25,6 +26,15 @@ assert.deepEqual(V.hiddenFor({ email: 'SAM@example.com', role: 'admin' }, vis), 
 assert.deepEqual(V.hiddenFor({ email: 'a@x', role: 'superadmin' }, vis), { views: [], tabs: [], settings: [] }, 'no Super Admin entry: nothing hidden')
 assert.deepEqual(V.hiddenFor({ email: 'a@x', role: 'superadmin' }, { roles: { superadmin: { views: { forecast: false }, tabs: { clinic: false } } } }), { views: ['forecast'], tabs: ['clinic'], settings: [] }, 'a Super Admin can hide things from themselves')
 assert.ok(!V.VIS_VIEWS.some((x) => x.id === 'settings'), 'Settings is never in the list')
+// The Account view's groups: Visibility lays its rows out by the same list the
+// app builds the account sidebar from, and every group member is a known page.
+{
+  const app = fs.readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8')
+  const gs = app.indexOf('const V2_TAB_GROUPS = ['); const src = app.slice(gs + 'const V2_TAB_GROUPS = '.length, app.indexOf('\n]\n', gs) + 2)
+  assert.deepEqual(V.VIS_ACCOUNT_GROUPS, new Function('return ' + src)(), 'VIS_ACCOUNT_GROUPS mirrors V2_TAB_GROUPS')
+  const known = new Set([...V.VIS_VIEWS, ...V.VIS_TABS].map((x) => x.id))
+  for (const [, ids] of V.VIS_ACCOUNT_GROUPS) for (const id of ids) assert.ok(known.has(id), id + ' is a page Visibility knows')
+}
 // Settings is grouped into sections with tabs; every tab is its own switch.
 assert.deepEqual(V.VIS_SETTINGS.map((x) => x.id), ['clients', 'crm', 'meta', 'google', 'dailyperf', 'fatigue', 'socialkpis', 'team'], 'every Settings tab can be hidden')
 assert.equal(V.visSettingLabel(V.VIS_SETTINGS.find((x) => x.id === 'crm')), 'Integrations · CRM')

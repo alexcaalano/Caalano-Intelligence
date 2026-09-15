@@ -16,6 +16,14 @@ git commit that produced it, so any version can be redeployed or reverted to.
 
 The version number also appears in the app sidebar. Newest first.
 
+## v3.670.0 - 2026-09-15 (commit PENDING)
+
+The sign-in page now shows what the product does, and Visibility is laid out by the two views.
+
+- **Sign-in page.** Beside the form: the pitch ("Every dollar of ad spend, followed through to the cash it collected"), then a rendered account overview - six KPI tiles that count up on load (customer acquisition cost, cost per booked call, return on ad spend, speed to lead, show rate, cash collected), ROAS by creative, the acquisition-to-cash funnel, the speed-to-lead spread with contact and touch rates, the biggest movers, and revenue against spend over 13 months. Figures are illustrative and say so. Works in both themes and stacks under the form on a phone; the form stays in view while the page scrolls on desktop.
+- **Visibility.** Rows follow the app: the Agency view's sidebar first, then the Account view group by group (Overview, Acquisition, Audience, Sales with Action Centre and Sales Hub, Appointments), what only client-side users have, then Settings. Nothing changes in what is stored or enforced; the "Client workspaces" row is now called "Account view (their accounts)".
+- **Account page head.** Inside an account the page head names the open area and its group, then the client (for example Action Centre · Sales · Norwest), and the choose-a-client state hides the period and refresh controls.
+
 ## v3.669.0 - 2026-09-15 (commit 6439e4a)
 
 Agency view and Account view, the way a sub-account platform splits them.

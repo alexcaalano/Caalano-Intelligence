@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { APP_VERSION, Avatar, BIZ_TYPES, CC_CHANS, Caveat, ChangePasswordCard, ClinicSettings, DASH_AUD, DASH_MODULES, DASH_PRESETS, DEFAULT_HOURS, DOW_LABELS, FATIGUE_DEFAULTS, FAVICON, FormsSettingsTab, GeoSettings, HelpNote, OptLogSettings, PROFILE_FIELDS, ROLE_LABEL, SEED_KEYEVENTS, SETTINGS, SignOutEverywhereCard, YourDetailsCard, Spinner, TAB_OPTIONS, TermsAdmin, TermsRegister, UsersAdmin, acolor, apiJson, applyAliases, clientLogoSrc, dashAudience, dashModuleFits, dedupeFetch, deleteClient, domainOf, dpClientOn, dpPipeOn, fetchDiscover, fmtDMY, fmtHours, formKeyEvents, formsDoneCount, hhmm, initials, isAdminishFE, isClientDeleted, iso, loadAdsetRules, loadAliases, loadBizType, loadCampMap, loadCashOn, loadCloseOverride, loadDashboard, loadFatigueCfg, loadHours, loadKeep, loadKeyEvents, loadKeyEventsRaw, loadKpis, loadLogo, loadMetaConv, loadProfile, loadQualStage, loadSocialKpis, mkOutcomeMap, normId, presetRange, rangeLabel, rangeMaturity, rangeQuery, readNavUrl, removeCustomClient, restoreClient, roleLabelOf, saveAdsetRules, saveBizType, saveCampMap, saveCashOn, saveCloseOverride, saveCustomClient, saveDashboard, saveFatigueCfg, saveHours, saveKeyEvents, saveKpis, saveLogo, saveMetaConv, saveProfile, saveQualStage, saveSocialKpis, setAlias, setDpClient, setDpPipe, setKeep, syncLogos, unorm, useDiscoverNames, useSettingsSync, writeNavUrl, normCrmUrl, saveCrmUrl, CRM_DEFAULT_URL } from '../App.jsx'
 import { fmtCurrency, fmtNumber } from '../lib/format.js'
-import { VIS_VIEWS, VIS_TABS, VIS_SETTINGS, VIS_ROLES, VIS_ROLE_LABELS, viewsForRole, tabsForRole, settingsForRole, normVisibility, isHiddenSetting, entryFor, hasLegacyTicks, visSettingLabel } from '../lib/visibility.js'
+import { VIS_VIEWS, VIS_TABS, VIS_SETTINGS, VIS_ACCOUNT_GROUPS, VIS_ROLES, VIS_ROLE_LABELS, viewsForRole, tabsForRole, settingsForRole, normVisibility, isHiddenSetting, entryFor, hasLegacyTicks, visSettingLabel } from '../lib/visibility.js'
 import { authApi, saveSettingsRemote, bumpSettings, userHidden, InfoTip, loadAnnot, saveAnnot } from '../App.jsx'
 import { GoalsEditor } from './sales-hub.jsx'
 
@@ -1660,9 +1660,19 @@ export function IntegrationSoon({ name, what, onClients }) {
 // or everyone in a role - where a cell sets that person's own visibility. Only
 // what is switched off is stored, so anything new is visible until it is
 // deliberately hidden, which is how a feature stays out of sight until launch.
+// Laid out the way the app is: the Agency view's sidebar, then the Account
+// view group by group (Action Centre and Sales Hub sit under Sales there, though
+// they are stored as views), then what only client roles have, then Settings.
+const ACCOUNT_PAGE_IDS = new Set(VIS_ACCOUNT_GROUPS.flatMap(([, ids]) => ids))
+const CLIENT_ONLY_VIEWS = new Set(['reports', 'dashboards'])
 const VIS_ITEMS = [
-  ...VIS_VIEWS.map((v) => ({ ...v, kind: 'views', group: 'Sidebar' })),
-  ...VIS_TABS.map((t) => ({ ...t, kind: 'tabs', group: 'Client workspace tabs' })),
+  ...VIS_VIEWS.filter((v) => !ACCOUNT_PAGE_IDS.has(v.id) && !CLIENT_ONLY_VIEWS.has(v.id)).map((v) => ({ ...v, kind: 'views', group: 'Agency view' })),
+  ...VIS_ACCOUNT_GROUPS.flatMap(([name, ids]) => ids.map((id) => {
+    const v = VIS_VIEWS.find((x) => x.id === id); if (v) return { ...v, kind: 'views', group: `Account view · ${name}` }
+    const t = VIS_TABS.find((x) => x.id === id); return t ? { ...t, kind: 'tabs', group: `Account view · ${name}` } : null
+  }).filter(Boolean)),
+  ...VIS_TABS.filter((t) => !ACCOUNT_PAGE_IDS.has(t.id)).map((t) => ({ ...t, kind: 'tabs', group: 'Account view · Other' })),
+  ...VIS_VIEWS.filter((v) => CLIENT_ONLY_VIEWS.has(v.id)).map((v) => ({ ...v, kind: 'views', group: 'Account view · Client-side users' })),
   ...VIS_SETTINGS.map((t) => ({ ...t, label: visSettingLabel(t), kind: 'settings', group: 'Settings' })),
 ]
 const visRoleOf = (r) => (r === 'viewer' ? 'account_admin' : r)
@@ -1768,7 +1778,7 @@ export function VisibilitySettings({ clients = [] }) {
   )
   return (
     <div className="card vis-card">
-      <SetHead title="Visibility" info={<>Every page, client tab and Settings tab down the left; who sees it across the top. <b>By role</b> sets the default for everyone of that role. <b>By client</b> shows the Account Admins and Account Users on one client, and <b>Agency</b> everyone at Caalano, as columns: a switch there gives that person their own set (marked <i>custom</i>) and <b>Use default</b> puts them back on the role. Anything new is visible until you switch it off, so this is where a feature waits until launch. That includes you: switch something off for Super Admin and it leaves your own sidebar too, but Settings and this page are always there to switch it back on. Use <b>View as</b> in the sidebar to check what someone else gets.</>} />
+      <SetHead title="Visibility" info={<>Every page down the left, laid out as the app is - the Agency view's sidebar, then the Account view group by group, then Settings - and who sees it across the top. <b>By role</b> sets the default for everyone of that role. <b>By client</b> shows the Account Admins and Account Users on one client, and <b>Agency</b> everyone at Caalano, as columns: a switch there gives that person their own set (marked <i>custom</i>) and <b>Use default</b> puts them back on the role. Anything new is visible until you switch it off, so this is where a feature waits until launch. That includes you: switch something off for Super Admin and it leaves your own sidebar too, but Settings and this page are always there to switch it back on. Use <b>View as</b> in the sidebar to check what someone else gets.</>} />
       <div className="chan-toggle sm vis-mode">
         <button className={mode === 'agency' ? 'on' : ''} onClick={() => setMode('agency')}>Agency</button>
         <button className={mode === 'roles' ? 'on' : ''} onClick={() => setMode('roles')}>By role</button>

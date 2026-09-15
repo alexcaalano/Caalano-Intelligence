@@ -36,7 +36,7 @@ const lazyView = (load, name) => {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-export const APP_VERSION = '3.669.0'
+export const APP_VERSION = '3.670.0'
 // The business clock. Every server window is cut on the client's local day
 // (Caalano Systems location timezone), so any day the app derives on its own -
 // preset ranges, "today", CSV dates - must use the same clock rather than the
@@ -16811,9 +16811,140 @@ export function AnnotationToggle() {
     </div>
   )
 }
+// Sign-in screen: the value of the product on the left, drawn as the kinds of
+// insight it produces, and the form on the right. The figures are illustrative
+// (a sample account), not anybody's live numbers, and the card says so.
+const HERO_FUNNEL = [
+  { k: 'Ad spend', v: '$18,400', w: 100, sub: 'Meta + Google' },
+  { k: 'Leads', v: '312', w: 78, sub: '$59 each' },
+  { k: 'Contacted ≤ 5 min', v: '71%', w: 55, sub: 'first touch' },
+  { k: 'Appointments', v: '148', w: 40, sub: '47% of leads' },
+  { k: 'Closed', v: '41', w: 22, sub: '28% of booked' },
+  { k: 'Cash collected', v: '$96,200', w: 100, sub: '5.2× spend', cash: true },
+]
+const HERO_SPEED = [['< 5 min', 71], ['5–30 min', 12], ['30 min–2 h', 7], ['2–24 h', 6], ['24 h +', 4]]
+const HERO_MOVERS = [
+  { k: 'Cost per lead', a: '$42', b: '$34', d: '−19%', good: true },
+  { k: 'Appointments booked', a: '121', b: '148', d: '+22%', good: true },
+  { k: 'Speed to first touch', a: '48 min', b: '9 min', d: '−81%', good: true },
+  { k: 'Lost · no-show', a: '18%', b: '11%', d: '−7 pt', good: true },
+  { k: 'Frequency · top ad set', a: '2.1', b: '3.8', d: '+81%', good: false },
+]
+const HERO_TREND = { spend: [8, 9, 9, 11, 10, 12, 13, 12, 14, 15, 15, 17, 18], rev: [26, 30, 28, 38, 41, 48, 55, 52, 63, 70, 74, 88, 96] }
+function HeroTrend() {
+  const W = 300, H = 92, pad = 6
+  const maxV = Math.max(...HERO_TREND.rev) * 1.05
+  const x = (i) => pad + (i * (W - pad * 2)) / (HERO_TREND.rev.length - 1)
+  const y = (v) => H - pad - (v / maxV) * (H - pad * 2)
+  const line = (arr) => arr.map((v, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' ')
+  const area = line(HERO_TREND.rev) + ` L${x(HERO_TREND.rev.length - 1).toFixed(1)},${H - pad} L${x(0)},${H - pad} Z`
+  const last = HERO_TREND.rev.length - 1
+  return (
+    <svg className="hero-trend" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" aria-hidden="true">
+      <defs><linearGradient id="heroRev" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="var(--google)" stopOpacity=".38" /><stop offset="1" stopColor="var(--google)" stopOpacity="0" /></linearGradient></defs>
+      {[0.25, 0.5, 0.75].map((f) => <line key={f} x1={pad} x2={W - pad} y1={y(maxV * f)} y2={y(maxV * f)} className="hero-grid" />)}
+      <path d={area} fill="url(#heroRev)" />
+      <path d={line(HERO_TREND.rev)} className="hero-line rev" />
+      <path d={line(HERO_TREND.spend)} className="hero-line spend" />
+      <circle cx={x(last)} cy={y(HERO_TREND.rev[last])} r="3.2" className="hero-dot rev" />
+      <circle cx={x(last)} cy={y(HERO_TREND.spend[last])} r="3.2" className="hero-dot spend" />
+    </svg>
+  )
+}
+const HERO_KPIS = [
+  { k: 'Customer acquisition cost', v: 312, fmt: (n) => '$' + Math.round(n), d: '−12%', good: true, sub: 'ad spend ÷ closed' },
+  { k: 'Cost per booked call', v: 124, fmt: (n) => '$' + Math.round(n), d: '−19%', good: true, sub: 'ad spend ÷ appointments' },
+  { k: 'Return on ad spend', v: 5.2, fmt: (n) => n.toFixed(1) + '×', d: '+0.6', good: true, sub: 'cash collected ÷ spend' },
+  { k: 'Speed to lead', v: 9, fmt: (n) => Math.round(n) + ' min', d: '−81%', good: true, sub: 'median first touch' },
+  { k: 'Show rate', v: 78, fmt: (n) => Math.round(n) + '%', d: '+6 pt', good: true, sub: 'booked → attended' },
+  { k: 'Cash collected', v: 96.2, fmt: (n) => '$' + n.toFixed(1) + 'k', d: '+38%', good: true, sub: 'vs same month last year' },
+]
+const HERO_CREATIVES = [
+  { n: 'Before & after · 15s', roas: 8.4, cpl: '$28', sw: 'linear-gradient(135deg,#6d5efc,#12b886)' },
+  { n: 'Founder to camera', roas: 6.1, cpl: '$36', sw: 'linear-gradient(135deg,#f5a524,#f0435b)' },
+  { n: 'Patient story · UGC', roas: 4.7, cpl: '$41', sw: 'linear-gradient(135deg,#4f7cff,#9b8cff)' },
+  { n: 'Price anchor · static', roas: 2.9, cpl: '$58', sw: 'linear-gradient(135deg,#12b886,#4f7cff)' },
+  { n: 'Testimonial carousel', roas: 1.6, cpl: '$94', sw: 'linear-gradient(135deg,#939cae,#626b7d)' },
+]
+// A number that counts up on first paint (skipped when the viewer prefers
+// reduced motion), so the KPI strip reads as live rather than printed.
+function HeroNum({ v, fmt }) {
+  const [n, setN] = useState(() => { try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches ? v : 0 } catch { return v } })
+  useEffect(() => {
+    if (n === v) return undefined
+    const t0 = performance.now(), ms = 1100; let raf = 0
+    const tick = (t) => { const f = Math.min(1, (t - t0) / ms); const e = 1 - Math.pow(1 - f, 3); setN(v * e); if (f < 1) raf = requestAnimationFrame(tick) }
+    raf = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(raf)
+  }, [v]) // eslint-disable-line react-hooks/exhaustive-deps
+  return <>{fmt(n)}</>
+}
+function AuthHero() {
+  return (
+    <section className="auth-hero" aria-label="What Caalano360 does">
+      <p className="hero-eyebrow">Reporting for agencies and the businesses they grow</p>
+      <h1 className="hero-h">Every dollar of ad spend, followed through to the cash it collected.</h1>
+      <p className="hero-sub">Meta, Google, Analytics and your CRM in one account view: what you spent, who it brought in, how fast they were contacted, what they booked and what closed.</p>
+      <div className="hero-tags"><span>Meta · Google · Analytics · CRM</span><span>Agency view and Account view</span><span>Speed to lead, per rep</span><span>Monthly reports that write the insights</span></div>
+      <div className="hero-dash" aria-hidden="true">
+        <div className="hero-dash-bar"><i /><i /><i /><span>Norwest Multi-Disciplinary · Overview · Last 30 days</span><b>live</b></div>
+        <div className="hero-kpis">
+          {HERO_KPIS.map((k) => <div key={k.k} className="hk">
+            <div className="hk-k">{k.k}</div>
+            <div className="hk-v"><HeroNum v={k.v} fmt={k.fmt} /><span className={'hk-d ' + (k.good ? 'good' : 'bad')}>{k.d}</span></div>
+            <div className="hk-sub">{k.sub}</div>
+          </div>)}
+        </div>
+        <div className="hero-grid">
+          <div className="hero-card">
+            <div className="hero-card-h"><b>ROAS by creative</b><span>cash ÷ spend · CPL</span></div>
+            <div className="hero-cre">
+              {HERO_CREATIVES.map((c) => <div key={c.n} className="hc-row">
+                <span className="hc-thumb" style={{ background: c.sw }} />
+                <span className="hc-n">{c.n}</span>
+                <span className="hc-bar"><i style={{ width: (c.roas / 8.4) * 100 + '%' }} /></span>
+                <span className="hc-v">{c.roas.toFixed(1)}×</span>
+                <span className="hc-cpl">{c.cpl}</span>
+              </div>)}
+            </div>
+          </div>
+          <div className="hero-card">
+            <div className="hero-card-h"><b>Acquisition → cash</b><span>one account</span></div>
+            <div className="hero-funnel">
+              {HERO_FUNNEL.map((r) => <div key={r.k} className={'hf-row' + (r.cash ? ' cash' : '')}>
+                <span className="hf-k">{r.k}</span>
+                <span className="hf-bar"><i style={{ width: r.w + '%' }} /></span>
+                <span className="hf-v">{r.v}</span>
+              </div>)}
+            </div>
+          </div>
+          <div className="hero-card">
+            <div className="hero-card-h"><b>Speed to lead</b><span>time to first touch</span></div>
+            <div className="hero-speed">
+              {HERO_SPEED.map(([k, v]) => <div key={k} className="hs-row"><span className="hs-k">{k}</span><span className="hs-bar"><i style={{ width: v + '%' }} /></span><span className="hs-v">{v}%</span></div>)}
+            </div>
+            <div className="hero-chips"><span><b>64%</b> contact rate</span><span><b>91%</b> touch rate</span><span><b>3.4</b> touches to close</span></div>
+          </div>
+          <div className="hero-card">
+            <div className="hero-card-h"><b>Biggest movers</b><span>this month vs last</span></div>
+            <div className="hero-movers">
+              {HERO_MOVERS.map((m) => <div key={m.k} className="hm-row"><span className="hm-k">{m.k}</span><span className="hm-ab">{m.a} <i>→</i> {m.b}</span><span className={'hm-d ' + (m.good ? 'good' : 'bad')}>{m.d}</span></div>)}
+            </div>
+          </div>
+          <div className="hero-card span2">
+            <div className="hero-card-h"><b>Revenue against spend</b><span>13 months · <i className="hero-key rev">revenue</i> <i className="hero-key spend">spend</i></span></div>
+            <HeroTrend />
+          </div>
+        </div>
+      </div>
+      <p className="hero-note">Illustrative figures from a sample account.</p>
+    </section>
+  )
+}
 function AuthShell({ children }) {
   return (
     <div className="auth-screen">
+      <AuthHero />
       <div className="auth-card">
         <div className="auth-brand"><div className="logo logo-360"><span>360</span></div><div><h1 className="brand-name">Caalano<span className="b360">360</span></h1><p>360° Reporting</p></div></div>
         {children}

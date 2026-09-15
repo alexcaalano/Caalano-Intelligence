@@ -16,6 +16,16 @@ git commit that produced it, so any version can be redeployed or reverted to.
 
 The version number also appears in the app sidebar. Newest first.
 
+## v3.657.0 - 2026-09-15 (commit PENDING)
+
+Monthly Report: every block now sits in the same box, and cash collected joins the Sales Performance page.
+
+- **Google Ads page in boxes.** Campaigns, Ad groups, Spend by match type, Conversion actions, Conversion locations and Top keywords each sit in a titled card with a one-line caption, the way the Caalano360 client screen shows them.
+- **Sales Performance spacing.** The lost-reasons table and the status / lost-reason pie now sit off the scorecards with even spacing, each in its own box.
+- **Cash collected on Sales Performance.** When a client has cash collected switched on in Settings, the user table gains a "Cash collected" column beside Revenue (closed), and the top performer line shows their cash too. The monthly deals feed now carries cash per deal and per user (`cash` on each deal, `byUser[id].cash`, and a `cash` summary on each won bundle).
+- **Account summary & ROI reformatted.** Same figures, easier to read: the scorecards are grouped into Paid media, This month's leads (created on) and Closed this month (status change); then Key event reach, Channel performance (now boxed), the Overall table, and finally Revenue status change vs created on and Leads by status as two half-width boxes with their notes inside.
+- **Demo client.** The monthly deals feed no longer refuses the demo client when no CRM is connected, matching the drill feed.
+
 ---
 
 ## v3.656.0 - 2026-09-15

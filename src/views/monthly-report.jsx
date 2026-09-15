@@ -301,6 +301,17 @@ export function MRSlide({ n, total, kicker, title, sub, children, tone, notes })
     </section>
   )
 }
+// One boxed block of a page: title, optional one-line caption, then the content.
+// Every page uses these so tables, charts and lists all sit in the same box.
+export function MRCard({ title, sub, children, className = '', pad = true }) {
+  return (
+    <section className={`mr-bubble mr-card${pad ? '' : ' mr-card-flush'} ${className}`.trim()}>
+      {title ? <div className="mr-bubble-lab">{title}</div> : null}
+      {sub ? <p className="mr-bubble-sub">{sub}</p> : null}
+      {children}
+    </section>
+  )
+}
 export function MRTable({ cols, rows, empty = 'No data for this period.', max, wrapClass = '' }) {
   const data = max ? rows.slice(0, max) : rows
   if (!rows || !rows.length) return <div className="mr-empty">{empty}</div>
@@ -1870,20 +1881,19 @@ export function renderMonthlyDeck(rep, h) {
     push(
       <MRSlide key="g-camp" kicker="Google Ads · Platform" title="Google Ads" sub={`${b.label} against the months before it · ${(google.campaigns || []).length} campaign(s) · ${(google.adGroups || []).length} ad group(s)`}>
         <MRGooglePerf cmp={h.cmp} trend={rep.gtrend} monthKey={String(b.to || b.from || '').slice(0, 7)} money={money} n0={n0} />
-        <div className="mr-two">
-          <div><div className="mr-section-lab">Campaigns · {b.label}</div><MRTable cols={gSideCols('Campaign')} rows={google.campaigns || []} max={10} /></div>
-          <div><div className="mr-section-lab">Ad groups · {b.label}</div><MRTable cols={gSideCols('Ad group')} rows={google.adGroups || []} max={10} /></div>
+        <div className="mr-two mr-gcards">
+          <MRCard title="Campaigns" sub={`Spend, clicks and conversions by campaign · ${b.label}`}><MRTable cols={gSideCols('Campaign')} rows={google.campaigns || []} max={10} /></MRCard>
+          <MRCard title="Ad groups" sub={`The same figures by ad group · ${b.label}`}><MRTable cols={gSideCols('Ad group')} rows={google.adGroups || []} max={10} /></MRCard>
         </div>
-        <div className="mr-three mr-gblocks">
-          <div><div className="mr-section-lab">Spend by match type</div>{matchAgg.length ? <MRDonut data={matchAgg} money={money} isMoney /> : <div className="mr-empty">No keyword spend this period.</div>}</div>
-          <div><div className="mr-section-lab">Conversion actions <span className="mr-lab-note">· ★ primary = counted in Conversions</span></div><MRTable cols={caColsCompact} rows={allCa} max={8} empty="No conversion actions recorded for this period." /></div>
-          <div><div className="mr-section-lab">Conversion locations{google.geo && google.geo.dim ? <span className="mr-lab-note"> · by {String(google.geo.dim).replace(/_/g, ' ')}</span> : null}</div>
+        <div className="mr-three mr-gblocks mr-gcards">
+          <MRCard title="Spend by match type" sub="Where the budget is landing">{matchAgg.length ? <MRDonut data={matchAgg} money={money} isMoney /> : <div className="mr-empty">No keyword spend this period.</div>}</MRCard>
+          <MRCard title="Conversion actions" sub={<>What Google is counting · <span className="mr-ca-star">★</span> = primary (counted in Conversions)</>}><MRTable cols={caColsCompact} rows={allCa} max={8} empty="No conversion actions recorded for this period." /></MRCard>
+          <MRCard title="Conversion locations" sub={`Where conversions are happening${google.geo && google.geo.dim ? ` · by ${String(google.geo.dim).replace(/_/g, ' ')}` : ''}`}>
             {locs.length ? <div className="mr-locs">{locs.map((l) => <div className="loc-row" key={l.name}><span className="loc-nm" title={l.name}>{l.name}</span><span className="loc-bar"><span className="loc-fill" style={{ width: `${(l.conversions / locMax) * 100}%` }} /></span><span className="loc-ct">{n1(l.conversions)}</span></div>)}</div> : <div className="mr-empty">No location data this period.</div>}
-          </div>
+          </MRCard>
         </div>
         {topKw.length ? (
-          <>
-            <div className="mr-section-lab">Top keywords <span className="mr-lab-note">· the {topKw.length} that converted most · clicks (bottom scale) and conversions (top scale)</span></div>
+          <MRCard title="Top keywords" sub={`The ${topKw.length} that converted most · clicks on the bottom scale, conversions on the top scale`}>
             <div className="mr-kw-chart">
               <ResponsiveContainer width="100%" height={Math.max(220, topKw.length * 30 + 56)}>
                 <BarChart data={topKw} layout="vertical" margin={{ top: 4, right: 24, left: 8, bottom: 4 }} barGap={2}>
@@ -1898,7 +1908,7 @@ export function renderMonthlyDeck(rep, h) {
                 </BarChart>
               </ResponsiveContainer>
             </div>
-          </>
+          </MRCard>
         ) : null}
       </MRSlide>
     )
@@ -2068,12 +2078,15 @@ export function renderMonthlyDeck(rep, h) {
     // ---- User performance + Lost reasons (combined) ----
     const ke = keyEventsRaw.filter((k) => k.kind === 'stage' || (k.kind === 'calendar' && k.stage)).slice(0, 5)
     const keRef = (k) => (k.kind === 'calendar' ? k.stage : k.ref)
+    // Cash collected shows beside Revenue (closed) once the client has opted in
+    // (Settings → Clients → cash) and the deals feed carries the cash field.
+    const cashOn = loadCashOn(rep.client.id) && !!(scWon.cash || (scWon.deals || []).some((d) => d.cash != null))
     const urows = users.map((u) => {
       const sc = (scWon.byUser && scWon.byUser[u.id]) || { count: 0, revenue: 0 }
       const uc = u.crm || {}
       const urmap = reachedByStage(u.pipelines || [])
       const evReach = {}; for (const k of ke) evReach[k.ref] = stageReachOf(urmap, k.pipeline, keRef(k))
-      return { id: u.id, name: u.name, leads: u.leads || uc.leads || 0, cohortWon: uc.won || 0, evReach, closed: (sc.count != null ? sc.count : (sc.won || 0)), revenue: sc.revenue || 0 }
+      return { id: u.id, name: u.name, leads: u.leads || uc.leads || 0, cohortWon: uc.won || 0, evReach, closed: (sc.count != null ? sc.count : (sc.won || 0)), revenue: sc.revenue || 0, cash: sc.cash || 0 }
     }).sort((a, b2) => (b2.revenue - a.revenue) || (b2.closed - a.closed) || (b2.leads - a.leads))
     const topU = urows.find((u) => u.closed > 0) || urows[0]
     const userDeals = (uid) => (scWon.deals || []).filter((d) => d.userId === uid)
@@ -2098,8 +2111,9 @@ export function renderMonthlyDeck(rep, h) {
         const deals = P ? userDealsPipe(u.id, P.name) : null
         const closed = P ? deals.length : (() => { const sc = (scWon.byUser && scWon.byUser[u.id]) || {}; return sc.count != null ? sc.count : (sc.won || 0) })()
         const revenue = P ? deals.reduce((s, d) => s + (d.value || 0), 0) : (((scWon.byUser && scWon.byUser[u.id]) || {}).revenue || 0)
+        const cash = P ? deals.reduce((s, d) => s + (d.cash || 0), 0) : (((scWon.byUser && scWon.byUser[u.id]) || {}).cash || 0)
         const leads = P ? (uc.leads || 0) : (u.leads || uc.leads || 0)
-        return { id: u.id, name: u.name, leads, cohortWon: uc.won || 0, evReach, closed, revenue }
+        return { id: u.id, name: u.name, leads, cohortWon: uc.won || 0, evReach, closed, revenue, cash }
       }).filter(Boolean).filter((r) => !P || r.leads || r.closed || r.cohortWon)
       return { ke: kelist, rows: rows.sort((a, b2) => (b2.revenue - a.revenue) || (b2.closed - a.closed) || (b2.leads - a.leads)) }
     }
@@ -2148,6 +2162,7 @@ export function renderMonthlyDeck(rep, h) {
           { k: 'winrate', label: 'Cohort win %', align: 'r', render: (r) => pc(r.cohortWon, r.leads) },
           { k: 'closed', label: 'Closed this mo', align: 'r', render: (r) => (r.closed ? <button className="mr-cellbtn" onClick={() => openDrill({ title: `${r.name} - closed this month${pname ? ` · ${pname}` : ''}`, deals: userDealsPipe(r.id, pname) })}>{n0(r.closed)}</button> : '-') },
           { k: 'revenue', label: 'Revenue (closed)', align: 'r', render: (r) => money(r.revenue) },
+          ...(cashOn ? [{ k: 'cash', label: 'Cash collected', align: 'r', render: (r) => money(r.cash || 0) }] : []),
         ]}
         rows={bundle.rows} max={16}
         empty="No assigned-user data for this pipeline."
@@ -2162,7 +2177,7 @@ export function renderMonthlyDeck(rep, h) {
           {topU && topU.closed > 0 && <div className="mr-top">
             <span className="mr-top-badge">★ Top performer</span>
             <b>{topU.name}</b>
-            <span className="mr-top-stats">{money(topU.revenue)} closed · {n0(topU.closed)} deal(s) this month · {n0(topU.leads)} new leads</span>
+            <span className="mr-top-stats">{money(topU.revenue)} closed{cashOn ? ` · ${money(topU.cash || 0)} cash collected` : ''} · {n0(topU.closed)} deal(s) this month · {n0(topU.leads)} new leads</span>
           </div>}
           {multiPipe
             ? pipelines.map((P) => {
@@ -2176,7 +2191,7 @@ export function renderMonthlyDeck(rep, h) {
               )
             })
             : <UserPerfTable bundle={{ ke, rows: urows }} pname={null} />}
-          <p className="mr-foot-note">“Won (cohort)” counts this month's leads that are already won; “Closed this mo” counts deals won this month regardless of when the lead came in - click a number to see the deals.{multiPipe ? ' Each table is scoped to that pipeline.' : ''}</p>
+          <p className="mr-foot-note">“Won (cohort)” counts this month's leads that are already won; “Closed this mo” counts deals won this month regardless of when the lead came in - click a number to see the deals.{cashOn ? ' “Cash collected” is the cash recorded on those closed deals.' : ''}{multiPipe ? ' Each table is scoped to that pipeline.' : ''}</p>
         </section>
 
         <section className="mr-bubble">
@@ -2303,49 +2318,42 @@ export function renderMonthlyDeck(rep, h) {
       } catch { reachBlock = null }
     }
     push(
-      <MRSlide key="c360" kicker="Caalano360" title="Account summary & ROI" sub={`The month in one place, each figure against ${prevLabel}. ROAS is measured only on revenue from deals attributed to a paid channel (Meta / Google) via UTM - never total business.`}>
-        <div className="mr-kpirow mr-kpirow-wide">
-          {rep.hasMeta ? <Tile label="Meta spend" value={money(paid.metaSpend || 0)} cur={paid.metaSpend || 0} prev={prevB ? prevB.metaSpend : null} good="neu" /> : null}
-          {rep.hasGoogle ? <Tile label="Google spend" value={money(paid.googleSpend || 0)} cur={paid.googleSpend || 0} prev={prevB ? prevB.googleSpend : null} good="neu" /> : null}
-          <Tile label="Total ad spend" value={money(totalSpend)} cur={totalSpend} prev={prevSpend} good="neu" />
-          <Tile label="Paid results" value={n0(paidLeads)} cur={paidLeads} prev={prevResults} sub="Meta results + Google conversions" />
-          <Tile label="Cost / result" value={paidLeads ? money(totalSpend / paidLeads) : '-'} cur={paidLeads ? totalSpend / paidLeads : null} prev={prevResults && prevSpend ? prevSpend / prevResults : null} good="down" />
-          {rep.hasCrm ? <>
-            <Tile label="CRM leads" value={n0(crm.leads)} cur={crm.leads} prev={prevCrm ? prevCrm.leads : null} sub="created this month" />
-            <Tile label="Won · created" value={n0(coWon.count)} cur={coWon.count} prev={prevCrm ? prevCrm.won : null} sub="this month's leads" />
-            <Tile label="Revenue · created" value={money(coWon.revenue)} cur={coWon.revenue} prev={prevCrm ? prevCrm.revenue : null} />
-            <Tile label="Won · closed" value={n0(dealsWon)} cur={dealsWon} prev={pccTot ? pccTot.won : null} sub="closed this month" />
-            <Tile label="Revenue · closed" value={money(realisedRev)} cur={realisedRev} prev={pcc && pcc.revenue ? pcc.revenue.total : null} />
-            <Tile label="Paid revenue" value={money(paidRev)} cur={paidRev} prev={prevPaidRev} strong sub="closed · Meta + Google" />
-            <Tile label="ROAS (paid)" value={roas != null ? roas.toFixed(1) + 'x' : '-'} cur={roas} prev={prevRoas} />
-            <Tile label="Cost / won (paid)" value={paidWon ? money(totalSpend / paidWon) : '-'} cur={paidWon ? totalSpend / paidWon : null} prev={pcc && pcc.paid && pcc.paid.paidWon && prevSpend ? prevSpend / pcc.paid.paidWon : null} good="down" />
-            <Tile label="Avg time to close" value={scWon.avgCloseDays != null ? `${scWon.avgCloseDays} days` : '-'} sub="lead → won" />
-            <Tile label="Open pipeline" value={money(crm.openValue)} cur={crm.openValue} prev={prevCrm ? prevCrm.openValue : null} good="neu" sub={`${n0(crm.open)} open`} />
-          </> : null}
+      <MRSlide key="c360" kicker="Caalano360" title="Account summary & ROI" sub={`The month in one place, each figure against ${prevLabel}. ROAS and paid revenue count only deals attributed to Meta or Google by UTM, never total business.`}>
+        <div className="mr-kpi-groups">
+          <div className="mr-kpi-group">
+            <div className="mr-kpi-group-lab">Paid media</div>
+            <div className="mr-kpirow mr-kpirow-wide">
+              {rep.hasMeta ? <Tile label="Meta spend" value={money(paid.metaSpend || 0)} cur={paid.metaSpend || 0} prev={prevB ? prevB.metaSpend : null} good="neu" /> : null}
+              {rep.hasGoogle ? <Tile label="Google spend" value={money(paid.googleSpend || 0)} cur={paid.googleSpend || 0} prev={prevB ? prevB.googleSpend : null} good="neu" /> : null}
+              <Tile label="Total ad spend" value={money(totalSpend)} cur={totalSpend} prev={prevSpend} good="neu" />
+              <Tile label="Paid results" value={n0(paidLeads)} cur={paidLeads} prev={prevResults} sub="Meta results + Google conversions" />
+              <Tile label="Cost / result" value={paidLeads ? money(totalSpend / paidLeads) : '-'} cur={paidLeads ? totalSpend / paidLeads : null} prev={prevResults && prevSpend ? prevSpend / prevResults : null} good="down" />
+            </div>
+          </div>
+          {rep.hasCrm ? <div className="mr-kpi-group">
+            <div className="mr-kpi-group-lab">This month's leads <span>· created on</span></div>
+            <div className="mr-kpirow mr-kpirow-wide">
+              <Tile label="CRM leads" value={n0(crm.leads)} cur={crm.leads} prev={prevCrm ? prevCrm.leads : null} sub="created this month" />
+              <Tile label="Won" value={n0(coWon.count)} cur={coWon.count} prev={prevCrm ? prevCrm.won : null} sub="of this month's leads" />
+              <Tile label="Revenue" value={money(coWon.revenue)} cur={coWon.revenue} prev={prevCrm ? prevCrm.revenue : null} sub="from this month's leads" />
+              <Tile label="Open pipeline" value={money(crm.openValue)} cur={crm.openValue} prev={prevCrm ? prevCrm.openValue : null} good="neu" sub={`${n0(crm.open)} open`} />
+            </div>
+          </div> : null}
+          {rep.hasCrm ? <div className="mr-kpi-group">
+            <div className="mr-kpi-group-lab">Closed this month <span>· status change</span></div>
+            <div className="mr-kpirow mr-kpirow-wide">
+              <Tile label="Won" value={n0(dealsWon)} cur={dealsWon} prev={pccTot ? pccTot.won : null} sub="closed this month" />
+              <Tile label="Revenue" value={money(realisedRev)} cur={realisedRev} prev={pcc && pcc.revenue ? pcc.revenue.total : null} sub="closed this month" />
+              <Tile label="Paid revenue" value={money(paidRev)} cur={paidRev} prev={prevPaidRev} strong sub="closed · Meta + Google" />
+              <Tile label="ROAS (paid)" value={roas != null ? roas.toFixed(1) + 'x' : '-'} cur={roas} prev={prevRoas} />
+              <Tile label="Cost / won (paid)" value={paidWon ? money(totalSpend / paidWon) : '-'} cur={paidWon ? totalSpend / paidWon : null} prev={pcc && pcc.paid && pcc.paid.paidWon && prevSpend ? prevSpend / pcc.paid.paidWon : null} good="down" />
+              <Tile label="Avg time to close" value={scWon.avgCloseDays != null ? `${scWon.avgCloseDays} days` : '-'} sub="lead → won" />
+            </div>
+          </div> : null}
         </div>
-        <div className="mr-section-lab">Overall · {b.label} · created on</div>
-        <div className="table-wrap"><table className="mr-table mr-funnel-tbl">
-          <thead><tr><th className="lft">Funnel</th><th className="lft">Metric</th><th className="r">Total</th><th className="r" title="Share of this month's leads">CVR</th><th className="r" title="Share of the row before">Next step</th><th className="r" title="Total ad spend ÷ the count">CPA</th></tr></thead>
-          <tbody>{funnelGroups.map((g) => g.rows.map((r, i) => (
-            <tr key={g.name + i} className={g.cls}>
-              {i === 0 ? <td className="lft mr-funnel-grp" rowSpan={g.rows.length}><span>{g.name}</span></td> : null}
-              <td className="lft">{r[0]}</td>
-              <td className="r"><b>{r[1]}</b></td>
-              <td className="r">{r[2] || ''}</td>
-              <td className="r">{r[3] || ''}</td>
-              <td className="r">{r[4] || ''}</td>
-            </tr>
-          )))}</tbody>
-        </table></div>
-        <p className="mr-foot-note">Potential additional revenue = open leads × the win rate among resulted leads × average order value{trailOk ? <>, both over the trailing three months ({trailLab}): {n0(tWon)} won of {n0(tWon + tLost)} resulted ({fmtPct(potWin * 100, 1)}) at {money(potAov)} a deal</> : <> for this month ({pc(coWon.count, cohortResulted)} and {money(aov)})</>}. Potential ROI = (revenue + that) ÷ ad spend. MER = revenue ÷ ad spend.</p>
-        {cc ? <>
-          <div className="mr-section-lab">Channel performance <span className="mr-lab-note">· spend → key events → outcomes per paid channel · closed this month</span></div>
-          <ChannelPerfBody cc={cc} channels={{ metaSpend: paid.metaSpend || 0, googleSpend: paid.googleSpend || 0, metaLeads: paid.metaLeads || 0, googleConv: paid.googleConv || 0 }} adsOk={{}} cashOn={loadCashOn(rep.client.id)} clientId={rep.client.id} money={money} />
-        </> : null}
         {reachBlock ? <div className="mr-reach">{reachBlock}</div>
           : funnelPipes.length
-            ? <>
-              <div className="mr-section-lab">This month's leads → key events (created-on cohort){multiPipe && funnelPipes.length > 1 ? ' · one funnel per pipeline' : ''}</div>
+            ? <MRCard title="Key event reach" sub={`This month's leads → key events (created-on cohort)${multiPipe && funnelPipes.length > 1 ? ' · one funnel per pipeline' : ''}`}>
               {multiPipe && funnelPipes.length > 1
                 ? <div className="mr-funnel-split">{funnelPipes.map((f) => (
                   <div className="mr-funnel-big" key={f.pipe.id}>
@@ -2353,20 +2361,39 @@ export function renderMonthlyDeck(rep, h) {
                   </div>
                 ))}</div>
                 : <div className="mr-funnel-big"><KeyEventsFunnel rows={funnelPipes[0].rows} total={funnelPipes[0].leads} spend={totalSpend} currency={currency} caveat="One cohort: leads created this month and how far they've progressed." /></div>}
-            </>
+            </MRCard>
             : null}
-        <div className="mr-two mr-two-viz">
-          <div>
-            <div className="mr-section-lab">Revenue - status change vs created on</div>
+        {cc ? (
+          <MRCard title="Channel performance" sub="Spend → key events → outcomes per paid channel · closed this month">
+            <ChannelPerfBody cc={cc} channels={{ metaSpend: paid.metaSpend || 0, googleSpend: paid.googleSpend || 0, metaLeads: paid.metaLeads || 0, googleConv: paid.googleConv || 0 }} adsOk={{}} cashOn={loadCashOn(rep.client.id)} clientId={rep.client.id} money={money} />
+          </MRCard>
+        ) : null}
+        <MRCard title={`Overall · ${b.label} · created on`} sub="What the platforms cost and returned, how the month's leads moved through the key events, what the business banked, and what the open leads could still add.">
+          <div className="table-wrap"><table className="mr-table mr-funnel-tbl">
+            <thead><tr><th className="lft">Funnel</th><th className="lft">Metric</th><th className="r">Total</th><th className="r" title="Share of this month's leads">CVR</th><th className="r" title="Share of the row before">Next step</th><th className="r" title="Total ad spend ÷ the count">CPA</th></tr></thead>
+            <tbody>{funnelGroups.map((g) => g.rows.map((r, i) => (
+              <tr key={g.name + i} className={g.cls}>
+                {i === 0 ? <td className="lft mr-funnel-grp" rowSpan={g.rows.length}><span>{g.name}</span></td> : null}
+                <td className="lft">{r[0]}</td>
+                <td className="r"><b>{r[1]}</b></td>
+                <td className="r">{r[2] || ''}</td>
+                <td className="r">{r[3] || ''}</td>
+                <td className="r">{r[4] || ''}</td>
+              </tr>
+            )))}</tbody>
+          </table></div>
+          <p className="mr-foot-note mr-card-foot">Potential additional revenue = open leads × the win rate among resulted leads × average order value{trailOk ? <>, both over the trailing three months ({trailLab}): {n0(tWon)} won of {n0(tWon + tLost)} resulted ({fmtPct(potWin * 100, 1)}) at {money(potAov)} a deal</> : <> for this month ({pc(coWon.count, cohortResulted)} and {money(aov)})</>}. Potential ROI = (revenue + that) ÷ ad spend. MER = revenue ÷ ad spend.</p>
+        </MRCard>
+        <div className="mr-two mr-gcards">
+          <MRCard title="Revenue · status change vs created on" sub="Deals marked won this month (any lead date) beside deals whose lead came in this month and are won.">
             <div className="mr-revmatrix-wrap"><MRRevMatrix sc={scWon} co={coWon} spend={totalSpend} money={money} n0={n0} onDrill={openDrill} lostSc={md ? md.lost : null} lostCo={md && md.lostCreatedOn ? md.lostCreatedOn : null} /></div>
-          </div>
-          <div>
-            <div className="mr-viz-lab">Leads by status (this month)</div>
+            <p className="mr-foot-note mr-card-foot">Total business closed this month was {money(realisedRev)} across {n0(dealsWon)} deal(s){otherRev > 0 ? `, of which ${money(otherRev)} came from non-paid or unattributed sources` : ''}.</p>
+          </MRCard>
+          <MRCard title="Leads by status" sub={`Where this month's ${n0(crm.leads)} leads stand today.`}>
             {cohortDonut.length ? <MRDonut data={cohortDonut} money={money} /> : <div className="mr-empty">No leads this month.</div>}
-            <p className="mr-foot-note" style={{ marginTop: 6 }}>Of {n0(crm.leads)} leads created this month: {n0(coWon.count)} won, {n0(cohortLost)} lost or abandoned, {n0(crm.open)} still open.</p>
-          </div>
+            <p className="mr-foot-note mr-card-foot">Of {n0(crm.leads)} leads created this month: {n0(coWon.count)} won, {n0(cohortLost)} lost or abandoned, {n0(crm.open)} still open.</p>
+          </MRCard>
         </div>
-        <p className="mr-foot-note">Status change = deals marked won this month (cash banked, any lead date). Created on = deals whose lead came in this month and are won. Total business closed this month was {money(realisedRev)} across {n0(dealsWon)} deal(s){otherRev > 0 ? `, of which ${money(otherRev)} came from non-paid or unattributed sources` : ''}.</p>
       </MRSlide>
     )
   }

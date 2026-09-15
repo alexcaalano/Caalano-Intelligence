@@ -4083,7 +4083,8 @@ export default async (req) => {
     const cc = CLIENTS[client]
     if (!cc) return json({ error: `unknown client ${client}` }, 404)
     if (!cc.ghl) return json({ deals: null, connected: false })
-    if (!(await isConnected().catch(() => false))) return json({ deals: null, connected: false, needsSetup: true })
+    // The demo client is generated locally, so it needs no CRM connection.
+    if (client !== DEMO_CLIENT_ID && !(await isConnected().catch(() => false))) return json({ deals: null, connected: false, needsSetup: true })
     try {
       const [md, usersRows] = await Promise.all([
         monthlyDeals(cc.ghl, from, to),

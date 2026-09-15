@@ -2934,11 +2934,12 @@ export async function monthlyDeals(locationId, from, to, lookbackDays = 400) {
   const locTok = await locationTokenOrDemo(locationId)
   const back = from ? new Date(new Date(from + 'T00:00:00Z').getTime() - lookbackDays * 86400000).toISOString().slice(0, 10) : from
   const CAP = 3000
-  const [opps, pipelines, reasons, tz] = await Promise.all([
+  const [opps, pipelines, reasons, tz, cashField] = await Promise.all([
     allOpportunities(locTok, locationId, back, to, CAP),
     fetchPipelines(locTok, locationId),
     ghlGet(locTok, '/opportunities/lost-reason', { locationId, limit: 200 }).then((j) => j.lostReasons || []).catch(() => []),
     locationTimezone(locationId),
+    oppCustomFields(locTok, locationId).then(cashFieldOf).catch(() => null),
   ])
   const idx = stageIndexFrom(pipelines)
   const reasonName = {}; for (const r of reasons) reasonName[r._id || r.id] = r.name
@@ -2962,6 +2963,9 @@ export async function monthlyDeals(locationId, from, to, lookbackDays = 400) {
       // so a non-paid "Other" lead can show where it actually came from.
       ad: u.content || null, campaign: u.campaign || null, medium: u.medium || null, source: o.source || u.source || null,
       userId: o.assignedTo || 'unassigned', reason: o.lostReasonId ? (reasonName[o.lostReasonId] || 'Other') : null,
+      // Cash collected on the deal (the client's cash field); null when the
+      // account has no such field or nothing was entered.
+      cash: cashField ? (() => { const c = oppCashValue(o, cashField); return c == null ? null : Math.round(c) })() : null,
     }
   }
   // Lost on two bases, like won: status change (marked lost this month, whatever
@@ -2985,12 +2989,12 @@ export async function monthlyDeals(locationId, from, to, lookbackDays = 400) {
     const paid = deals.filter((d) => isPaid(d.channel))
     const byUser = {}, byChannel = { meta: { count: 0, revenue: 0, closeSum: 0, closeN: 0 }, google: { count: 0, revenue: 0, closeSum: 0, closeN: 0 }, other: { count: 0, revenue: 0, closeSum: 0, closeN: 0 } }
     for (const d of deals) {
-      const u = byUser[d.userId] = byUser[d.userId] || { count: 0, revenue: 0 }; u.count++; u.revenue += d.value
-      const c = byChannel[isPaid(d.channel) ? d.channel : 'other']; c.count++; c.revenue += d.value
+      const u = byUser[d.userId] = byUser[d.userId] || { count: 0, revenue: 0, cash: 0 }; u.count++; u.revenue += d.value; u.cash += d.cash || 0
+      const c = byChannel[isPaid(d.channel) ? d.channel : 'other']; c.count++; c.revenue += d.value; c.cash = (c.cash || 0) + (d.cash || 0)
       // Per-channel time-to-close (lead created → won), same span basis as the overall.
       const cr = Date.parse(d.createdAt), sa = Date.parse(d.statusAt); if (isFinite(cr) && isFinite(sa) && sa >= cr) { c.closeSum += (sa - cr) / 86400000; c.closeN++ }
     }
-    for (const k in byUser) byUser[k].revenue = Math.round(byUser[k].revenue)
+    for (const k in byUser) { byUser[k].revenue = Math.round(byUser[k].revenue); byUser[k].cash = Math.round(byUser[k].cash) }
     for (const k in byChannel) { byChannel[k].revenue = Math.round(byChannel[k].revenue); byChannel[k].avgCloseDays = byChannel[k].closeN ? Math.round(byChannel[k].closeSum / byChannel[k].closeN) : null; delete byChannel[k].closeSum; delete byChannel[k].closeN }
     // Average time to close = days from lead created → deal won, across deals that
     // have both dates.
@@ -2999,6 +3003,7 @@ export async function monthlyDeals(locationId, from, to, lookbackDays = 400) {
       count: deals.length, revenue: Math.round(sumV(deals)), avgValue: deals.length ? Math.round(sumV(deals) / deals.length) : 0,
       avgCloseDays: spans.length ? Math.round(spans.reduce((a, b) => a + b, 0) / spans.length) : null,
       paid: { count: paid.length, revenue: Math.round(sumV(paid)) }, byUser, byChannel,
+      cash: cashField ? { field: cashField, collected: Math.round(deals.reduce((s, d) => s + (d.cash || 0), 0)), entered: deals.filter((d) => d.cash != null).length } : null,
       deals: deals.sort((a, b) => b.value - a.value).slice(0, 500),
     }
   }

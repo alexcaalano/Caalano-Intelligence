@@ -18,6 +18,20 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.654.0 - 2026-09-15
+
+**Monthly Report: Insights and live Notes, Report settings, a tidier toolbar** (commit PENDING)
+
+- **Insights** are the pre-meeting notes, one per page, written under ⚙ Report settings. They no longer print at the foot of a page.
+- **Notes** is a button that opens a narrow widget on the left of the deck for the page in view: its Insights (pre-meeting notes) on top, and under them a free box for what comes up live on the call. Both save as you type - the widget and the panel say "Auto-saved" with the time - and both are kept with the client and the report month whatever is regenerated.
+- A client who opens a published report sees the page's Insights in the same left widget when there are any, and nothing when there are none.
+- **⚙ Report settings** replaces the scattered buttons: This report (the Insights per page) and All reports for the client (the pages in the deck, which comparisons the Meta and Google pages show, the key events on the creative screen, and whether the client can download the PDF).
+- **Comparisons.** The Meta and Google month pages compare to the month before. The three-month average and the same month a year earlier are now client settings, off until switched on.
+- The toolbar is grouped: generate and publish on the left, the view toggle, Notes, Report settings, Present and PDF on the right, with Copy link and Print behind ···.
+- Creative cards: the key-event figures never clip; the event name wraps instead.
+
+---
+
 ## v3.653.0 - 2026-09-15
 
 **Meta and Google month-by-month: cost per result on its own scale; six months in view** (commit 6ffc269)

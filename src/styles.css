@@ -2517,7 +2517,7 @@ button.bn-cal-row.is-link:hover .bn-cal-go { color: var(--brand); }
 /* Full-width key-events table inside a creative card (replaces the green bubbles).
    Fixed layout so every card's columns line up; event name column flexes, the five
    numeric columns take a fixed slice each and right-align. */
-.mr-cre-ketbl { width: 100%; border-collapse: collapse; font-size: 11px; table-layout: fixed; }
+.mr-cre-ketbl { width: 100%; border-collapse: collapse; font-size: 11px; table-layout: auto; }
 .mr-cre-ketbl col.ke-name { width: auto; }
 .mr-cre-ketbl col.ke-num { width: 12%; }
 .mr-cre-ketbl th { text-align: left; font-size: 8.5px; text-transform: uppercase; letter-spacing: .02em; color: var(--faint); font-weight: 700; padding: 0 5px 3px; border-bottom: 1px solid var(--border); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -5952,3 +5952,35 @@ body.hub-tv-on { overflow: hidden; }
 /* The month table shows six months; the rest scroll under a pinned header. */
 .mr-mp-tbl-wrap { max-height: 192px; overflow-y: auto; }
 .mr-mp-tbl thead th { position: sticky; top: 0; background: var(--panel); z-index: 1; }
+/* The live widget beside the deck: the page's insights and a notes box. */
+.mr-live { flex: 0 0 15%; min-width: 190px; position: sticky; top: 64px; max-height: calc(100vh - 80px); overflow: auto; background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+.mr-live-h { font-size: 12px; font-weight: 800; letter-spacing: -.01em; }
+.mr-live-lab { font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; color: var(--brand); margin-top: 4px; }
+.mr-live-lab small { text-transform: none; letter-spacing: 0; font-weight: 500; color: var(--faint); margin-left: 4px; }
+.mr-live-txt { white-space: pre-wrap; font-size: 12.5px; line-height: 1.45; }
+.mr-live-empty { font-size: 12px; color: var(--faint); }
+.mr-live-box { width: 100%; resize: vertical; min-height: 120px; background: var(--panel-2); color: var(--text); border: 1px solid var(--border-2); border-radius: 8px; padding: 8px 10px; font: inherit; font-size: 12.5px; line-height: 1.4; }
+.mr-live-box:focus { outline: none; border-color: var(--brand); }
+.mr-live-foot { margin-top: auto; }
+.mr-autosave { font-size: 11px; color: var(--pos); font-weight: 600; }
+.mr-autosave.saving { color: var(--muted); }
+@media (max-width: 900px) { .mr-live { flex: 1 1 auto; position: static; max-height: none; width: 100%; } }
+/* Report toolbar groups and the settings panel sections */
+.mr-btn-grp { display: inline-flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.mr-more { position: relative; }
+.mr-more summary { list-style: none; cursor: pointer; display: inline-block; letter-spacing: .1em; }
+.mr-more summary::-webkit-details-marker { display: none; }
+.mr-more-menu { position: absolute; right: 0; top: calc(100% + 6px); z-index: 50; min-width: 160px; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 6px; box-shadow: 0 10px 30px rgba(0,0,0,.14); display: flex; flex-direction: column; gap: 2px; }
+.mr-more-menu button { text-align: left; background: transparent; border: 0; color: var(--text); padding: 7px 10px; border-radius: 7px; font-size: 12.5px; font-weight: 600; cursor: pointer; }
+.mr-more-menu button:hover:not(:disabled) { background: var(--panel-2); }
+.mr-more-menu button:disabled { opacity: .5; cursor: default; }
+.mr-set-sec { display: flex; flex-direction: column; gap: 8px; padding-top: 10px; border-top: 1px solid var(--border); }
+.mr-set-h { font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; color: var(--brand); }
+.mr-set-h span { text-transform: none; letter-spacing: 0; color: var(--muted); font-weight: 600; }
+.mr-set-row { display: flex; flex-direction: column; gap: 4px; }
+.mr-set-row .mr-pages-pick { padding: 0; border-bottom: 0; }
+.pv-ke-box.is-fixed { opacity: .7; }
+/* Creative card key events: the figures never clip; the name wraps instead. */
+.mr-cre-ketbl th.r, .mr-cre-ketbl td.r { white-space: nowrap; overflow: visible; text-overflow: clip; padding-left: 4px; padding-right: 4px; }
+.mr-cre-ketbl th { white-space: normal; line-height: 1.15; }
+.mr-cre-ketbl td:first-child { min-width: 72px; }

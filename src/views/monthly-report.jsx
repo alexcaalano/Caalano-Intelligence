@@ -365,10 +365,11 @@ export function MRMonthPerf({ trend, monthKey, money, spec }) {
   const data = rows.map((r) => ({ ...spec.derive(r), month: r.month, lbl: lab(r.month) }))
   let ci = data.findIndex((r) => r.month === monthKey); if (ci < 0) ci = data.length - 1
   const cur = data[ci], prev = ci > 0 ? data[ci - 1] : null
-  const last3 = data.slice(Math.max(0, ci - 3), ci)
-  const avg3 = last3.length === 3 ? (k) => { const vs = last3.map((r) => r[k]).filter((v) => v != null && isFinite(v)); return vs.length ? vs.reduce((a, v) => a + v, 0) / vs.length : null } : null
-  const yoy = ci >= 12 ? data[ci - 12] : null
   const tiles = spec.tiles.filter(Boolean)
+  const cmpOn = spec.cmp || {}
+  const last3 = data.slice(Math.max(0, ci - 3), ci)
+  const avg3 = cmpOn.avg3 && last3.length === 3 ? (k) => { const vs = last3.map((r) => r[k]).filter((v) => v != null && isFinite(v)); return vs.length ? vs.reduce((a, v) => a + v, 0) / vs.length : null } : null
+  const yoy = cmpOn.yoy && ci >= 12 ? data[ci - 12] : null
   const cmps = (k) => [prev && ['vs ' + prev.lbl, prev[k]], avg3 && ['vs 3-mo avg', avg3(k)], yoy && ['vs ' + yoy.lbl, yoy[k]]].filter((x) => x && x[1] != null)
   const tableRows = data.slice().reverse()
   const cols = spec.cols.filter(Boolean)
@@ -417,7 +418,7 @@ export function MRMonthPerf({ trend, monthKey, money, spec }) {
     </div>
   )
 }
-export function MRMetaPerf({ trend, monthKey, money, n0, resultType }) {
+export function MRMetaPerf({ trend, monthKey, money, n0, resultType, cmp }) {
   const hasImpr = (trend || []).some((r) => r && r.impressions > 0)
   const resLabel = resultType || 'Leads'
   const one = resLabel.toLowerCase().replace(/s$/, '')
@@ -436,10 +437,11 @@ export function MRMetaPerf({ trend, monthKey, money, n0, resultType }) {
     ],
     bars: { k: 'leads', name: resLabel, fmt: (v) => fmtNumber(v) }, bars2: { k: 'cpl', name: `Cost / ${one}` }, line: { k: 'spend', name: 'Amount spent' },
     cols: [hasImpr && { k: 'impressions', label: 'Impressions', fmt: n0 }, hasImpr && { k: 'linkClicks', label: 'Link clicks', fmt: n0 }, { k: 'leads', label: resLabel, fmt: n0 }, { k: 'spend', label: 'Cost', fmt: money }, hasImpr && { k: 'cpc', label: 'CPC', fmt: money }, hasImpr && { k: 'cpm', label: 'CPM', fmt: money }, hasImpr && { k: 'ctr', label: 'CTR', fmt: pct2 }, { k: 'cpl', label: `Cost / ${one}`, fmt: money }],
+    cmp,
   }
   return <MRMonthPerf trend={trend} monthKey={monthKey} money={money} spec={spec} />
 }
-export function MRGooglePerf({ trend, monthKey, money, n0 }) {
+export function MRGooglePerf({ trend, monthKey, money, n0, cmp }) {
   const n1 = (v) => (v == null || isNaN(v) ? '-' : fmtNumber(Math.round(v * 10) / 10))
   const pct2 = (v) => fmtPct(v, 2)
   const spec = {
@@ -456,6 +458,7 @@ export function MRGooglePerf({ trend, monthKey, money, n0 }) {
     ],
     bars: { k: 'conversions', name: 'Conversions', fmt: n1 }, bars2: { k: 'cpa', name: 'Cost / conv.' }, line: { k: 'cost', name: 'Cost' },
     cols: [{ k: 'impressions', label: 'Impressions', fmt: n0 }, { k: 'cvr', label: 'Conv. rate', fmt: pct2 }, { k: 'clicks', label: 'Clicks', fmt: n0 }, { k: 'ctr', label: 'CTR', fmt: pct2 }, { k: 'cost', label: 'Cost', fmt: money }, { k: 'conversions', label: 'Conversions', fmt: n1 }, { k: 'cpa', label: 'Cost / conv.', fmt: money }],
+    cmp,
   }
   return <MRMonthPerf trend={trend} monthKey={monthKey} money={money} spec={spec} />
 }
@@ -529,9 +532,11 @@ export function ClientReports({ clients, currency }) {
   const notesC = (rep && mrsC.notes && mrsC.notes[rep.month]) || null
   const keOffC = mrsC.keOff || []
   const hiddenC = Array.isArray(mrsC.hidden) ? mrsC.hidden : MR_DEFAULT_HIDDEN
-  const deck = React.useMemo(() => (rep ? renderMonthlyDeck(rep, { currency, money, n0, pc, openDrill: (d) => setDrill(d), setFormDrill, notes: notesC, keOff: new Set(keOffC) }).filter((el) => !hiddenC.includes(el.key)) : []), [rep, currency, JSON.stringify(notesC), keOffC.join('|'), hiddenC.join('|')])
+  const deck = React.useMemo(() => (rep ? renderMonthlyDeck(rep, { currency, money, n0, pc, openDrill: (d) => setDrill(d), setFormDrill, keOff: new Set(keOffC), cmp: mrsC.cmp || {} }).filter((el) => !hiddenC.includes(el.key)) : []), [rep, currency, keOffC.join('|'), hiddenC.join('|'), JSON.stringify(mrsC.cmp || {})])
   const total = deck.length
   const cur = Math.max(0, Math.min(idx, total - 1))
+  const curKeyC = deck[cur] ? deck[cur].key : null
+  const insightC = notesC && curKeyC && notesC[curKeyC] && String(notesC[curKeyC]).trim() ? String(notesC[curKeyC]).trim() : null
   const slideTitle = (el, i) => (el && el.props && (el.props.title || el.props.kicker)) || (el && el.key === 'cover' ? 'Cover' : `Slide ${i + 1}`)
   useEffect(() => { setIdx(0) }, [clientId, month, view])
   useEffect(() => {
@@ -584,7 +589,12 @@ export function ClientReports({ clients, currency }) {
           <span className="mr-nav-count">{cur + 1} / {total}</span>
         </div>
       )}
-      {rep && <div className={'mr-deck' + (view === 'slides' ? ' mr-slides' : '')} ref={deckRef}><div className="mr-track" style={view === 'slides' ? { transform: `translateX(-${cur * 100}%)` } : undefined}>{deck}</div></div>}
+      {rep && (
+        <div className={'mr-split' + (insightC && view === 'slides' ? ' on' : '')}>
+          {insightC && view === 'slides' ? <aside className="mr-live no-print"><div className="mr-live-h">Insights</div><div className="mr-live-txt">{insightC}</div></aside> : null}
+          <div className="mr-main"><div className={'mr-deck' + (view === 'slides' ? ' mr-slides' : '')} ref={deckRef}><div className="mr-track" style={view === 'slides' ? { transform: `translateX(-${cur * 100}%)` } : undefined}>{deck}</div></div></div>
+        </div>
+      )}
       {drill && <MRDrill drill={drill} currency={currency} campMap={rep && rep.campIdMap} medMap={rep && rep.mediumIdMap} onClose={() => setDrill(null)} />}
       {formDrill && rep && rep.client && <MRFormDrill clientId={rep.client.id} range={rep.period} form={formDrill.form} event={formDrill.event} pipeKey={formDrill.pipeKey} currency={currency} onClose={() => setFormDrill(null)} />}
     </div>
@@ -695,19 +705,35 @@ export function MonthlyReport({ clients, currency, authUser }) {
   // Notes per page for this report, drafted here and saved as you type; the
   // key events the client sees on the creative screen, per client.
   const canEdit = !isClientRoleFE(authUser && authUser.role)
+  // Insights (written before the meeting, one per page) and Notes (typed live
+  // on the call, one per page): both kept per client and report month in the
+  // settings store, so a refreshed snapshot never touches them. Saved as you
+  // type; `autoSaved` says when.
   const [draft, setDraft] = useState({})
-  useEffect(() => { const m = client ? loadMReport(client.id) : {}; setDraft((m.notes && m.notes[period.key]) || {}) }, [clientId, period.key])
-  const noteTimer = useRef(null)
-  const saveNotes = (d) => { if (!client) return; const cur = loadMReport(client.id); saveMReport(client.id, { notes: { ...(cur.notes || {}), [period.key]: d } }) }
-  const setNote = (k, v) => setDraft((d) => { const nx = { ...d, [k]: v }; clearTimeout(noteTimer.current); noteTimer.current = setTimeout(() => saveNotes(nx), 800); return nx })
+  const [liveDraft, setLiveDraft] = useState({})
+  const [autoSaved, setAutoSaved] = useState(null) // 'saving' | Date
+  const [showNotes, setShowNotes] = useState(false)
+  useEffect(() => { const m = client ? loadMReport(client.id) : {}; setDraft((m.notes && m.notes[period.key]) || {}); setLiveDraft((m.live && m.live[period.key]) || {}); setAutoSaved(null) }, [clientId, period.key])
+  const noteTimer = useRef(null), liveTimer = useRef(null)
+  const saveNotes = (d) => { if (!client) return; const cur = loadMReport(client.id); saveMReport(client.id, { notes: { ...(cur.notes || {}), [period.key]: d } }); setAutoSaved(new Date()) }
+  const saveLive = (d) => { if (!client) return; const cur = loadMReport(client.id); saveMReport(client.id, { live: { ...(cur.live || {}), [period.key]: d } }); setAutoSaved(new Date()) }
+  const setNote = (k, v) => setDraft((d) => { const nx = { ...d, [k]: v }; setAutoSaved('saving'); clearTimeout(noteTimer.current); noteTimer.current = setTimeout(() => saveNotes(nx), 800); return nx })
+  const setLive = (k, v) => setLiveDraft((d) => { const nx = { ...d, [k]: v }; setAutoSaved('saving'); clearTimeout(liveTimer.current); liveTimer.current = setTimeout(() => saveLive(nx), 800); return nx })
+  const savedTag = autoSaved === 'saving' ? <span className="mr-autosave saving">Saving…</span> : autoSaved ? <span className="mr-autosave">Auto-saved {autoSaved.toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit' })}</span> : <span className="mr-autosave">Saves as you type</span>
   const keOffArr = (client && loadMReport(client.id).keOff) || []
   const toggleKe = (label) => { if (!client) return; const set = new Set(loadMReport(client.id).keOff || []); if (set.has(label)) set.delete(label); else set.add(label); saveMReport(client.id, { keOff: [...set] }) }
   const notesKey = JSON.stringify(draft)
+  // Comparisons on the month-by-month pages beyond the month before: the
+  // three-month average and the same month a year earlier, per client, off
+  // until switched on.
+  const cmpSet = (client && loadMReport(client.id).cmp) || {}
+  const toggleCmp = (k) => { if (!client) return; const cur = loadMReport(client.id).cmp || {}; saveMReport(client.id, { cmp: { ...cur, [k]: !cur[k] } }); setAutoSaved(new Date()) }
   // Pages the client does not get: a saved list per client, or the default
   // (the key-events-by-campaign and form pages stay off until switched on).
   const hiddenArr = (client && Array.isArray(loadMReport(client.id).hidden)) ? loadMReport(client.id).hidden : MR_DEFAULT_HIDDEN
   const togglePage = (key) => { if (!client) return; const set = new Set(hiddenArr); if (set.has(key)) set.delete(key); else set.add(key); saveMReport(client.id, { hidden: [...set] }) }
-  const deckAll = React.useMemo(() => (rep ? renderMonthlyDeck(rep, { currency, money, n0, pc, openDrill: (d) => setDrill(d), setFormDrill, notes: draft, keOff: new Set(keOffArr), onKeOff: canEdit && editing ? toggleKe : null }) : []), [rep, currency, notesKey, keOffArr.join('|'), editing])
+  const deckAll = React.useMemo(() => (rep ? renderMonthlyDeck(rep, { currency, money, n0, pc, openDrill: (d) => setDrill(d), setFormDrill, keOff: new Set(keOffArr), onKeOff: canEdit && editing ? toggleKe : null, cmp: cmpSet }) : []), [rep, currency, keOffArr.join('|'), editing, JSON.stringify(cmpSet)])
+  void notesKey
   const deck = React.useMemo(() => deckAll.filter((el) => !hiddenArr.includes(el.key)), [deckAll, hiddenArr.join('|')])
   const total = deck.length
   const cur = Math.max(0, Math.min(idx, total - 1))
@@ -749,12 +775,19 @@ export function MonthlyReport({ clients, currency, authUser }) {
           <button className={view === 'slides' ? 'on' : ''} onClick={() => setView('slides')}>▤ Slides</button>
           <button className={view === 'scroll' ? 'on' : ''} onClick={() => setView('scroll')}>▦ Scroll</button>
         </div>
-        {canToggleDownload && client && <button className={`mr-btn${clientDownloadOn(client.id) ? ' on' : ''}`} onClick={() => setClientDownload(client.id, !clientDownloadOn(client.id))} title={`Allow ${client.name} to download the PDF of their published reports. Off by default - per client.`}>{clientDownloadOn(client.id) ? `✓ ${client.name} PDF: On` : `⃠ ${client.name} PDF: Off`}</button>}
-        {canEdit && <button className={`mr-btn${editing ? ' on' : ''}`} onClick={() => setEditing((e) => !e)} disabled={!rep} title="Write notes for each page, and choose the key events the client sees on the creative screen">✎ Notes</button>}
-        <button className="mr-btn" onClick={copyLink} title="Copy a direct link to this client + report - share it and it opens right here">{copied ? '✓ Link copied' : '🔗 Copy link'}</button>
-        <button className="mr-btn" onClick={present} disabled={!rep} title="Present fullscreen (for screen-share)">{fs ? '⤢ Exit' : '⛶ Present'}</button>
-        <button className="mr-btn" onClick={() => window.print()} disabled={!rep} title="Print / Save as PDF">🖨 Print</button>
-        <button className="mr-btn" onClick={downloadPdf} disabled={!rep || exporting} title="Download as PDF">{exporting ? 'Exporting…' : '⤓ Download PDF'}</button>
+        <div className="mr-btn-grp">
+          {canEdit && <button className={`mr-btn${showNotes ? ' on' : ''}`} onClick={() => setShowNotes((v) => !v)} disabled={!rep} title="The page's insights beside the deck, with a notes box for what comes up on the call">Notes</button>}
+          {canEdit && <button className={`mr-btn${editing ? ' on' : ''}`} onClick={() => setEditing((e) => !e)} disabled={!rep} title="Insights for each page of this report, and the settings for every report of this client">⚙ Report settings</button>}
+          <button className="mr-btn" onClick={present} disabled={!rep} title="Present fullscreen (for screen-share)">{fs ? '⤢ Exit' : '⛶ Present'}</button>
+          <button className="mr-btn" onClick={downloadPdf} disabled={!rep || exporting} title="Download as PDF">{exporting ? 'Exporting…' : '⤓ PDF'}</button>
+          <details className="mr-more">
+            <summary className="mr-btn" title="More">···</summary>
+            <div className="mr-more-menu">
+              <button type="button" onClick={copyLink}>{copied ? '✓ Link copied' : '🔗 Copy link'}</button>
+              <button type="button" onClick={() => window.print()} disabled={!rep}>🖨 Print</button>
+            </div>
+          </details>
+        </div>
       </div>
 
       {showList && (
@@ -788,7 +821,22 @@ export function MonthlyReport({ clients, currency, authUser }) {
       {st.status === 'err' && <div className="card"><p className="cap act-bad" style={{ margin: 0 }}>Couldn’t build the report: {st.error}</p><p style={{ margin: '10px 0 0' }}><button className="mr-btn primary" onClick={generate} disabled={busy}>Try again</button></p></div>}
       {st.status === 'empty' && <div className="mr-note mr-empty-deep"><div className="big">🗓️</div><b>No snapshot for {period.label} yet.</b><p>Pick the client and period (one month, or a range via the two pickers), then <b>Generate snapshot</b> to freeze these numbers. Wins are captured by the month a deal was marked won - so late-closing leads show in the month they closed.</p></div>}
 
-      <div className={'mr-split' + (editing && rep ? ' on' : '')}>
+      <div className={'mr-split' + ((editing || showNotes) && rep ? ' on' : '')}>
+        {showNotes && rep && (() => {
+          const curEl = deck[cur]; const k = curEl ? curEl.key : null
+          const title = curEl && curEl.props && curEl.props.title ? curEl.props.title : 'Cover'
+          const ins = k && draft[k] && String(draft[k]).trim() ? String(draft[k]).trim() : ''
+          return (
+            <aside className="mr-live no-print">
+              <div className="mr-live-h">{title}</div>
+              <div className="mr-live-lab">Insights <small>pre-meeting notes</small></div>
+              {ins ? <div className="mr-live-txt">{ins}</div> : <div className="mr-live-empty">No insights for this page.</div>}
+              <div className="mr-live-lab">Notes <small>live on the call</small></div>
+              {k ? <textarea className="mr-live-box" rows={8} value={liveDraft[k] || ''} onChange={(e) => setLive(k, e.target.value)} placeholder="What came up on the call…" /> : null}
+              <div className="mr-live-foot">{savedTag}</div>
+            </aside>
+          )
+        })()}
         <div className="mr-main">
       {rep && view === 'slides' && total > 0 && (
         <div className="mr-nav no-print">
@@ -808,18 +856,40 @@ export function MonthlyReport({ clients, currency, authUser }) {
         </div>
         {editing && rep && (
           <aside className="mr-notes-panel no-print">
-            <div className="mr-notes-panel-h"><b>Notes</b><span className="cap">A page shows its notes when they are filled in · saved as you type</span><button type="button" className="mr-btn sm" onClick={() => setEditing(false)}>Done</button></div>
-            <p className="cap mr-notes-panel-tip">The key events the client sees on the creative screen are ticked on that page while this panel is open.</p>
-            <div className="mr-pages-pick">
-              <span className="mr-notes-fld-lab">Pages in this client's reports</span>
-              {deckAll.filter((el) => el && el.key !== 'cover').map((el) => <label key={el.key} className={`pv-ke-box${hiddenArr.includes(el.key) ? '' : ' on'}`}><input type="checkbox" checked={!hiddenArr.includes(el.key)} onChange={() => togglePage(el.key)} />{(el.props && el.props.title) || el.key}</label>)}
+            <div className="mr-notes-panel-h"><b>Report settings</b>{savedTag}<button type="button" className="mr-btn sm" onClick={() => setEditing(false)}>Done</button></div>
+            <div className="mr-set-sec">
+              <div className="mr-set-h">This report <span>· {period.label}</span></div>
+              <p className="cap mr-notes-panel-tip">Insights, one per page: the pre-meeting notes. Kept with this client and month whatever is refreshed; the Notes button shows them beside the deck on the call.</p>
+              {deck.map((el, i) => (el && el.props && el.props.title && el.key !== 'cover') ? (
+                <label key={el.key} className="mr-notes-fld">
+                  <span>{i + 1} · {el.props.title}</span>
+                  <textarea rows={3} value={draft[el.key] || ''} onChange={(e) => setNote(el.key, e.target.value)} onFocus={() => { if (view === 'slides') setIdx(i) }} placeholder="Nothing yet" />
+                </label>
+              ) : null)}
             </div>
-            {deck.map((el, i) => (el && el.props && el.props.title && el.key !== 'cover') ? (
-              <label key={el.key} className="mr-notes-fld">
-                <span>{i + 1} · {el.props.title}</span>
-                <textarea rows={4} value={draft[el.key] || ''} onChange={(e) => setNote(el.key, e.target.value)} onFocus={() => { if (view === 'slides') setIdx(i) }} placeholder="Nothing yet" />
-              </label>
-            ) : null)}
+            <div className="mr-set-sec">
+              <div className="mr-set-h">All reports <span>· {client ? client.name : ''}</span></div>
+              <div className="mr-set-row">
+                <span className="mr-notes-fld-lab">Pages in the deck</span>
+                <div className="mr-pages-pick">{deckAll.filter((el) => el && el.key !== 'cover').map((el) => <label key={el.key} className={`pv-ke-box${hiddenArr.includes(el.key) ? '' : ' on'}`}><input type="checkbox" checked={!hiddenArr.includes(el.key)} onChange={() => togglePage(el.key)} />{(el.props && el.props.title) || el.key}</label>)}</div>
+              </div>
+              <div className="mr-set-row">
+                <span className="mr-notes-fld-lab">Comparisons on the Meta and Google pages</span>
+                <div className="mr-pages-pick">
+                  <label className="pv-ke-box on is-fixed"><input type="checkbox" checked readOnly disabled />The month before</label>
+                  <label className={`pv-ke-box${cmpSet.avg3 ? ' on' : ''}`}><input type="checkbox" checked={!!cmpSet.avg3} onChange={() => toggleCmp('avg3')} />3-month average</label>
+                  <label className={`pv-ke-box${cmpSet.yoy ? ' on' : ''}`}><input type="checkbox" checked={!!cmpSet.yoy} onChange={() => toggleCmp('yoy')} />Same month a year ago</label>
+                </div>
+              </div>
+              <div className="mr-set-row">
+                <span className="mr-notes-fld-lab">Key events on the creative screen</span>
+                <p className="cap" style={{ margin: 0 }}>Ticked on the Creative performance page while this panel is open.</p>
+              </div>
+              {canToggleDownload && client ? <div className="mr-set-row">
+                <span className="mr-notes-fld-lab">PDF download for the client</span>
+                <div className="mr-pages-pick"><label className={`pv-ke-box${clientDownloadOn(client.id) ? ' on' : ''}`}><input type="checkbox" checked={clientDownloadOn(client.id)} onChange={() => setClientDownload(client.id, !clientDownloadOn(client.id))} />{client.name} can download the PDF of published reports</label></div>
+              </div> : null}
+            </div>
           </aside>
         )}
       </div>
@@ -1488,8 +1558,7 @@ export function renderMonthlyDeck(rep, h) {
   // Slide list (Google slides only when connected).
   const slides = []
   // A page's saved notes ride on the slide; a page without any shows none.
-  const notes = h.notes || null
-  const push = (el) => slides.push(notes && el && el.key && notes[el.key] && String(notes[el.key]).trim() ? React.cloneElement(el, { notes: notes[el.key] }) : el)
+  const push = (el) => slides.push(el)
   // "Key events by campaign" is built in place but pushed later (after the Google ad
   // groups, before Users) so the deck reads platform → key events → forms → team.
   let keCampSlide = null
@@ -1599,7 +1668,7 @@ export function renderMonthlyDeck(rep, h) {
     const adsetsOf = (campName) => (meta.adsets || []).filter((a) => a.campaign === campName)
     push(
       <MRSlide key="m-camp" kicker="Meta Ads · Platform" title="Meta performance" sub={`${b.label} against the months before it · ${(meta.campaigns || []).length} campaign(s) · click a campaign to drill into its ad sets`}>
-        <MRMetaPerf trend={rep.trend} monthKey={String(b.to || b.from || '').slice(0, 7)} money={money} n0={n0} resultType={t.resultBreakdown && t.resultBreakdown.length === 1 ? t.resultBreakdown[0].label : null} />
+        <MRMetaPerf cmp={h.cmp} trend={rep.trend} monthKey={String(b.to || b.from || '').slice(0, 7)} money={money} n0={n0} resultType={t.resultBreakdown && t.resultBreakdown.length === 1 ? t.resultBreakdown[0].label : null} />
         <div className="mr-section-lab">Campaigns &amp; ad sets · {b.label}</div>
         <MRDrillTable
           cols={metaDrillCols('Campaign')} rows={meta.campaigns || []} max={16}
@@ -1793,7 +1862,7 @@ export function renderMonthlyDeck(rep, h) {
     const topKw = (google.keywords || []).filter((k) => k.clicks > 0 || k.conversions > 0).slice().sort((x, y) => (y.conversions - x.conversions) || (y.clicks - x.clicks)).slice(0, 15).map((k) => ({ kw: k.text || k.term || '-', clicks: k.clicks || 0, conversions: Math.round((k.conversions || 0) * 10) / 10 }))
     push(
       <MRSlide key="g-camp" kicker="Google Ads · Platform" title="Google Ads" sub={`${b.label} against the months before it · ${(google.campaigns || []).length} campaign(s) · ${(google.adGroups || []).length} ad group(s)`}>
-        <MRGooglePerf trend={rep.gtrend} monthKey={String(b.to || b.from || '').slice(0, 7)} money={money} n0={n0} />
+        <MRGooglePerf cmp={h.cmp} trend={rep.gtrend} monthKey={String(b.to || b.from || '').slice(0, 7)} money={money} n0={n0} />
         <div className="mr-two">
           <div><div className="mr-section-lab">Campaigns · {b.label}</div><MRTable cols={gSideCols('Campaign')} rows={google.campaigns || []} max={10} /></div>
           <div><div className="mr-section-lab">Ad groups · {b.label}</div><MRTable cols={gSideCols('Ad group')} rows={google.adGroups || []} max={10} /></div>

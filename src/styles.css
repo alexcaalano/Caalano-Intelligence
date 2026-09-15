@@ -6005,3 +6005,46 @@ body.hub-tv-on { overflow: hidden; }
 .mr-lost-split .mr-lost-full { border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; background: var(--panel); }
 .mr-lost-split .mr-lost-pie { background: var(--panel); }
 .mr-lost-split .mr-lost-full .mr-table th, .mr-lost-split .mr-lost-full .mr-table td { padding-left: 6px; padding-right: 6px; }
+/* Side panels (Notes, Report settings): level with the report, under the slide chips,
+   stuck just below the toolbar (measured, it wraps) and scrolling on their own. */
+.mr-split.has-nav > .mr-live, .mr-split.has-nav > .mr-notes-panel { margin-top: 48px; }
+.mr-live, .mr-notes-panel { top: calc(var(--mr-barh, 60px) + 10px); }
+.mr-notes-panel { height: auto; max-height: calc(100vh - var(--mr-barh, 60px) - 40px); }
+.mr-live { max-height: calc(100vh - var(--mr-barh, 60px) - 40px); }
+.mr-split.has-nav > .mr-notes-panel { max-height: calc(100vh - var(--mr-barh, 60px) - 88px); }
+.mr-split.has-nav > .mr-live { max-height: calc(100vh - var(--mr-barh, 60px) - 88px); }
+/* Present mode: only the slide chips, the deck and the notes stay on screen (Esc leaves). */
+.mr-page.mr-fs .mr-bar, .mr-page.mr-fs .mr-snaplist, .mr-page.mr-fs .mr-warn { display: none !important; }
+.mr-page.mr-fs .mr-live, .mr-page.mr-fs .mr-notes-panel { top: 10px; }
+/* Sales Performance: the pie box matches the lost table's height, chart centred */
+.mr-lost-split { align-items: stretch; }
+.mr-lost-split .mr-lost-pie { display: flex; flex-direction: column; }
+.mr-lost-split .mr-lost-pie .mr-donut { margin: auto 0; }
+/* Account summary: the three scorecard groups on one line */
+.mr-kpi-line { display: flex; gap: 14px; align-items: stretch; flex-wrap: wrap; }
+.mr-kpi-line > .mr-kpi-group { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
+.mr-kpi-line .mr-kpirow-line { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(96px, 1fr); gap: 8px; flex: 1; }
+.mr-kpi-line .mr-kpi { padding: 9px 10px; min-width: 0; }
+.mr-kpi-line .mr-kpi-val { font-size: 16px; white-space: nowrap; }
+.mr-kpi-line .mr-kpi-lab { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mr-kpi-line .mr-kpi-sub { font-size: 10.5px; }
+.mr-kpi-line .mr-kpi .mr-cmp-row { white-space: nowrap; }
+/* Potential revenue: the working, one line per factor */
+.mr-pot-hero { display: flex; flex-direction: column; gap: 2px; padding: 12px 14px; border-radius: 12px; background: color-mix(in srgb, var(--brand) 12%, var(--panel)); border: 1px solid color-mix(in srgb, var(--brand) 35%, var(--border)); }
+.mr-pot-hero b { font-size: 26px; font-weight: 800; letter-spacing: -.02em; line-height: 1.1; }
+.mr-pot-calc { display: flex; flex-direction: column; gap: 2px; margin-top: 12px; }
+.mr-pot-roi { margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--border-2); }
+.mr-pot-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: 'k v' 'n v'; column-gap: 12px; align-items: center; padding: 6px 10px; border-radius: 9px; background: var(--panel); border: 1px solid var(--border); }
+.mr-pot-k { grid-area: k; font-size: 12.5px; font-weight: 700; }
+.mr-pot-row > b { grid-area: v; font-size: 15px; font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.mr-pot-note { grid-area: n; font-size: 11px; color: var(--muted); }
+.mr-pot-total { background: color-mix(in srgb, var(--brand) 8%, var(--panel)); border-color: color-mix(in srgb, var(--brand) 30%, var(--border)); }
+.mr-pot-op { font-size: 13px; font-weight: 800; color: var(--faint); padding: 0 10px; line-height: 1; }
+/* Report settings: every page's meeting notes on one screen */
+.mr-mnotes { display: flex; flex-direction: column; gap: 8px; }
+.mr-mnotes-pg { border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; background: var(--panel-2); display: flex; flex-direction: column; gap: 4px; }
+.mr-mnotes-t .mr-linkbtn { font-size: 12px; font-weight: 800; }
+.mr-mnotes-ins, .mr-mnotes-txt { white-space: pre-wrap; font-size: 12px; line-height: 1.45; }
+.mr-mnotes-ins { color: var(--muted); }
+.mr-mnotes-ins > span, .mr-mnotes-txt > span { display: block; font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; color: var(--brand); }
+.mr-mnotes-acts { display: flex; gap: 6px; flex-wrap: wrap; }

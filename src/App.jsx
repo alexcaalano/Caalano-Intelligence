@@ -36,7 +36,7 @@ const lazyView = (load, name) => {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-export const APP_VERSION = '3.673.0'
+export const APP_VERSION = '3.674.0'
 // The business clock. Every server window is cut on the client's local day
 // (Caalano Systems location timezone), so any day the app derives on its own -
 // preset ranges, "today", CSV dates - must use the same clock rather than the
@@ -18469,22 +18469,13 @@ const PivotReport = lazyView(() => import('./views/pivot.jsx'), 'PivotReport')
 // The action page: one client's Deals & Actions, chosen up top, outside the
 // reporting pages. The phone's front page for anyone whose job is to move
 // deals rather than read reports.
-function ReportingPage({ clients, currency, authUser }) {
+function ReportingPage({ clients, currency, authUser, tab }) {
   const hid = userHidden(authUser)
   const canMonthly = !isHiddenView(hid, 'reporting_monthly'), canTrend = !isHiddenView(hid, 'reporting_trend')
-  const [tab, setTabRaw] = useState(() => ((['trend', 'pivot'].includes(readNavUrl().s) && canTrend) || !canMonthly ? 'pivot' : 'monthly'))
-  const setTab = (t) => { setTabRaw(t); writeNavUrl({ s: t === 'pivot' ? 'trend' : null, pp: null, pf: null, pt: null, pb: null, pm: null, pch: null, pd: null }, true) }
-  return (
-    <>
-      {canMonthly && canTrend ? (
-        <div className="subtabs set-subtabs">
-          <button className={tab === 'monthly' ? 'active' : ''} onClick={() => setTab('monthly')}>Monthly Report</button>
-          <button className={tab === 'pivot' ? 'active' : ''} onClick={() => setTab('pivot')}>Trend Report</button>
-        </div>
-      ) : null}
-      {tab === 'pivot' ? <PivotReport clients={clients} currency={currency} authUser={authUser} /> : <MonthlyReport clients={clients} currency={currency} authUser={authUser} />}
-    </>
-  )
+  // The sidebar picks the page (Monthly Report / Trend Report); this only
+  // keeps a hidden page from showing.
+  const cur = (tab === 'pivot' && canTrend) || !canMonthly ? 'pivot' : 'monthly'
+  return cur === 'pivot' ? <PivotReport clients={clients} currency={currency} authUser={authUser} /> : <MonthlyReport clients={clients} currency={currency} authUser={authUser} />
 }
 const MRCreativeSection = lazyView(() => import('./views/monthly-report.jsx'), 'MRCreativeSection')
 // Display an ISO (YYYY-MM-DD) date as DD/MM/YYYY.
@@ -19416,6 +19407,7 @@ function Dashboard({ authUser, authEnabled, onLogout, realUser, onViewAs }) {
   // The client sub-tab (Caalano360 / Users / Meta Ads…) lives here too so the URL
   // can carry it; ClientWorkspace seeds from initialTab and reports changes back.
   const [clientTab, setClientTab] = useState(() => { const { v, t } = readNavUrl(); if (t) return t; if (v === 'actionhub' || v === 'saleshub') return v; try { if (window.matchMedia('(max-width: 700px)').matches) return 'actionhub' } catch { /* no matchMedia */ } return 'overall' })
+  const [reportTab, setReportTab] = useState(() => (['trend', 'pivot'].includes(readNavUrl().s) ? 'pivot' : 'monthly'))
   const navInitRef = useRef(false)
   const [theme, setTheme] = useState(() => { try { return localStorage.getItem('caalano_theme') || 'light' } catch { return 'light' } })
   const [range, setRange] = useState(() => rangeFromUrl(readNavUrl()) || presetRange('last_30d'))
@@ -19529,6 +19521,8 @@ function Dashboard({ authUser, authEnabled, onLogout, realUser, onViewAs }) {
   // restore them); the main app's baseClients above already hides them everywhere else.
   const cfgMerged = config ? { ...config, clients: [...(config.clients || []).map(applyOv), ...extras.filter((cu) => !(config.clients || []).some((c) => c.id === cu.id))] } : config
   const go = (v) => { setView(v); setPicked(null); setNavOpen(false); writeNavUrl({ v, c: null, t: null, p: null, m: null, s: v === 'settings' ? undefined : null }, true) }
+  // Reporting's two pages are sidebar entries; the page itself carries no tab strip.
+  const goReport = (t) => { const hid = userHidden(authUser); const tt = t === 'pivot' && isHiddenView(hid, 'reporting_trend') ? 'monthly' : t === 'monthly' && isHiddenView(hid, 'reporting_monthly') ? 'pivot' : t; setReportTab(tt); setView('monthly'); setPicked(null); setNavOpen(false); writeNavUrl({ v: 'monthly', c: null, t: null, p: null, m: null, s: tt === 'pivot' ? 'trend' : null, pp: null, pf: null, pt: null, pb: null, pm: null, pch: null, pd: null }, true) }
   const openClient = (c) => { setPicked(c); setView('clients'); setClientTab('overall'); setNavOpen(false); writeNavUrl({ v: 'clients', c: c.id, t: 'overall', p: null, m: null, s: null }, true) }
   // A page inside the account on screen, from the account sidebar.
   const openTab = (t) => { setClientTab(t); setView('clients'); setNavOpen(false); writeNavUrl({ v: 'clients', t }, true) }
@@ -19593,7 +19587,13 @@ function Dashboard({ authUser, authEnabled, onLogout, realUser, onViewAs }) {
             {showView('cockpit') && <button className={curView === 'cockpit' ? 'active' : ''} onClick={() => go('cockpit')}><span className="ic"><NavIcon name="cockpit" /></span>Creative Cockpit</button>}
             {showView('insights') && <button className={curView === 'insights' ? 'active' : ''} onClick={() => go('insights')}><span className="ic"><NavIcon name="insights" /></span>Meta Insights</button>}
             {showView('update') && <button className={curView === 'update' ? 'active' : ''} onClick={() => go('update')}><span className="ic"><NavIcon name="update" /></span>Client Update</button>}
-            {showView('monthly') && <button className={curView === 'monthly' ? 'active' : ''} onClick={() => go('monthly')}><span className="ic"><NavIcon name="monthly" /></span>Reporting</button>}
+            {showView('monthly') && <div className={`nav-grp${curView === 'monthly' ? ' active open' : ''}`}>
+              <button type="button" className={`nav-sec${curView === 'monthly' ? ' active' : ''}`} onClick={() => goReport(reportTab)} aria-expanded={curView === 'monthly'}><span className="ic"><NavIcon name="monthly" /></span><span className="nav-sec-l">Reporting</span><span className="nav-chev">{curView === 'monthly' ? '▾' : '▸'}</span></button>
+              {curView === 'monthly' ? <>
+                {!isHiddenView(userHidden(authUser), 'reporting_monthly') ? <button className={`sub${reportTab === 'monthly' ? ' active' : ''}`} onClick={() => goReport('monthly')}><span className="nav-dot" />Monthly Report</button> : null}
+                {!isHiddenView(userHidden(authUser), 'reporting_trend') ? <button className={`sub${reportTab === 'pivot' ? ' active' : ''}`} onClick={() => goReport('pivot')}><span className="nav-dot" />Trend Report</button> : null}
+              </> : null}
+            </div>}
             {showView('social') && <button className={curView === 'social' ? 'active' : ''} onClick={() => go('social')}><span className="ic"><NavIcon name="social" /></span>Organic Social Media</button>}
           </>}
           {(inAccount || (isViewer && curPicked)) && curPicked ? (
@@ -19637,8 +19637,10 @@ function Dashboard({ authUser, authEnabled, onLogout, realUser, onViewAs }) {
         </div> : null}
         <div className="head">
           <div>
+            <div className="head-t">
             <h2>{curView === 'overview' ? 'Agency Overview' : curView === 'trends' ? 'Daily Performance' : curView === 'weekly' ? 'Weekly Traffic Light' : curView === 'forecast' ? 'Funnel Forecaster' : curView === 'cockpit' ? 'Creative Cockpit' : curView === 'curator' ? 'Creative Curator' : curView === 'insights' ? 'Meta Insights' : curView === 'update' ? 'Client Update' : curView === 'monthly' ? 'Reporting' : curView === 'social' ? 'Organic Social Media' : curView === 'reports' ? 'Monthly Reports' : curView === 'settings' ? 'Settings' : inAccount ? accountHead(clientTab).title : isViewer ? 'Your report' : 'Clients'}</h2>
-            <p>{curView === 'overview' ? 'Blended paid performance across all clients, live for the selected range.' : curView === 'trends' ? 'Rolling 3 / 7 / 14 / 21 / 28-day performance per client, each vs the prior equal window.' : curView === 'weekly' ? 'One client at a time, reported Monday-Sunday by ISO week - spend pacing, leads, appointments and wins vs KPI.' : curView === 'forecast' ? 'What a month of spend should turn into, stage by stage - from each client\u2019s own last 90 days, or a scenario you build.' : curView === 'cockpit' ? 'Every creative for a client, with performance, categorisation and AI strategy.' : curView === 'curator' ? 'Strategise new creatives to make: pick Format, Style, CTA, Audience and Angle for instant or AI concept ideas, and save the best to a board.' : curView === 'insights' ? 'Everything Meta-derived in one place - delivery health, creative fatigue and more, across every active Meta client.' : curView === 'update' ? 'Generate a client-ready account update (WhatsApp + email) for the selected range.' : curView === 'monthly' ? 'Monthly Report decks, and the Trend Report: any metric, any period, by day, week, month, quarter or year.' : curView === 'social' ? 'Organic Instagram + Facebook Page performance per client - followers, reach, engagement, best posts and audience, for the selected range.' : curView === 'reports' ? 'Your published monthly reports - frozen snapshots you can read on screen or download as a PDF.' : curView === 'settings' ? (isViewer ? 'Your account.' : 'Clients, key events, KPI targets and campaign links - saved to the server and shared across your team.') : inAccount ? [accountHead(clientTab).group, curPicked.name].filter(Boolean).join(' \u00b7 ') : isViewer ? 'Your live reporting for the selected range.' : 'Pick a client from the sidebar to open their account.'}</p>
+            {(() => { const why = curView === 'overview' ? 'Blended paid performance across all clients, live for the selected range.' : curView === 'trends' ? 'Rolling 3 / 7 / 14 / 21 / 28-day performance per client, each vs the prior equal window.' : curView === 'weekly' ? 'One client at a time, reported Monday-Sunday by ISO week - spend pacing, leads, appointments and wins vs KPI.' : curView === 'forecast' ? 'What a month of spend should turn into, stage by stage - from each client\u2019s own last 90 days, or a scenario you build.' : curView === 'cockpit' ? 'Every creative for a client, with performance, categorisation and AI strategy.' : curView === 'curator' ? 'Strategise new creatives to make: pick Format, Style, CTA, Audience and Angle for instant or AI concept ideas, and save the best to a board.' : curView === 'insights' ? 'Everything Meta-derived in one place - delivery health, creative fatigue and more, across every active Meta client.' : curView === 'update' ? 'Generate a client-ready account update (WhatsApp + email) for the selected range.' : curView === 'monthly' ? 'Monthly Report decks, and the Trend Report: any metric, any period, by day, week, month, quarter or year.' : curView === 'social' ? 'Organic Instagram + Facebook Page performance per client - followers, reach, engagement, best posts and audience, for the selected range.' : curView === 'reports' ? 'Your published monthly reports - frozen snapshots you can read on screen or download as a PDF.' : curView === 'settings' ? (isViewer ? 'Your account.' : 'Clients, key events, KPI targets and campaign links - saved to the server and shared across your team.') : inAccount ? [accountHead(clientTab).group, curPicked.name].filter(Boolean).join(' \u00b7 ') : isViewer ? 'Your live reporting for the selected range.' : 'Pick a client from the sidebar to open their account.'; return inAccount ? <p className="head-ctx">{why}</p> : why ? <InfoTip title="About this page">{why}</InfoTip> : null })()}
+            </div>
           </div>
           <div className="spacer" />
           {curView !== 'settings' && curView !== 'monthly' && curView !== 'reports' && curView !== 'trends' && !noPick && !(inAccount && (clientTab === 'actionhub' || clientTab === 'saleshub')) && <DateRange range={range} onChange={setRange} busy={agency.status === 'loading'} />}
@@ -19656,7 +19658,7 @@ function Dashboard({ authUser, authEnabled, onLogout, realUser, onViewAs }) {
           {curView === 'cockpit' && !isViewer && <CreativeCockpitPage clients={visibleClients} currency={data.currency} range={range} nonce={refreshKey} authUser={authUser} />}
           {curView === 'insights' && !isViewer && <MetaInsightsPage clients={visibleClients} currency={data.currency} range={range} nonce={refreshKey} />}
           {curView === 'update' && !isViewer && <ClientUpdatePage clients={visibleClients} currency={data.currency} range={range} nonce={refreshKey} authUser={authUser} />}
-          {curView === 'monthly' && !isViewer && <ReportingPage clients={visibleClients} currency={data.currency} authUser={authUser} />}
+          {curView === 'monthly' && !isViewer && <ReportingPage clients={visibleClients} currency={data.currency} authUser={authUser} tab={reportTab} />}
           {curView === 'reports' && isViewer && canReports && <ClientReports clients={myClients} currency={data.currency} authUser={authUser} />}
           {curView === 'social' && !isViewer && <SocialDashboard clients={visibleClients} range={range} nonce={refreshKey} />}
           {curView === 'settings' && <SettingsPage config={cfgMerged} enabled={enabled} setEnabled={setEnabled} restricted={restricted} setRestricted={setRestricted} currency={data.currency} authUser={authUser} authEnabled={authEnabled} theme={theme} setTheme={setTheme} onPick={(c) => openClient(baseClients.find((x) => x.id === c.id) || c)} />}
@@ -19697,7 +19699,9 @@ export default function App() {
   const swrOwner = auth.status === 'ready' ? (auth.enabled ? (auth.user && auth.user.email) || null : 'local') : null
   useEffect(() => { if (swrOwner) swrRestore(swrOwner) }, [swrOwner])
 
-  if (auth.status === 'loading') return <div className="auth-screen"><div className="auth-card"><Spinner label="Loading…" /></div></div>
+  // A plain wait, not the sign-in page: the sign-in page carries its own glow
+  // and would flash purple on every reload while the session is checked.
+  if (auth.status === 'loading') return <div className="boot-screen"><Spinner label="Loading…" /></div>
   // Accept-invite deep link takes priority (a signed-out invitee, or a new
   // person on a shared machine, should always land on the invite flow).
   if (auth.enabled && inviteToken && !auth.user) return <AcceptInvite token={inviteToken} onSignedIn={onSignedIn} />

@@ -16,6 +16,15 @@ git commit that produced it, so any version can be redeployed or reverted to.
 
 The version number also appears in the app sidebar. Newest first.
 
+## v3.674.0 - 2026-09-15 (commit PENDING)
+
+Less text on screen, Reporting in the sidebar, and no purple flash on reload.
+
+- **Explainers behind an "i".** The line under every page title (Agency Overview, Daily Performance, Reporting and the rest) is gone from the page; an "i" beside the title opens it on hover. Section subtitles across the app (the "· Meta + Google · last 30 days · live" kind, under Paid performance, Biggest movers, Key event reach and so on) are the same: an "i" after the section title, and hovering the title shows the note beneath it. Inside an account the line under the title still names the section and client.
+- **Reporting in the sidebar.** Reporting is a section with Monthly Report and Trend Report beneath it, like the account sections; the tab strip on the page is gone. Each follows its own visibility switch.
+- **Account sidebar sizing.** Section rows are the same size and weight as the agency entries at every width (they were tighter on the phone); the pages under a section stay smaller.
+- **No flash on reload.** While the session is checked the app shows its own plain ground with a spinner. It used to show the sign-in page's glow for that moment.
+
 ## v3.673.0 - 2026-09-15 (commit c5838de)
 
 - **Account sidebar icons.** Each section carries an icon, in the same style as the agency sidebar: Overview (grid), Acquisition (megaphone), Audience (people), Sales (tag), Appointments (calendar with a tick), Reports (document). The open section's icon takes the brand colour; section labels now read in the same weight and size as the agency entries, with the pages indented beneath.

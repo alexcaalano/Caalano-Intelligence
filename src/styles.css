@@ -127,6 +127,11 @@ body {
 .head { display: flex; align-items: flex-start; gap: 16px; margin-bottom: 22px; flex-wrap: wrap; }
 .head h2 { margin: 0; font-size: 22px; letter-spacing: -.02em; }
 .head p { margin: 5px 0 0; color: var(--muted); font-size: 13px; max-width: 62ch; }
+.head .head-t { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.head .head-t .head-ctx { flex-basis: 100%; margin: 2px 0 0; color: var(--muted); font-size: 13px; }
+.head .head-t .itip .help-q { width: 17px; height: 17px; }
+/* First paint while the session is checked: the app's own ground, nothing else. */
+.boot-screen { min-height: 100vh; display: grid; place-items: center; background: var(--bg); }
 .head .spacer { flex: 1; }
 .pill { font-size: 12px; color: var(--muted); background: var(--panel); border: 1px solid var(--border); padding: 7px 12px; border-radius: 999px; display: inline-flex; gap: 8px; align-items: center; white-space: nowrap; }
 .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--pos); box-shadow: 0 0 0 3px rgba(23,178,106,.18); }
@@ -175,7 +180,14 @@ body {
 .cc-srccount b { color: var(--text); font-weight: 800; font-variant-numeric: tabular-nums; }
 
 .section-title { font-size: 14px; font-weight: 700; margin: 26px 2px 13px; display: flex; align-items: baseline; gap: 9px; }
-.section-title .sub { font-size: 12px; color: var(--muted); font-weight: 500; }
+/* Section subtitles: an "i" beside the title; hovering the title opens the
+   text as a note beneath it. The title is what you see, the explanation is a
+   hover away - the same rule as the page head. */
+.section-title > .sub, .v2-sec-h h3 > .sub, .cc-group-lab > .sub { display: inline-grid; place-items: center; width: 16px; height: 16px; border-radius: 50%; border: 1px solid var(--border-2); font-size: 0; line-height: 0; color: transparent; vertical-align: middle; cursor: help; margin-left: 2px; overflow: hidden; }
+.section-title > .sub::before, .v2-sec-h h3 > .sub::before, .cc-group-lab > .sub::before { content: 'i'; font-size: 10.5px; font-weight: 800; font-family: Georgia, 'Times New Roman', serif; font-style: italic; color: var(--faint); line-height: 1; }
+.section-title, .v2-sec-h h3, .cc-group-lab { position: relative; }
+.section-title:hover > .sub, .v2-sec-h h3:hover > .sub, .cc-group-lab:hover > .sub { position: absolute; z-index: 30; top: calc(100% + 4px); left: 0; display: block; width: max-content; max-width: min(440px, 80vw); height: auto; overflow: visible; border-radius: 10px; border: 1px solid var(--border-2); background: var(--elev, var(--panel)); box-shadow: var(--shadow); padding: 8px 11px; font-size: 12px; line-height: 1.45; color: var(--muted); font-weight: 500; text-transform: none; letter-spacing: 0; margin: 0; }
+.section-title:hover > .sub::before, .v2-sec-h h3:hover > .sub::before, .cc-group-lab:hover > .sub::before { content: none; }
 
 .two { grid-template-columns: 1.5fr 1fr; align-items: stretch; }
 .grid.two > .card { display: flex; flex-direction: column; }
@@ -4792,7 +4804,6 @@ td.lm-ker-n { font-weight: 600; color: var(--muted); font-variant-numeric: tabul
 .v2-story-go { margin-top: 6px; background: transparent; border: 0; padding: 0; font-size: 12px; color: var(--brand-2); font-weight: 600; cursor: pointer; }
 .v2-sec-h { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
 .v2-sec-h h3 { margin: 0; font-size: 14px; font-weight: 800; letter-spacing: -.01em; }
-.v2-sec-h h3 .sub { color: var(--faint); font-size: 12px; font-weight: 500; }
 .v2-sec-h .tools button { background: var(--panel-2); border: 1px solid var(--border-2); border-radius: 8px; padding: 4px 9px; font-size: 12px; font-weight: 600; color: var(--text); cursor: pointer; }
 .v2-sec-h .tools button.on { background: rgba(109,94,252,.14); border-color: var(--brand); color: var(--brand-2); }
 .v2-reach { margin-bottom: 14px; }
@@ -6142,7 +6153,7 @@ body.hub-tv-on { overflow: hidden; }
 .nav-grp { display: flex; flex-direction: column; gap: 2px; }
 .nav-grp + .nav-grp { margin-top: 4px; }
 /* Account sections: a pressable header per section; the open one lists its pages. */
-.nav button.nav-sec { display: flex; align-items: center; gap: 12px; width: 100%; padding: 9px 12px; font-size: 13.5px; font-weight: 700; color: var(--muted); border-radius: 10px; }
+.nav button.nav-sec { gap: 12px; color: var(--muted); }
 .nav button.nav-sec .nav-sec-l { flex: 1; min-width: 0; }
 .nav button.nav-sec.active .ic { color: var(--brand); }
 .nav button.nav-sec:hover { color: var(--text); }
@@ -6150,7 +6161,7 @@ body.hub-tv-on { overflow: hidden; }
 .nav-chev { font-size: 10px; color: var(--faint); }
 .nav-grp.open { padding-bottom: 4px; }
 .nav-grp.open button.sub { padding-left: 30px; }
-.nav button.sub { padding: 7px 12px 7px 14px; font-size: 13px; gap: 10px; }
+.nav button.sub { padding: 7px 12px 7px 14px; font-size: 12.5px; gap: 10px; }
 .nav-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--border-2); flex: 0 0 auto; }
 .nav button.sub.active .nav-dot { background: var(--brand); }
 .side-account { display: flex; align-items: center; gap: 10px; padding: 8px 10px; margin-bottom: 8px; border: 1px solid var(--border); border-radius: 12px; background: var(--panel-2); }

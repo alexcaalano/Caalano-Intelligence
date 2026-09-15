@@ -20,7 +20,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ## v3.656.0 - 2026-09-15
 
-**Monthly Report: key-event ticks in Report settings; "0 shown" on its own line** (commit PENDING)
+**Monthly Report: key-event ticks in Report settings; "0 shown" on its own line** (commit ad1aee4)
 
 - The key events the client sees on the creative screen are ticked under Report settings → All reports, not on the page.
 - On the creative cards a calendar event's "0 shown" sits together on its own line under the event name, instead of the count on one line and the word on the next.

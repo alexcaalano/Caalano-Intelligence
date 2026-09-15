@@ -16,6 +16,14 @@ git commit that produced it, so any version can be redeployed or reverted to.
 
 The version number also appears in the app sidebar. Newest first.
 
+## v3.663.0 - 2026-09-15 (commit PENDING)
+
+The Terms of Use are now a hard stop, and Sales Hub becomes a sidebar page.
+
+- **Terms of Use enforced on the server.** Until a valid signature is on file, every data and settings request answers as if nobody were signed in. Only the signing flow itself (who am I, the terms text, accepting them, completing the profile) is served. Someone who signs in without signing sees the signing screen and can go nowhere else, on this sign-in and every one after, until they sign. A page that was already open when a session lapses or the terms are unsigned re-checks the session on the first refused call and shows the login or signing screen.
+- **Sales Hub in the sidebar.** Sales Hub is an Account page beside Action Centre, for agency users and client-side users alike, and leaves the client workspace tabs along with Deals & Actions (which lives in Action Centre). Visibility treats Sales Hub as a sidebar page now; an Account Admin still starts without it until ticked, and an Account User has the Action Centre and no client tabs.
+- **Choose a client first.** Action Centre and Sales Hub no longer load the first client on opening. With more than one client to choose from the picker starts blank and nothing is read until a client is picked (a link that names the client opens it straight away). With one client there is no picker and it opens directly. The picker lists only the clients the person can reach that have a CRM.
+
 ## v3.662.0 - 2026-09-15 (commit 5ca3a60)
 
 - **Sidebar in two sections.** Agency first (the client picker, Agency Overview, Daily Performance, Weekly Traffic Light, Funnel Forecaster, Creative Cockpit, Meta Insights, Client Update, Reporting, Organic Social), then a rule and an Account section with Action Centre and Sales Hub. Sales Hub opens the client on screen (or the first client with a CRM) straight on its Sales Hub tab. Client-side users get the Account section above their Monthly Reports and dashboards.

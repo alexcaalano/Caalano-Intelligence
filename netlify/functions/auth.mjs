@@ -56,7 +56,7 @@ export default async (req) => {
     if (action === 'me') {
       await ensureSuperadmin().catch(() => {}) // one-time: promote the founding admin
       // The app's own session check - genuine usage, so it counts toward activity.
-      const user = await currentUser(req, S, { track: true })
+      const user = await currentUser(req, S, { track: true, allowUnsigned: true })
       const needsSetup = (await countUsers()) === 0
       return json({ ok: true, enabled: true, user: user ? await withTerms(user) : null, needsSetup })
     }
@@ -97,8 +97,15 @@ export default async (req) => {
     }
 
     // ---- authenticated actions (any signed-in user) ----
-    const me = await currentUser(req, S)
+    const me = await currentUser(req, S, { allowUnsigned: true })
     if (!me) return json({ ok: false, error: 'Not signed in.' }, 401)
+    // Without a signed Terms of Use only the signing screen's own needs are
+    // served: reading back one's record, accepting, and completing the profile
+    // the gate asks for first. Everything else waits for the signature.
+    if (!['my-terms', 'accept-terms', 'profile'].includes(action)) {
+      const live = await loadTerms()
+      if (!termsAcceptanceValid(me.termsVersion, live.minVersion)) return json({ ok: false, error: 'Accept the Terms of Use to continue.', needsTerms: true }, 403)
+    }
 
     if (action === 'accept-terms' && req.method === 'POST') {
       // A signature is required - the whole point is evidence that a person,

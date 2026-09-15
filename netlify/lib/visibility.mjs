@@ -19,6 +19,7 @@
 export const ACTION_HUB_LABEL = 'Action Centre'
 export const VIS_VIEWS = [
   { id: 'actionhub', label: ACTION_HUB_LABEL, roles: ['superadmin', 'admin', 'user', 'account_admin', 'account_user'] },
+  { id: 'saleshub', label: 'Sales Hub', roles: ['superadmin', 'admin', 'user', 'account_admin', 'account_user'] },
   { id: 'overview', label: 'Agency Overview', roles: ['superadmin', 'admin', 'user'] },
   { id: 'trends', label: 'Daily Performance', roles: ['superadmin', 'admin', 'user'] },
   { id: 'weekly', label: 'Weekly Traffic Light', roles: ['superadmin', 'admin', 'user'] },
@@ -34,8 +35,9 @@ export const VIS_VIEWS = [
   { id: 'reports', label: 'Monthly Reports', roles: ['account_admin', 'account_user'] },
   { id: 'dashboards', label: 'Client workspaces (My dashboards)', roles: ['account_admin', 'account_user'] },
 ]
-// Client-workspace tabs. An Account User holds Deals & Actions and nothing
-// else by design, so the only tab that can be hidden from them is that one.
+// Client-workspace tabs. Sales Hub and Deals & Actions are sidebar pages now
+// (views above), not tabs. An Account User holds the Action Centre and nothing
+// else by design, so they have no client tabs at all.
 export const VIS_TABS = [
   { id: 'overall', label: 'Caalano360' },
   { id: 'custom', label: 'Custom dashboard' },
@@ -43,8 +45,6 @@ export const VIS_TABS = [
   { id: 'meta', label: 'Meta Ads' },
   { id: 'google', label: 'Google Ads' },
   { id: 'analytics', label: 'Analytics' },
-  { id: 'saleshub', label: 'Sales Hub' },
-  { id: 'actions', label: 'Deals & Actions' },
   { id: 'cohorts', label: 'Cohorts' },
   { id: 'users', label: 'Users' },
   { id: 'calls', label: 'Call Reporting' },
@@ -79,7 +79,7 @@ export const VIS_ROLES = ['superadmin', 'admin', 'user', 'account_admin', 'accou
 export const VIS_ROLE_LABELS = { superadmin: 'Super Admin', admin: 'Agency Admin', user: 'Agency User', account_admin: 'Account Admin', account_user: 'Account User' }
 const normRole = (r) => (r === 'viewer' ? 'account_admin' : r)
 export const viewsForRole = (role) => VIS_VIEWS.filter((v) => v.roles.includes(normRole(role)))
-export const tabsForRole = (role) => (normRole(role) === 'account_user' ? VIS_TABS.filter((t) => t.id === 'actions') : VIS_TABS)
+export const tabsForRole = (role) => (normRole(role) === 'account_user' ? [] : VIS_TABS)
 export const settingsForRole = (role) => VIS_SETTINGS.filter((v) => v.roles.includes(normRole(role)))
 
 const offMap = (m) => { const o = {}; for (const k in (m || {})) if (m[k] === false) o[k] = false; return o }
@@ -87,7 +87,7 @@ const offMap = (m) => { const o = {}; for (const k in (m || {})) if (m[k] === fa
 // Account Admin starts without Sales Hub (the manager view), as the old tab
 // ticks defaulted. Applies only while the role has no stored entry at all -
 // once saved, the stored entry (even an empty one) is the whole truth.
-export const DEFAULT_ROLE_OFF = { account_admin: { tabs: { saleshub: false } } }
+export const DEFAULT_ROLE_OFF = { account_admin: { views: { saleshub: false } } }
 const normEntry = (e) => ({ views: offMap(e && e.views), tabs: offMap(e && e.tabs), settings: offMap(e && e.settings) })
 // A tidy copy of the section: only known roles, only "off" entries, users keyed
 // by lower-cased email.

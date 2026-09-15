@@ -13,6 +13,7 @@
 import { getStore } from '@netlify/blobs'
 import { mirror } from './mirror.mjs'
 import { normPhone, isEmail } from './contact.mjs'
+import { loadTerms, termsAcceptanceValid, DEFAULT_MIN_VERSION } from './terms.mjs'
 export { normPhone }
 
 export const COOKIE = 'c360_session'
@@ -507,10 +508,23 @@ export async function currentUser(req, secret, opts = {}) {
   // Tokens minted before this existed carry no `v`; treat them as epoch 0 so
   // nobody is signed out by the upgrade itself.
   if ((payload.v || 0) !== (u.tokenEpoch || 0)) return null
+  // The Terms of Use are a condition of access, enforced here rather than only
+  // on the signing screen: until a valid signature is on file, every data and
+  // settings request answers as if nobody were signed in. Only the auth
+  // function's own actions (who am I, the terms text, accepting them, the
+  // profile the gate needs) pass `allowUnsigned` to let the person get that far.
+  if (!opts.allowUnsigned && !termsAcceptanceValid(u.termsVersion, await termsMinVersion())) return null
   // `track` is opt-in so background/ops checks don't register as someone using
   // the app - only real page traffic should count toward time in the product.
   if (opts.track) await touchActivity(u, geoFromReq(req))
   return publicUser(u)
+}
+// The oldest terms version still accepted, read once a minute per function
+// instance rather than on every request.
+let _termsMin = { v: null, at: 0 }
+async function termsMinVersion() {
+  if (_termsMin.v && Date.now() - _termsMin.at < 60000) return _termsMin.v
+  try { const { minVersion } = await loadTerms(); _termsMin = { v: minVersion || DEFAULT_MIN_VERSION, at: Date.now() }; return _termsMin.v } catch { return _termsMin.v || DEFAULT_MIN_VERSION }
 }
 
 // HTTP guard for owner-only ops endpoints (the on-demand warmers / backup twins).

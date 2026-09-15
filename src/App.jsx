@@ -36,7 +36,7 @@ const lazyView = (load, name) => {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-export const APP_VERSION = '3.662.0'
+export const APP_VERSION = '3.663.0'
 // The business clock. Every server window is cut on the client's local day
 // (Caalano Systems location timezone), so any day the app derives on its own -
 // preset ranges, "today", CSV dates - must use the same clock rather than the
@@ -512,7 +512,14 @@ function _loadNotify() { for (const f of _loadTrack.subs) { try { f() } catch { 
     if (!isData || method !== 'GET' || isBeacon) return orig.call(this, input, init)
     _loadTrack.n++; _loadNotify()
     const settle = () => { _loadTrack.n = Math.max(0, _loadTrack.n - 1); _loadNotify() }
-    return orig.call(this, input, init).then((r) => { settle(); return r }, (e) => { settle(); throw e })
+    // A data call refused as "not signed in" while the app thinks it is means
+    // the session ended or the Terms of Use are unsigned: re-check who we are
+    // so the login or the signing screen takes over (at most once every 10s).
+    return orig.call(this, input, init).then((r) => {
+      settle()
+      if (r && r.status === 401 && !/functions\/auth\b/.test(url)) { const now = Date.now(); if (now - (window.__c360LostAt || 0) > 10000) { window.__c360LostAt = now; try { window.dispatchEvent(new Event('c360-session-lost')) } catch { /* ignore */ } } }
+      return r
+    }, (e) => { settle(); throw e })
   }
 })()
 // Subscribe a component to the live in-flight count.
@@ -8883,7 +8890,7 @@ export function ExecReach({ reach, multi, kef, cc, pcc, clientId, money, spend, 
 const V2_TAB_GROUPS = [
   ['Overview', ['overall', 'custom', 'clinic']],
   ['Acquisition', ['meta', 'google', 'analytics', 'optlog']],
-  ['Pipeline', ['saleshub', 'actions', 'cohorts', 'users', 'calls', 'appts', 'calperf', 'timing', 'lostreasons']],
+  ['Pipeline', ['cohorts', 'users', 'calls', 'appts', 'calperf', 'timing', 'lostreasons']],
   ['Audience', ['forms', 'location']],
 ]
 function v2TabGroups(tabs) {
@@ -16570,7 +16577,7 @@ function ClientWorkspace({ client, index, data, config, range, nonce, wonBasis =
   if (cfg.meta || client.meta) allTabs.push({ id: 'meta', label: 'Meta Ads' })
   if (cfg.google || client.google) allTabs.push({ id: 'google', label: 'Google Ads' })
   if (cfg.ga4 || client.ga4) allTabs.push({ id: 'analytics', label: 'Analytics' })
-  if (cfg.ghl) allTabs.push({ id: 'saleshub', label: 'Sales Hub' }, { id: 'actions', label: 'Deals & Actions' }, { id: 'cohorts', label: 'Cohorts' }, { id: 'users', label: 'Users' }, { id: 'calls', label: 'Call Reporting' }, { id: 'forms', label: 'Forms' }, { id: 'location', label: 'Location' }, { id: 'appts', label: 'Appointments' }, { id: 'calperf', label: 'Calendars' }, { id: 'timing', label: 'Timing' }, { id: 'lostreasons', label: 'Lost Reasons' })
+  if (cfg.ghl) allTabs.push({ id: 'cohorts', label: 'Cohorts' }, { id: 'users', label: 'Users' }, { id: 'calls', label: 'Call Reporting' }, { id: 'forms', label: 'Forms' }, { id: 'location', label: 'Location' }, { id: 'appts', label: 'Appointments' }, { id: 'calperf', label: 'Calendars' }, { id: 'timing', label: 'Timing' }, { id: 'lostreasons', label: 'Lost Reasons' })
   // Change log: the platform change histories plus the Optimisation Log sheet.
   // Shows for any client with an ad account OR a linked sheet - either source is
   // enough to have something to say. The tab id stays `optlog` so existing viewer
@@ -16653,8 +16660,6 @@ function ClientWorkspace({ client, index, data, config, range, nonce, wonBasis =
         {curTab === 'calls' && <CallReportView clientId={client.id} range={range} nonce={nonce} currency={data.currency} pipe={pipe} onPipe={setPipe} />}
         {curTab === 'timing' && <><EnquiryTimesSection clientId={client.id} range={range} nonce={nonce} pipe={pipe} onPipe={setPipe} /><TimingView clientId={client.id} range={range} nonce={nonce} currency={data.currency} /><StageTimingSection clientId={client.id} nonce={nonce} /></>}
         {curTab === 'lostreasons' && <LostReasonsView clientId={client.id} range={range} nonce={nonce} currency={data.currency} pipeName={pipeName} />}
-        {curTab === 'actions' && <DealsActionsView clientId={client.id} authUser={authUser} currency={data.currency} nonce={nonce} />}
-        {curTab === 'saleshub' && <SalesHubView clientId={client.id} authUser={authUser} currency={data.currency} nonce={nonce} pipe={pipe} onPipe={setPipe} pipes={pipes} />}
         {curTab === 'calperf' && <CalPerfView clientId={client.id} range={range} nonce={nonce} />}
         {curTab === 'clinic' && <ClinicView clientId={client.id} currency={data.currency} nonce={nonce} />}
         {curTab === 'optlog' && <ChangeLogTab clientId={client.id} range={range} nonce={nonce} hasMeta={!!(cfg.meta || client.meta)} hasGoogle={!!(cfg.google || client.google)} />}
@@ -17014,7 +17019,6 @@ export const TAB_OPTIONS = [
   { id: 'calls', label: 'Call Reporting' }, { id: 'forms', label: 'Forms' }, { id: 'location', label: 'Location' },
   { id: 'appts', label: 'Appointments' }, { id: 'calperf', label: 'Calendars' }, { id: 'clinic', label: 'Clinic' },
   { id: 'timing', label: 'Timing' }, { id: 'lostreasons', label: 'Lost Reasons' }, { id: 'optlog', label: 'Optimisation Log' },
-  { id: 'actions', label: 'Deals & Actions' }, { id: 'saleshub', label: 'Sales Hub' },
 ]
 function ClientPicker({ clients, selected, onToggle }) {
   if (!clients || !clients.length) return <div className="cap">No clients available.</div>
@@ -17034,7 +17038,7 @@ function offeredTabsFor(c) {
   if (c.meta) out.push({ id: 'meta', label: 'Meta Ads' })
   if (c.google) out.push({ id: 'google', label: 'Google Ads' })
   if (c.ga4) out.push({ id: 'analytics', label: 'Analytics' })
-  if (c.ghl) out.push({ id: 'saleshub', label: 'Sales Hub' }, { id: 'actions', label: 'Deals & Actions' }, { id: 'cohorts', label: 'Cohorts' }, { id: 'users', label: 'Users' }, { id: 'calls', label: 'Call Reporting' }, { id: 'forms', label: 'Forms' }, { id: 'location', label: 'Location' }, { id: 'appts', label: 'Appointments' }, { id: 'calperf', label: 'Calendars' }, { id: 'timing', label: 'Timing' }, { id: 'lostreasons', label: 'Lost Reasons' })
+  if (c.ghl) out.push({ id: 'cohorts', label: 'Cohorts' }, { id: 'users', label: 'Users' }, { id: 'calls', label: 'Call Reporting' }, { id: 'forms', label: 'Forms' }, { id: 'location', label: 'Location' }, { id: 'appts', label: 'Appointments' }, { id: 'calperf', label: 'Calendars' }, { id: 'timing', label: 'Timing' }, { id: 'lostreasons', label: 'Lost Reasons' })
   // The Change Log was offered by the workspace but never by this list, so it
   // could not be ticked for a viewer at all - a tab that existed for admins and
   // was ungrantable to anyone else. Same condition as the workspace uses.
@@ -18343,18 +18347,46 @@ const PivotReport = lazyView(() => import('./views/pivot.jsx'), 'PivotReport')
 // The action page: one client's Deals & Actions, chosen up top, outside the
 // reporting pages. The phone's front page for anyone whose job is to move
 // deals rather than read reports.
-function ActionHubPage({ clients, currency, authUser, nonce }) {
-  const list = (clients || []).slice().sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base' }))
-  const [clientId, setClientId] = useState(() => { const c = readNavUrl().c; return (c && list.some((x) => x.id === c)) ? c : (list[0] ? list[0].id : '') })
+// The client behind an account page (Action Centre, Sales Hub). One client:
+// it is simply that client, no picker. More than one: the picker starts blank
+// and nothing is read until a client is chosen (or the link carries one), so
+// opening the page never loads a client nobody asked for. The list is only the
+// clients this person can reach with a CRM.
+function useHubClient(view, clients) {
+  const list = useMemo(() => (clients || []).slice().sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base' })), [clients])
+  const [clientId, setClientId] = useState(() => { const c = readNavUrl().c; if (c && list.some((x) => x.id === c)) return c; return list.length === 1 ? list[0].id : '' })
   // The view rides along with the client, or a ?c= alone would read as a
   // client dashboard link once the roster lands.
-  useEffect(() => { if (clientId) writeNavUrl({ v: 'actionhub', c: clientId }, false) }, [clientId])
-  const client = list.find((c) => c.id === clientId) || list[0]
-  if (!client) return <div className="card empty-deep"><div className="big">✓</div><b>No client with a CRM connection.</b></div>
+  useEffect(() => { writeNavUrl({ v: view, c: clientId || null }, false) }, [clientId, view])
+  const client = list.find((c) => c.id === clientId) || (list.length === 1 ? list[0] : null)
+  const picker = list.length > 1 ? (
+    <div className="hub-bar"><label className="act-sel">Client <select value={client ? client.id : ''} onChange={(e) => setClientId(e.target.value)}>
+      <option value="">Choose a client…</option>
+      {list.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+    </select></label></div>
+  ) : null
+  return { list, client, picker }
+}
+function HubChoose({ what }) {
+  return <div className="card empty-deep hub-choose"><div className="big">☰</div><b>Choose a client to open their {what}.</b><p style={{ maxWidth: 460 }}>Nothing is read until you pick one, so this page opens instantly.</p></div>
+}
+function ActionHubPage({ clients, currency, authUser, nonce }) {
+  const { list, client, picker } = useHubClient('actionhub', clients)
+  if (!list.length) return <div className="card empty-deep"><div className="big">✓</div><b>No client with a CRM connection.</b></div>
   return (
     <div className="hub-page">
-      {list.length > 1 ? <div className="hub-bar"><label className="act-sel">Client <select value={client.id} onChange={(e) => setClientId(e.target.value)}>{list.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label></div> : null}
-      <DealsActionsView key={client.id} clientId={client.id} authUser={authUser} currency={currency} nonce={nonce} />
+      {picker}
+      {client ? <DealsActionsView key={client.id} clientId={client.id} authUser={authUser} currency={currency} nonce={nonce} /> : <HubChoose what={ACTION_HUB_LABEL} />}
+    </div>
+  )
+}
+function SalesHubPage({ clients, currency, authUser, nonce }) {
+  const { list, client, picker } = useHubClient('saleshub', clients)
+  if (!list.length) return <div className="card empty-deep"><div className="big">✓</div><b>No client with a CRM connection.</b></div>
+  return (
+    <div className="hub-page">
+      {picker}
+      {client ? <SalesHubView key={client.id} clientId={client.id} authUser={authUser} currency={currency} nonce={nonce} /> : <HubChoose what="Sales Hub" />}
     </div>
   )
 }
@@ -19201,7 +19233,7 @@ function ClientSwitcher({ clients, active, onPick, idxOf }) {
 // Back/Forward work, and any screen can be linked to. The URL is never an
 // authorisation boundary - every data request is still checked server-side, so a
 // link to a client you can't see simply returns 403 and falls back to home.
-const NAV_VIEWS = new Set(['actionhub', 'overview', 'trends', 'weekly', 'forecast', 'cockpit', 'curator', 'insights', 'update', 'monthly', 'social', 'reports', 'settings', 'clients'])
+const NAV_VIEWS = new Set(['actionhub', 'saleshub', 'overview', 'trends', 'weekly', 'forecast', 'cockpit', 'curator', 'insights', 'update', 'monthly', 'social', 'reports', 'settings', 'clients'])
 export function readNavUrl() {
   try { const p = new URLSearchParams(window.location.search); return { v: p.get('v'), c: p.get('c'), t: p.get('t'), p: p.get('p'), s: p.get('s'), r: p.get('r'), from: p.get('from'), to: p.get('to'), wb: p.get('wb'), m: p.get('m') } } catch { return {} }
 }
@@ -19402,9 +19434,6 @@ function Dashboard({ authUser, authEnabled, onLogout, realUser, onViewAs }) {
   const cfgMerged = config ? { ...config, clients: [...(config.clients || []).map(applyOv), ...extras.filter((cu) => !(config.clients || []).some((c) => c.id === cu.id))] } : config
   const go = (v) => { setView(v); setPicked(null); setNavOpen(false); writeNavUrl({ v, c: null, t: null, p: null, m: null, s: v === 'settings' ? undefined : null }, true) }
   const openClient = (c) => { setPicked(c); setView('clients'); setClientTab('overall'); setNavOpen(false); writeNavUrl({ v: 'clients', c: c.id, t: 'overall', p: null, m: null, s: null }, true) }
-  // The Sales Hub of the client on screen (or the first client with a CRM), from
-  // the Account section of the sidebar.
-  const openSalesHub = (c) => { setPicked(c); setView('clients'); setClientTab('saleshub'); setNavOpen(false); writeNavUrl({ v: 'clients', c: c.id, t: 'saleshub', p: null, m: null, s: null }, true) }
   // Access role gates the whole shell. Viewers (clients) never reach agency-wide
   // views - they land straight in their assigned client(s).
   const role = authEnabled && authUser ? authUser.role : 'admin'
@@ -19420,14 +19449,16 @@ function Dashboard({ authUser, authEnabled, onLogout, realUser, onViewAs }) {
   // The action page needs a client with a CRM; without one it is not offered.
   const hubClients = (isViewer ? myClients : visibleClients).filter((c) => c.ghl)
   const canHub = showView('actionhub') && hubClients.length > 0
+  const canSales = showView('saleshub') && hubClients.length > 0
   const viewerView = view === 'settings' ? 'settings'
     : (view === 'actionhub' && canHub) ? 'actionhub'
+    : (view === 'saleshub' && canSales) ? 'saleshub'
     : (view === 'reports' && canReports) ? 'reports'
       : (hasDashTabs ? 'clients' : (canReports ? 'reports' : 'clients'))
   // A hidden agency view is never shown, even by deep link: fall to the first
   // one this person can see.
-  const AGENCY_VIEWS = ['actionhub', 'overview', 'trends', 'weekly', 'forecast', 'cockpit', 'insights', 'update', 'monthly', 'social']
-  const agencyCan = (id) => (id === 'actionhub' ? canHub : showView(id))
+  const AGENCY_VIEWS = ['actionhub', 'saleshub', 'overview', 'trends', 'weekly', 'forecast', 'cockpit', 'insights', 'update', 'monthly', 'social']
+  const agencyCan = (id) => (id === 'actionhub' ? canHub : id === 'saleshub' ? canSales : showView(id))
   const curView = isViewer ? viewerView : ((AGENCY_VIEWS.includes(view) && !agencyCan(view)) ? (AGENCY_VIEWS.find(agencyCan) || 'settings') : view)
   // Resolve a deep-linked ?c= client synchronously here too (not just in the async
   // effect) so a refresh straight onto a client URL doesn't flash the empty state.
@@ -19463,18 +19494,18 @@ function Dashboard({ authUser, authEnabled, onLogout, realUser, onViewAs }) {
             {showView('update') && <button className={curView === 'update' ? 'active' : ''} onClick={() => go('update')}><span className="ic"><NavIcon name="update" /></span>Client Update</button>}
             {showView('monthly') && <button className={curView === 'monthly' ? 'active' : ''} onClick={() => go('monthly')}><span className="ic"><NavIcon name="monthly" /></span>Reporting</button>}
             {showView('social') && <button className={curView === 'social' ? 'active' : ''} onClick={() => go('social')}><span className="ic"><NavIcon name="social" /></span>Organic Social Media</button>}
-            {canHub && <>
+            {(canHub || canSales) && <>
               <div className="nav-sep" />
               <div className="nav-lab">Account</div>
-              <button className={curView === 'actionhub' ? 'active' : ''} onClick={() => go('actionhub')}><span className="ic"><NavIcon name="actionhub" /></span>{ACTION_HUB_LABEL}</button>
-              {(() => { const sc = (curPicked && curPicked.ghl) ? curPicked : hubClients[0]; return sc ? <button className={curView === 'clients' && clientTab === 'saleshub' ? 'active' : ''} onClick={() => openSalesHub(sc)} title={`Sales Hub · ${sc.name}`}><span className="ic"><NavIcon name="saleshub" /></span>Sales Hub</button> : null })()}
+              {canHub && <button className={curView === 'actionhub' ? 'active' : ''} onClick={() => go('actionhub')}><span className="ic"><NavIcon name="actionhub" /></span>{ACTION_HUB_LABEL}</button>}
+              {canSales && <button className={curView === 'saleshub' ? 'active' : ''} onClick={() => go('saleshub')}><span className="ic"><NavIcon name="saleshub" /></span>Sales Hub</button>}
             </>}
           </>}
           {isViewer && <>
-            {canHub && <>
+            {(canHub || canSales) && <>
               <div className="nav-lab">Account</div>
-              <button className={curView === 'actionhub' ? 'active' : ''} onClick={() => go('actionhub')}><span className="ic"><NavIcon name="actionhub" /></span>{ACTION_HUB_LABEL}</button>
-              {hasDashTabs && !isHiddenTab(hid, 'saleshub') ? (() => { const sc = (curPicked && curPicked.ghl) ? curPicked : hubClients[0]; return sc ? <button className={curView === 'clients' && clientTab === 'saleshub' ? 'active' : ''} onClick={() => openSalesHub(sc)} title={`Sales Hub · ${sc.name}`}><span className="ic"><NavIcon name="saleshub" /></span>Sales Hub</button> : null })() : null}
+              {canHub && <button className={curView === 'actionhub' ? 'active' : ''} onClick={() => go('actionhub')}><span className="ic"><NavIcon name="actionhub" /></span>{ACTION_HUB_LABEL}</button>}
+              {canSales && <button className={curView === 'saleshub' ? 'active' : ''} onClick={() => go('saleshub')}><span className="ic"><NavIcon name="saleshub" /></span>Sales Hub</button>}
               {(canReports || hasDashTabs) && <div className="nav-sep" />}
             </>}
             {canReports && <button className={curView === 'reports' ? 'active' : ''} onClick={() => go('reports')}><span className="ic"><NavIcon name="monthly" /></span>Monthly Reports</button>}
@@ -19482,7 +19513,7 @@ function Dashboard({ authUser, authEnabled, onLogout, realUser, onViewAs }) {
               <div className="nav-lab">My dashboards</div>
               {myClients.length ? myClients.map((c) => <button key={c.id} className={curView === 'clients' && curPicked && curPicked.id === c.id ? 'active' : ''} onClick={() => openClient(c)}><span className="ic"><NavIcon name="report" /></span>{c.name}</button>) : <div className="nav-empty">No dashboards assigned yet - your admin will set these up.</div>}
             </>}
-            {!hasDashTabs && !canReports && !canHub && <div className="nav-empty">No access assigned yet - your admin will set these up.</div>}
+            {!hasDashTabs && !canReports && !canHub && !canSales && <div className="nav-empty">No access assigned yet - your admin will set these up.</div>}
           </>}
         </nav>
         <div className="side-foot">
@@ -19520,19 +19551,20 @@ function Dashboard({ authUser, authEnabled, onLogout, realUser, onViewAs }) {
         </div> : null}
         <div className="head">
           <div>
-            <h2>{curView === 'actionhub' ? ACTION_HUB_LABEL : curView === 'overview' ? 'Agency Overview' : curView === 'trends' ? 'Daily Performance' : curView === 'weekly' ? 'Weekly Traffic Light' : curView === 'forecast' ? 'Funnel Forecaster' : curView === 'cockpit' ? 'Creative Cockpit' : curView === 'curator' ? 'Creative Curator' : curView === 'insights' ? 'Meta Insights' : curView === 'update' ? 'Client Update' : curView === 'monthly' ? 'Reporting' : curView === 'social' ? 'Organic Social Media' : curView === 'reports' ? 'Monthly Reports' : curView === 'settings' ? 'Settings' : isViewer ? 'Your report' : 'Clients'}</h2>
-            <p>{curView === 'actionhub' ? 'What needs doing on the deals: appointments to result, messages waiting, stale deals, and each rep\'s own results.' : curView === 'overview' ? 'Blended paid performance across all clients, live for the selected range.' : curView === 'trends' ? 'Rolling 3 / 7 / 14 / 21 / 28-day performance per client, each vs the prior equal window.' : curView === 'weekly' ? 'One client at a time, reported Monday-Sunday by ISO week - spend pacing, leads, appointments and wins vs KPI.' : curView === 'forecast' ? 'What a month of spend should turn into, stage by stage - from each client\u2019s own last 90 days, or a scenario you build.' : curView === 'cockpit' ? 'Every creative for a client, with performance, categorisation and AI strategy.' : curView === 'curator' ? 'Strategise new creatives to make: pick Format, Style, CTA, Audience and Angle for instant or AI concept ideas, and save the best to a board.' : curView === 'insights' ? 'Everything Meta-derived in one place - delivery health, creative fatigue and more, across every active Meta client.' : curView === 'update' ? 'Generate a client-ready account update (WhatsApp + email) for the selected range.' : curView === 'monthly' ? 'Monthly Report decks, and the Trend Report: any metric, any period, by day, week, month, quarter or year.' : curView === 'social' ? 'Organic Instagram + Facebook Page performance per client - followers, reach, engagement, best posts and audience, for the selected range.' : curView === 'reports' ? 'Your published monthly reports - frozen snapshots you can read on screen or download as a PDF.' : curView === 'settings' ? (isViewer ? 'Your account.' : 'Clients, key events, KPI targets and campaign links - saved to the server and shared across your team.') : isViewer ? 'Your live reporting for the selected range.' : 'Open any client for their Overall, CRM, Meta and Google workspace.'}</p>
+            <h2>{curView === 'actionhub' ? ACTION_HUB_LABEL : curView === 'saleshub' ? 'Sales Hub' : curView === 'overview' ? 'Agency Overview' : curView === 'trends' ? 'Daily Performance' : curView === 'weekly' ? 'Weekly Traffic Light' : curView === 'forecast' ? 'Funnel Forecaster' : curView === 'cockpit' ? 'Creative Cockpit' : curView === 'curator' ? 'Creative Curator' : curView === 'insights' ? 'Meta Insights' : curView === 'update' ? 'Client Update' : curView === 'monthly' ? 'Reporting' : curView === 'social' ? 'Organic Social Media' : curView === 'reports' ? 'Monthly Reports' : curView === 'settings' ? 'Settings' : isViewer ? 'Your report' : 'Clients'}</h2>
+            <p>{curView === 'actionhub' ? 'What needs doing on the deals: appointments to result, messages waiting, stale deals, and each rep\'s own results.' : curView === 'saleshub' ? 'The sales team\'s month: goals, the leaderboard, live wins and the plan board.' : curView === 'overview' ? 'Blended paid performance across all clients, live for the selected range.' : curView === 'trends' ? 'Rolling 3 / 7 / 14 / 21 / 28-day performance per client, each vs the prior equal window.' : curView === 'weekly' ? 'One client at a time, reported Monday-Sunday by ISO week - spend pacing, leads, appointments and wins vs KPI.' : curView === 'forecast' ? 'What a month of spend should turn into, stage by stage - from each client\u2019s own last 90 days, or a scenario you build.' : curView === 'cockpit' ? 'Every creative for a client, with performance, categorisation and AI strategy.' : curView === 'curator' ? 'Strategise new creatives to make: pick Format, Style, CTA, Audience and Angle for instant or AI concept ideas, and save the best to a board.' : curView === 'insights' ? 'Everything Meta-derived in one place - delivery health, creative fatigue and more, across every active Meta client.' : curView === 'update' ? 'Generate a client-ready account update (WhatsApp + email) for the selected range.' : curView === 'monthly' ? 'Monthly Report decks, and the Trend Report: any metric, any period, by day, week, month, quarter or year.' : curView === 'social' ? 'Organic Instagram + Facebook Page performance per client - followers, reach, engagement, best posts and audience, for the selected range.' : curView === 'reports' ? 'Your published monthly reports - frozen snapshots you can read on screen or download as a PDF.' : curView === 'settings' ? (isViewer ? 'Your account.' : 'Clients, key events, KPI targets and campaign links - saved to the server and shared across your team.') : isViewer ? 'Your live reporting for the selected range.' : 'Open any client for their Overall, CRM, Meta and Google workspace.'}</p>
           </div>
           <div className="spacer" />
-          {curView !== 'settings' && curView !== 'monthly' && curView !== 'reports' && curView !== 'trends' && curView !== 'actionhub' && <DateRange range={range} onChange={setRange} busy={agency.status === 'loading'} />}
+          {curView !== 'settings' && curView !== 'monthly' && curView !== 'reports' && curView !== 'trends' && curView !== 'actionhub' && curView !== 'saleshub' && <DateRange range={range} onChange={setRange} busy={agency.status === 'loading'} />}
           {(curView === 'overview' || curView === 'weekly' || (curView === 'clients' && curPicked)) && <WonBasisToggle value={wonBasis} onChange={setWonBasis} />}
           {curView !== 'monthly' && curView !== 'reports' && curView !== 'actionhub' && <button className="refresh-btn" title="Refresh live data" onClick={() => setRefreshKey((k) => k + 1)}><span className={agency.status === 'loading' ? 'spin sm' : ''} style={{ display: 'inline-block' }}>⟳</span> Refresh</button>}
         </div>
         {/* A client who follows an agency-only link (Reporting, Daily Performance…)
             lands on their own dashboard; say so rather than looking like the link broke. */}
-        {isViewer && AGENCY_VIEWS.includes(view) && view !== 'actionhub' ? <div className="card pv-note"><p className="cap" style={{ margin: 0 }}>That link is for agency users, so here is your dashboard instead.</p></div> : null}
+        {isViewer && AGENCY_VIEWS.includes(view) && view !== 'actionhub' && view !== 'saleshub' ? <div className="card pv-note"><p className="cap" style={{ margin: 0 }}>That link is for agency users, so here is your dashboard instead.</p></div> : null}
         <ErrorBoundary key={curView + '|' + (curPicked && curPicked.id || '')} onHome={() => go(isViewer ? 'clients' : 'overview')}>
           {curView === 'actionhub' && canHub && <ActionHubPage clients={hubClients} currency={data.currency} authUser={authUser} nonce={refreshKey} />}
+          {curView === 'saleshub' && canSales && <SalesHubPage clients={hubClients} currency={data.currency} authUser={authUser} nonce={refreshKey} />}
           {curView === 'overview' && !isViewer && <Overview rows={rows} currency={data.currency} periodLabel={rangeLabel(range)} live={agency.status === 'ok'} alerts={agency.data && agency.data.alerts} range={range} nonce={refreshKey} wonBasis={wonBasis} onPick={openClient} />}
           {curView === 'trends' && !isViewer && <TrendsTab rows={rows} currency={data.currency} nonce={refreshKey} onPick={openClient} />}
           {curView === 'weekly' && !isViewer && <WeeklyTab rows={rows} currency={data.currency} nonce={refreshKey} wonBasis={wonBasis} />}
@@ -19570,6 +19602,8 @@ export default function App() {
     else setAuth({ status: 'ready', enabled: true, user: r.user || null, needsSetup: !!r.needsSetup })
   }).catch(() => setAuth({ status: 'ready', enabled: false, user: null }))
   useEffect(() => { check() }, [])
+  // A data call came back 401: the session is gone or the terms are unsigned.
+  useEffect(() => { const f = () => check(); window.addEventListener('c360-session-lost', f); return () => window.removeEventListener('c360-session-lost', f) }, [])
   const clearInvite = () => { try { window.history.replaceState({}, '', window.location.pathname) } catch {} }
   const onSignedIn = (user) => { clearInvite(); setAuth({ status: 'ready', enabled: true, user, needsSetup: false }) }
   const onLogout = () => { swrClearPersisted(); _swr.clear(); authApi('logout', { method: 'POST' }).finally(() => setAuth({ status: 'ready', enabled: true, user: null, needsSetup: false })) }

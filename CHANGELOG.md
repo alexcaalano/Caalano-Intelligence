@@ -16,7 +16,7 @@ git commit that produced it, so any version can be redeployed or reverted to.
 
 The version number also appears in the app sidebar. Newest first.
 
-## v3.659.0 - 2026-09-15 (commit PENDING)
+## v3.659.0 - 2026-09-15 (commit feee911)
 
 Monthly Report: the same figures all the way down the Meta and Google pages, with comparisons on the campaign and ad set / ad group tables.
 

@@ -5804,6 +5804,16 @@ body.hub-tv-on { overflow: hidden; }
 .vis-foot { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
 .vis-saved { color: var(--pos); }
 .vis-save-err { color: var(--neg); font-weight: 600; }
+/* The role default, shaded behind a person's own switch: you can see the
+   standard while deciding for a real person. A dot marks a person who differs. */
+.vis-td.def-off { background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--text) 5%, transparent) 0 5px, transparent 5px 10px); }
+.vis-td.differs { position: relative; }
+.vis-td.differs::after { content: ''; position: absolute; top: 5px; right: 5px; width: 5px; height: 5px; border-radius: 50%; background: var(--brand); }
+.vis-legend { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 10px; font-size: 11.5px; color: var(--muted); align-items: center; }
+.vis-legend i { display: inline-block; width: 22px; height: 13px; border-radius: 4px; border: 1px solid var(--border-2); vertical-align: middle; margin-right: 6px; }
+.vis-legend i.def-off { background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--text) 5%, transparent) 0 5px, transparent 5px 10px); }
+.vis-legend i.differs { position: relative; background: var(--panel-2); }
+.vis-legend i.differs::after { content: ''; position: absolute; top: 3px; right: 3px; width: 5px; height: 5px; border-radius: 50%; background: var(--brand); }
 .vis-pick { display: flex; flex-direction: column; gap: 5px; font-size: 12px; font-weight: 700; color: var(--muted); max-width: 420px; margin-bottom: 12px; }
 .vis-pick select { font: inherit; font-weight: 500; color: var(--text); background: var(--panel-2); border: 1px solid var(--border); border-radius: 9px; padding: 8px 10px; }
 @media (max-width: 640px) {

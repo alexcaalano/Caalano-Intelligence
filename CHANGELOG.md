@@ -16,6 +16,19 @@ git commit that produced it, so any version can be redeployed or reverted to.
 
 The version number also appears in the app sidebar. Newest first.
 
+## v3.678.0 - 2026-09-15 (commit PENDING)
+
+Role defaults stop governing people. They are now a starting point, and every person carries their own set.
+
+- **Default, Agency, Clients**, in that order. **Default** is what a new person of each role starts with. **Agency** and **Clients** are the real people, and their own set is what the app and the server enforce.
+- **Saving a default never moves anyone who already exists.** The moment a changed default is saved, everyone without their own set is pinned to exactly what they can see at that moment, and the message says how many. From then on each person is independent.
+- **A new person gets their own copy** of their role's default the moment they are invited, approved or bootstrapped. A later change to that default does not reach them.
+- **The default is shaded behind each switch**, so you can see the standard while deciding for a real person, with a dot where they differ. A legend explains both.
+- **Apply to all.** Each column on the Default tab can hand its set to everyone in that role on purpose. It stages like any other edit, the footer names it, and Save applies it. Nobody is put back on a live rule.
+- **Reset to default** gives one person a fresh copy of their role's default, rather than making them follow it.
+- **Clients tab** opens on **All clients**, listing every client-side person, and the picker is alphabetical below that.
+- **Matching is by content, not key order.** Two identical sets built different ways now read as identical, so nobody is marked as differing from a default they actually match.
+
 ## v3.677.0 - 2026-09-15 (commit c2e4f81)
 
 Visibility saves reliably, and two people editing it no longer overwrite each other.

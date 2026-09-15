@@ -126,6 +126,18 @@ export function normVisibility(v) {
   for (const [email, e] of Object.entries((v && v.users) || {})) { const k = String(email || '').trim().toLowerCase(); if (k && e && typeof e === 'object') users[k] = normEntry(e) }
   return { roles, users }
 }
+// The role default is a SEED, not a live rule: it is what a new person of that
+// role starts with, and what the Visibility chart shades behind each toggle as
+// "the standard". Changing it never moves anyone who already exists - they each
+// carry their own entry (see freezeExisting in the Visibility panel).
+export function roleSeed(role, v) { const vis = normVisibility(v); return vis.roles[normRole(role)] || normEntry(null) }
+// Do two entries say the same thing? Compared by content, not by the order the
+// keys happen to sit in: the same set built two ways (stored and reloaded, or
+// freshly seeded) must read as identical, or the chart marks people as
+// differing from a default they actually match.
+const stableKeys = (o) => JSON.stringify(Object.keys(o || {}).sort().map((k) => [k, o[k]]))
+const entryKey = (e) => { const n = normEntry(e); return `${stableKeys(n.views)}|${stableKeys(n.tabs)}|${stableKeys(n.settings)}` }
+export const sameEntry = (a, b) => entryKey(a) === entryKey(b)
 export const hasOverride = (v, email) => !!normVisibility(v).users[String(email || '').trim().toLowerCase()]
 // Team & access used to carry a per-person list of ticked tabs for Account
 // Admins. Until that person is saved in Visibility (which clears the ticks),

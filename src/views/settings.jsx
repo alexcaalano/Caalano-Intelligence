@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { APP_VERSION, Avatar, BIZ_TYPES, fetchSettingsRemote, CC_CHANS, Caveat, ChangePasswordCard, ClinicSettings, DASH_AUD, DASH_MODULES, DASH_PRESETS, DEFAULT_HOURS, DOW_LABELS, FATIGUE_DEFAULTS, FAVICON, FormsSettingsTab, GeoSettings, HelpNote, OptLogSettings, PROFILE_FIELDS, ROLE_LABEL, SEED_KEYEVENTS, SETTINGS, SignOutEverywhereCard, YourDetailsCard, Spinner, TAB_OPTIONS, TermsAdmin, TermsRegister, UsersAdmin, acolor, apiJson, applyAliases, clientLogoSrc, dashAudience, dashModuleFits, dedupeFetch, deleteClient, domainOf, dpClientOn, dpPipeOn, fetchDiscover, fmtDMY, fmtHours, formKeyEvents, formsDoneCount, hhmm, initials, isAdminishFE, isClientDeleted, iso, loadAdsetRules, loadAliases, loadBizType, loadCampMap, loadCashOn, loadCloseOverride, loadDashboard, loadFatigueCfg, loadHours, loadKeep, loadKeyEvents, loadKeyEventsRaw, loadKpis, loadLogo, loadMetaConv, loadProfile, loadQualStage, loadSocialKpis, mkOutcomeMap, normId, presetRange, rangeLabel, rangeMaturity, rangeQuery, readNavUrl, removeCustomClient, restoreClient, roleLabelOf, saveAdsetRules, saveBizType, saveCampMap, saveCashOn, saveCloseOverride, saveCustomClient, saveDashboard, saveFatigueCfg, saveHours, saveKeyEvents, saveKpis, saveLogo, saveMetaConv, saveProfile, saveQualStage, saveSocialKpis, setAlias, setDpClient, setDpPipe, setKeep, syncLogos, unorm, useDiscoverNames, useSettingsSync, writeNavUrl, normCrmUrl, saveCrmUrl, CRM_DEFAULT_URL } from '../App.jsx'
 import { fmtCurrency, fmtNumber } from '../lib/format.js'
-import { VIS_VIEWS, VIS_TABS, VIS_SETTINGS, VIS_ACCOUNT_GROUPS, isDefaultOff, VIS_ROLES, VIS_ROLE_LABELS, viewsForRole, tabsForRole, settingsForRole, normVisibility, isHiddenSetting, entryFor, hasLegacyTicks, visSettingLabel } from '../lib/visibility.js'
+import { VIS_VIEWS, VIS_TABS, VIS_SETTINGS, VIS_ACCOUNT_GROUPS, isDefaultOff, sameEntry, VIS_ROLES, VIS_ROLE_LABELS, viewsForRole, tabsForRole, settingsForRole, normVisibility, isHiddenSetting, entryFor, hasLegacyTicks, visSettingLabel } from '../lib/visibility.js'
 import { authApi, saveSettingsRemote, bumpSettings, userHidden, InfoTip, loadAnnot, saveAnnot } from '../App.jsx'
 import { GoalsEditor } from './sales-hub.jsx'
 
@@ -1701,7 +1701,12 @@ function VisMatrix({ cols, onFlip, locked }) {
                   {cols.map((c) => {
                     if (!visApplies(item, c.role)) return <td key={c.key} className="vis-td na" title="Does not apply to this role">–</td>
                     const on = visOn(c.entry, item)
-                    return <td key={c.key} className={`vis-td${on ? '' : ' off'}`}><Toggle sm on={on} disabled={locked} onChange={() => onFlip(c, item)} /></td>
+                    // The role default sits behind the switch as shading, so the
+                    // standard is visible while you decide for a real person.
+                    const def = c.def ? visOn(c.def, item) : null
+                    const cls = `vis-td${on ? '' : ' off'}${def === false ? ' def-off' : ''}${def != null && def !== on ? ' differs' : ''}`
+                    const tip = def == null ? undefined : `Default for ${VIS_ROLE_LABELS[c.role] || c.role}: ${def ? 'on' : 'off'}${def === on ? '' : ' - this person differs'}`
+                    return <td key={c.key} className={cls} title={tip}><Toggle sm on={on} disabled={locked} onChange={() => onFlip(c, item)} /></td>
                   })}
                 </tr>
               </React.Fragment>
@@ -1718,14 +1723,14 @@ export function VisibilitySettings({ clients = [] }) {
   // save one (it would write that emptiness over every saved rule).
   useSettingsSync()
   const loaded = SETTINGS.loaded
-  const [mode, setMode] = useState('agency') // 'agency' | 'roles' | 'client'
+  const [mode, setMode] = useState('agency') // 'default' | 'agency' | 'client'
   const [vis, setVis] = useState(() => normVisibility(SETTINGS.visibility))
   const [draftRoles, setDraftRoles] = useState(() => normVisibility(SETTINGS.visibility).roles)
   const [draftUsers, setDraftUsers] = useState({}) // email -> entry, or null = return to default
   const [saved, setSaved] = useState(null)
   const [busy, setBusy] = useState(false)
   const [users, setUsers] = useState(null)
-  const [clientId, setClientId] = useState('')
+  const [clientId, setClientId] = useState('*') // '*' = every client-side person
   // Re-seed from the settings once they land - unless something is already
   // half-edited, which only happens if they landed very late.
   const editedRef = React.useRef(false)
@@ -1741,10 +1746,24 @@ export function VisibilitySettings({ clients = [] }) {
     const seen = new Set()
     setUsers(r && r.ok ? (r.users || []).filter((u) => u.status !== 'disabled').filter((u) => { const k = String(u.email || '').toLowerCase(); if (!k || seen.has(k)) return false; seen.add(k); return true }) : [])
   }); return () => { alive = false } }, [])
-  const rolesDirty = JSON.stringify(normVisibility({ roles: draftRoles }).roles) !== JSON.stringify(vis.roles)
+  const rolesDirty = VIS_ROLES.some((r) => !sameEntry(normVisibility({ roles: draftRoles }).roles[r], vis.roles[r]))
   const usersDirty = Object.keys(draftUsers).length > 0
   // ---- role defaults ----
-  const roleCols = VIS_ROLES.map((r) => ({ key: r, role: r, label: VIS_ROLE_LABELS[r], sub: 'default', entry: draftRoles[r] }))
+  const countOfRole = (r) => (users || []).filter((u) => visRoleOf(u.role) === r).length
+  // Deliberately putting a default onto people who already exist: it stages the
+  // change like any other edit, so the footer names it and Save applies it.
+  const applyRoleToAll = (r) => {
+    const list = (users || []).filter((u) => visRoleOf(u.role) === r)
+    if (!list.length) return
+    const entry = normVisibility({ roles: draftRoles }).roles[r]
+    const next = {}
+    for (const u of list) next[String(u.email || '').toLowerCase()] = entry
+    editedRef.current = true; setDraftUsers((d) => ({ ...d, ...next })); setSaved(null)
+  }
+  const roleCols = VIS_ROLES.map((r) => ({
+    key: r, role: r, label: VIS_ROLE_LABELS[r], sub: 'for new people', entry: draftRoles[r],
+    action: countOfRole(r) ? { label: `Apply to all ${countOfRole(r)}`, onClick: () => applyRoleToAll(r), title: `Give every ${VIS_ROLE_LABELS[r] || r} this exact set now. They keep their own copy; it does not put them back on a live rule.` } : null,
+  }))
   const flipRole = (c, item) => { editedRef.current = true; setDraftRoles((d) => ({ ...d, [c.role]: visFlip(d[c.role], item, c.role) })); setSaved(null) }
   // One save for everything pending, in both scopes - a flip in "By role" is
   // not silently left behind by pressing Save on the people tab.
@@ -1758,8 +1777,21 @@ export function VisibilitySettings({ clients = [] }) {
     const base = normVisibility(fresh ? fresh.visibility : SETTINGS.visibility)
     const draftNorm = normVisibility({ roles: draftRoles }).roles
     const roles = { ...base.roles }
-    for (const r of VIS_ROLES) if (JSON.stringify(draftNorm[r]) !== JSON.stringify(vis.roles[r])) roles[r] = draftNorm[r]
+    const rolesChanged = VIS_ROLES.filter((r) => !sameEntry(draftNorm[r], vis.roles[r]))
+    for (const r of rolesChanged) roles[r] = draftNorm[r]
     const people = { ...base.users }
+    // A default is a seed, not a live rule. Before a changed default is stored,
+    // everyone who does not yet carry their own set is frozen at exactly what
+    // they can see today - so saving a default never moves a living person.
+    const frozen = []
+    if (rolesChanged.length) {
+      for (const u of (users || [])) {
+        const key = String(u.email || '').trim().toLowerCase()
+        if (!key || people[key] || (key in draftUsers)) continue
+        people[key] = entryFor(u, { roles: base.roles, users: base.users }) || base.roles[visRoleOf(u.role)]
+        frozen.push(key)
+      }
+    }
     for (const [key, e] of Object.entries(draftUsers)) { if (e) people[key] = e; else delete people[key] }
     const next = normVisibility({ roles, users: people })
     const res = await saveSettingsRemote({ visibility: { roles: next.roles, users: next.users } })
@@ -1771,40 +1803,47 @@ export function VisibilitySettings({ clients = [] }) {
     SETTINGS.visibility = { ...(SETTINGS.visibility || {}), roles: next.roles, users: next.users }; bumpSettings()
     // Anyone saved here who still carried the old Access (Team & access) tab ticks is
     // moved off them: Visibility is now the one place their tabs are set.
-    for (const key of Object.keys(draftUsers)) { const u = (users || []).find((x) => x.email.toLowerCase() === key); if (u && Array.isArray(u.tabs) && visRoleOf(u.role) === 'account_admin') { authApi('update-user', { method: 'POST', body: JSON.stringify({ email: u.email, tabs: null }) }).catch(() => {}); u.tabs = null } }
+    for (const key of [...Object.keys(draftUsers), ...frozen]) { const u = (users || []).find((x) => x.email.toLowerCase() === key); if (u && Array.isArray(u.tabs) && visRoleOf(u.role) === 'account_admin') { authApi('update-user', { method: 'POST', body: JSON.stringify({ email: u.email, tabs: null }) }).catch(() => {}); u.tabs = null } }
     setVis(next); setDraftRoles(next.roles); setDraftUsers({}); editedRef.current = false; setBusy(false)
-    setSaved({ text: 'Saved. Everyone gets their visibility on their next page load.' })
+    setSaved({ text: `Saved. Everyone gets their visibility on their next page load.${frozen.length ? ` ${frozen.length} ${frozen.length === 1 ? 'person was' : 'people were'} pinned to what they can see now, so the new default only applies to new people.` : ''}` })
   }
   const showAllRoles = () => { const d = {}; for (const r of VIS_ROLES) d[r] = { views: {}, tabs: {}, settings: {} }; editedRef.current = true; setDraftRoles(d); setSaved(null) }
   // ---- people (by client / by role) ----
   const effective = (u) => { const key = u.email.toLowerCase(); if (key in draftUsers) return draftUsers[key] || vis.roles[visRoleOf(u.role)]; return entryFor(u, vis) || vis.roles[visRoleOf(u.role)] }
+  const defaultOf = (u) => vis.roles[visRoleOf(u.role)]
   const legacy = (u) => hasLegacyTicks(u, vis)
-  const isCustom = (u) => { const key = u.email.toLowerCase(); return key in draftUsers ? draftUsers[key] != null : (!!vis.users[key] || legacy(u)) }
+  const isCustom = (u) => !sameEntry(effective(u), defaultOf(u))
+  // Everyone carries their own set. A person who happens to match the default
+  // still holds their own copy, so changing the default later leaves them alone.
   const flipUser = (c, item) => {
     const u = c.user, key = u.email.toLowerCase()
-    setDraftUsers((d) => {
-      const next = visFlip(effective(u), item, visRoleOf(u.role))
-      // Back to exactly the role default = no override needed.
-      const same = visSame(next, vis.roles[visRoleOf(u.role)])
-      return { ...d, [key]: same ? null : next }
-    })
+    const next = visFlip(effective(u), item, visRoleOf(u.role))
     editedRef.current = true
+    setDraftUsers((d) => ({ ...d, [key]: next }))
     setSaved(null)
   }
-  const resetUser = (u) => { const key = u.email.toLowerCase(); editedRef.current = true; setDraftUsers((d) => ({ ...d, [key]: null })); setSaved(null) }
+  // "Reset to default" hands them a fresh copy of the default - it does not put them back on a live rule.
+  const resetUser = (u) => { const key = u.email.toLowerCase(); editedRef.current = true; setDraftUsers((d) => ({ ...d, [key]: vis.roles[visRoleOf(u.role)] })); setSaved(null) }
   const peopleCols = (list) => list.map((u) => {
     const r = visRoleOf(u.role), custom = isCustom(u)
     const key = u.email.toLowerCase(), fromTicks = legacy(u) && !(key in draftUsers)
-    return { key: u.email, role: r, user: u, entry: effective(u), custom, label: u.name || u.email, sub: <>{VIS_ROLE_LABELS[r] || r}<br />{fromTicks ? 'custom · from old tab ticks' : custom ? 'custom' : 'default'}</>, action: { label: 'Use default', onClick: () => resetUser(u), disabled: !custom, title: custom ? 'Drop this person\'s custom set and use the role default' : 'Already on the role default' } }
+    return { key: u.email, role: r, user: u, entry: effective(u), def: defaultOf(u), custom, label: u.name || u.email, sub: <>{VIS_ROLE_LABELS[r] || r}<br />{fromTicks ? 'from old tab ticks' : custom ? 'differs from default' : 'matches default'}</>, action: { label: 'Reset to default', onClick: () => resetUser(u), disabled: !custom, title: custom ? 'Give this person a fresh copy of the default for their role' : 'Already the same as the default' } }
   })
   const byName = (a, b) => String(a.name || a.email).localeCompare(String(b.name || b.email), undefined, { sensitivity: 'base' })
   // By client: the account-level people allocated to it. Agency people are on
   // their own tab - they see every client, so listing them per client says nothing.
   const AGENCY = ['superadmin', 'admin', 'user']
-  const clientPeople = clientId && users ? users.filter((u) => !AGENCY.includes(visRoleOf(u.role)) && (u.clients || []).includes(clientId)).sort((a, b) => (visRoleOf(a.role) === visRoleOf(b.role) ? byName(a, b) : visRoleOf(a.role) === 'account_admin' ? -1 : 1)) : []
+  const clientPeople = clientId && users ? users.filter((u) => !AGENCY.includes(visRoleOf(u.role)) && (clientId === '*' || (u.clients || []).includes(clientId))).sort((a, b) => (visRoleOf(a.role) === visRoleOf(b.role) ? byName(a, b) : visRoleOf(a.role) === 'account_admin' ? -1 : 1)) : []
   const agencyPeople = users ? users.filter((u) => AGENCY.includes(visRoleOf(u.role))).sort((a, b) => (AGENCY.indexOf(visRoleOf(a.role)) - AGENCY.indexOf(visRoleOf(b.role))) || byName(a, b)) : []
   const anyDirty = rolesDirty || usersDirty
-  const pending = [rolesDirty ? 'role defaults' : null, usersDirty ? `${Object.keys(draftUsers).length} ${Object.keys(draftUsers).length === 1 ? 'person' : 'people'}` : null].filter(Boolean).join(' and ')
+  const pending = [rolesDirty ? 'the defaults for new people' : null, usersDirty ? `${Object.keys(draftUsers).length} ${Object.keys(draftUsers).length === 1 ? 'person' : 'people'}` : null].filter(Boolean).join(' and ')
+  const legend = (
+    <div className="vis-legend">
+      <span><i className="def-off" />Shaded: the default for that role is off</span>
+      <span><i className="differs" />Dot: this person differs from the default</span>
+      <span>Defaults are a starting point for new people. They never move anyone who already exists.</span>
+    </div>
+  )
   const foot = (extra) => (
     <div className="vis-foot">
       <button type="button" className="btn-primary" onClick={saveAll} disabled={!anyDirty || busy}>{busy ? 'Saving…' : 'Save'}</button>
@@ -1815,15 +1854,19 @@ export function VisibilitySettings({ clients = [] }) {
   )
   return (
     <div className="card vis-card">
-      <SetHead title="Visibility" info={<>Every page down the left, laid out as the app is - the Agency view's sidebar, then the Account view group by group, then Settings - and who sees it across the top. <b>By role</b> sets the default for everyone of that role. <b>By client</b> shows the Account Admins and Account Users on one client, and <b>Agency</b> everyone at Caalano, as columns: a switch there gives that person their own set (marked <i>custom</i>) and <b>Use default</b> puts them back on the role. Anything new is visible until you switch it off, so this is where a feature waits until launch. That includes you: switch something off for Super Admin and it leaves your own sidebar too, but Settings and this page are always there to switch it back on. Use <b>View as</b> in the sidebar to check what someone else gets.</>} />
+      <SetHead title="Visibility" info={<>Every page down the left, laid out as the app is - the Agency view's sidebar, then the Account view group by group, then Settings - and who sees it across the top.
+        <br /><br /><b>Default</b> is the starting point for a new person of each role. It is a seed, not a live rule: saving it changes nothing for anyone who already exists.
+        <br /><b>Agency</b> and <b>Clients</b> are the real people, each carrying their own set. That set is what the app and the server actually enforce. Behind each switch you can see the default for that person's role, shaded, with a dot where they differ from it.
+        <br /><br />Anything new is visible until you switch it off, so this is where a feature waits until launch. That includes you: switch something off for yourself and it leaves your own sidebar too, but Settings and this page are always there to switch it back on. Use <b>View as</b> in the sidebar to check what someone else gets.</>} />
       {!loaded ? <Spinner label="Loading who sees what…" /> : <>
       <div className="chan-toggle sm vis-mode">
+        <button className={mode === 'default' ? 'on' : ''} onClick={() => setMode('default')}>Default</button>
         <button className={mode === 'agency' ? 'on' : ''} onClick={() => setMode('agency')}>Agency</button>
-        <button className={mode === 'roles' ? 'on' : ''} onClick={() => setMode('roles')}>By role</button>
-        <button className={mode === 'client' ? 'on' : ''} onClick={() => setMode('client')}>By client</button>
+        <button className={mode === 'client' ? 'on' : ''} onClick={() => setMode('client')}>Clients</button>
       </div>
-      {mode === 'roles' ? (
+      {mode === 'default' ? (
         <>
+          <p className="cap">What a new person of each role starts with. Saving this changes nothing for anyone who already exists - they each carry their own set, on the Agency and Clients tabs. Use <b>Apply to all</b> in a column to hand that set to everyone in the role on purpose.</p>
           <VisMatrix cols={roleCols} onFlip={flipRole} />
           {foot(<button type="button" className="btn-ghost" onClick={showAllRoles}>Show everything to everyone</button>)}
         </>
@@ -1832,14 +1875,15 @@ export function VisibilitySettings({ clients = [] }) {
         <>
           <label className="vis-pick">Client
             <select value={clientId} onChange={(e) => { setClientId(e.target.value); setSaved(null) }}>
-              <option value="">Choose a client…</option>
-              {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              <option value="*">All clients</option>
+              {[...clients].sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base' })).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
           </label>
-          {!clientId ? null : users == null ? <Spinner label="Loading people…" /> : !clientPeople.length ? <p className="cap">No Account Admins or Account Users are allocated to this client yet. Allocate people under Access.</p> : (
+          {users == null ? <Spinner label="Loading people…" /> : !clientPeople.length ? <p className="cap">{clientId === '*' ? 'Nobody holds an account-level role yet.' : 'No Account Admins or Account Users are allocated to this client yet. Allocate people under Access.'}</p> : (
             <>
-              <p className="cap">{clientPeople.length} account-level {clientPeople.length === 1 ? 'person is' : 'people are'} allocated to this client. Agency people are on their own tab.</p>
+              <p className="cap">{clientPeople.length} account-level {clientPeople.length === 1 ? 'person' : 'people'}{clientId === '*' ? ' across every client' : ' on this client'}. Agency people are on their own tab.</p>
               <VisMatrix cols={peopleCols(clientPeople)} onFlip={flipUser} />
+              {legend}
               {foot()}
             </>
           )}
@@ -1851,6 +1895,7 @@ export function VisibilitySettings({ clients = [] }) {
             <>
               <p className="cap">{agencyPeople.length} {agencyPeople.length === 1 ? 'person' : 'people'} at the agency: Super Admins, then Agency Admins, then Agency Users.</p>
               <VisMatrix cols={peopleCols(agencyPeople)} onFlip={flipUser} />
+              {legend}
               {foot()}
             </>
           )}

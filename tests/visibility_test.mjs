@@ -35,6 +35,19 @@ assert.ok(!V.hiddenFor({ email: 'a@x', role: 'account_admin' }, { users: { 'a@x'
 assert.ok(V.hiddenFor({ email: 'a@x', role: 'account_admin' }, { users: { 'a@x': { tabs: { set_targets: true } } } }).tabs.includes('set_account'), 'the rest stay off for that person')
 assert.ok(!V.hiddenFor({ email: 'a@x', role: 'admin' }, {}).tabs.includes('set_account'), 'agency roles see the settings pages')
 assert.ok(V.isDefaultOff('viewer', 'tabs', 'set_account') && !V.isDefaultOff('admin', 'tabs', 'set_account'), 'isDefaultOff reads viewer as account admin')
+// A role default is a SEED for new people, not a live rule. roleSeed hands out
+// that starting set (with the default-off pages already off), and sameEntry is
+// how the chart decides whether a person still matches it.
+{
+  const seed = V.roleSeed('account_admin', { roles: { account_admin: { views: { social: false } } } })
+  assert.equal(seed.views.social, false, 'the seed carries what the default hides')
+  assert.equal(seed.tabs.set_tracking, false, 'and the pages that start off for that role')
+  assert.ok(V.sameEntry(seed, V.roleSeed('viewer', { roles: { account_admin: { views: { social: false } } } })), 'viewer and account_admin are the same role')
+  assert.ok(!V.sameEntry(seed, V.roleSeed('admin', {})), 'a different role is a different seed')
+  const mine = { views: { social: false }, tabs: { set_tracking: false, set_account: false, set_targets: false, set_operations: false }, settings: {} }
+  assert.ok(V.sameEntry(seed, mine), 'a person holding that exact set matches the default')
+  assert.ok(!V.sameEntry(seed, { ...mine, views: {} }), 'and differs once they are given something back')
+}
 // The Account view's groups: Visibility lays its rows out by the same list the
 // app builds the account sidebar from, and every group member is a known page.
 {

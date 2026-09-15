@@ -11,6 +11,7 @@
 // it can be shipped dark and enabled deliberately (and disabled instantly by
 // unsetting the var, which falls the site back to the legacy shared password).
 import { getStore } from '@netlify/blobs'
+import { roleSeed } from './visibility.mjs'
 import { mirror } from './mirror.mjs'
 import { normPhone, isEmail } from './contact.mjs'
 import { loadTerms, termsAcceptanceValid, DEFAULT_MIN_VERSION } from './terms.mjs'
@@ -202,6 +203,23 @@ export async function countUsers() {
   return (blobs || []).length
 }
 // Every user write also lands in Postgres (phase 1 dual-write; Blobs stays the truth).
+// A new person starts with their own copy of the role default, frozen at the
+// moment they are created. Later changes to that default are for the NEXT new
+// person, never for them. Never blocks account creation: if the settings store
+// is unreachable the person simply has no entry yet, and the reader falls back
+// to the role default exactly as before.
+export async function seedUserVisibility(email, role) {
+  try {
+    const key = String(email || '').trim().toLowerCase()
+    if (!key || !role) return
+    const st = getStore({ name: 'caalano-settings', consistency: 'strong' })
+    const all = (await st.get('all', { type: 'json' })) || {}
+    const vis = all.visibility || {}
+    if (vis.users && vis.users[key]) return
+    const next = { ...vis, users: { ...(vis.users || {}), [key]: roleSeed(role, vis) } }
+    await st.setJSON('all', { ...all, visibility: next, updatedAt: new Date().toISOString() })
+  } catch { /* settings unreachable: the reader falls back to the role default */ }
+}
 async function saveUser(u) { await store().setJSON(uKey(u.email), u); await mirror.user(u); return u }
 // How many ACTIVE users hold a given role (for the last-superadmin guard).
 async function countActiveRole(role) { return (await listUsers()).filter((u) => u.role === role && u.status === 'active').length }
@@ -228,6 +246,7 @@ export async function bootstrapAdmin({ email, firstName, lastName, phone, phoneC
     passwordHash: hash, passwordSalt: salt, createdAt: new Date().toISOString(), invitedBy: null, lastLogin: null,
     clients: [], allClients: true, tabs: null,
   })
+  await seedUserVisibility(u.email, u.role)
   return { user: publicUser(u) }
 }
 
@@ -276,6 +295,7 @@ export async function signupRequest({ email, firstName, lastName, phone, phoneCo
     invitedBy: null, lastLogin: null, clients: [], allClients: false, tabs: null,
     requestedAt: new Date().toISOString(), note: String(note || '').trim().slice(0, 300),
   })
+  await seedUserVisibility(em, 'account_admin')
   return { ok: true }
 }
 
@@ -291,6 +311,7 @@ export async function approveUser(email, patch, actor) {
   u.approvedBy = (actor && actor.email) || null
   u.requestedAt = u.requestedAt || null
   await saveUser(u)
+  await seedUserVisibility(u.email, u.role)
   return { user: publicUser(u) }
 }
 
@@ -327,6 +348,7 @@ export async function createInvite({ email, name, role, clients, allClients, tab
     clients: [], allClients: isAdminish(role) || role === 'user', tabs: null, ...alloc,
   }
   await saveUser(u)
+  await seedUserVisibility(u.email, u.role)
   await store().setJSON(iKey(token), { email: em, expires })
   return { token, expires, user: publicUser(u) }
 }

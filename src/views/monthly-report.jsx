@@ -429,46 +429,90 @@ export function MRMonthPerf({ trend, monthKey, money, spec }) {
     </div>
   )
 }
+// The one set of Meta figures the whole page reads in - the scorecards, the
+// month-by-month table and the campaign / ad set tables all use these, in this
+// order, so a number on one is the same number on the next.
+export function metaMetrics({ money, n0, resLabel = 'Leads', hasImpr = true }) {
+  const one = resLabel.toLowerCase().replace(/s$/, '')
+  const pct2 = (v) => fmtPct(v, 2), pct1 = (v) => fmtPct(v, 1)
+  const freq = (v) => (v == null ? '-' : `${(Math.round(v * 100) / 100).toFixed(2)}x`)
+  return [
+    { k: 'spend', label: 'Amount spent', fmt: money, good: 'neu' },
+    hasImpr && { k: 'cpm', label: 'CPM', fmt: money, good: 'down' },
+    hasImpr && { k: 'frequency', label: 'Frequency', fmt: freq, good: 'neu' },
+    hasImpr && { k: 'linkClicks', label: 'Link clicks', fmt: n0, good: 'up' },
+    hasImpr && { k: 'ctr', label: 'CTR', fmt: pct2, good: 'up' },
+    hasImpr && { k: 'cpc', label: 'CPC', fmt: money, good: 'down' },
+    { k: 'leads', label: resLabel, fmt: n0, good: 'up' },
+    hasImpr && { k: 'cvr', label: 'CVR', fmt: pct1, good: 'up', title: `${resLabel} ÷ link clicks` },
+    { k: 'cpl', label: `Cost / ${one}`, fmt: money, good: 'down', strong: true },
+  ].filter(Boolean)
+}
+// One Meta row (a month, a campaign, an ad set, or its `prev`) → those figures.
+export function metaDerive(r) {
+  if (!r) return null
+  const res = r.results != null ? r.results : r.leads
+  return {
+    ...r, leads: res,
+    cpm: r.impressions ? (r.spend / r.impressions) * 1000 : null,
+    frequency: r.reach ? r.impressions / r.reach : null,
+    ctr: r.impressions ? ((r.linkClicks || 0) / r.impressions) * 100 : null,
+    cpc: r.linkClicks ? r.spend / r.linkClicks : null,
+    cvr: r.linkClicks && res != null ? (res / r.linkClicks) * 100 : null,
+    cpl: res ? r.spend / res : null,
+  }
+}
+// The same for Google: scorecards, month table, campaign and ad group tables.
+export function googleMetrics({ money, n0 }) {
+  const n1 = (v) => (v == null || isNaN(v) ? '-' : fmtNumber(Math.round(v * 10) / 10))
+  const pct2 = (v) => fmtPct(v, 2)
+  return [
+    { k: 'impressions', label: 'Impressions', fmt: n0, good: 'neu' },
+    { k: 'clicks', label: 'Clicks', fmt: n0, good: 'up' },
+    { k: 'ctr', label: 'CTR', fmt: pct2, good: 'up' },
+    { k: 'cost', label: 'Cost', fmt: money, good: 'neu' },
+    { k: 'conversions', label: 'Conversions', fmt: n1, good: 'up' },
+    { k: 'cpa', label: 'Cost / conv.', fmt: money, good: 'down', strong: true },
+    { k: 'cvr', label: 'Conv. rate', fmt: pct2, good: 'up' },
+    { k: 'cpc', label: 'Avg CPC', fmt: money, good: 'down' },
+  ]
+}
+export function googleDerive(r) {
+  if (!r) return null
+  return { ...r, ctr: r.impressions ? (r.clicks / r.impressions) * 100 : null, cpc: r.clicks ? r.cost / r.clicks : null, cpa: r.conversions ? r.cost / r.conversions : null, cvr: r.clicks ? (r.conversions / r.clicks) * 100 : null }
+}
+// A table cell: the figure, and under it how it moved against the equal
+// period before (nothing when that period has no figure for the row).
+export function MRCmpCell({ cur, prev, fmt, good = 'up' }) {
+  return <span className="mr-ccell"><span>{cur == null || (typeof cur === 'number' && isNaN(cur)) ? '-' : fmt(cur)}</span>{prev != null && cur != null ? <Dlt cur={cur} prev={prev} good={good} dp={1} /> : null}</span>
+}
+// Table columns for a list of rows that carry `prev`: a name column, then every
+// metric with its comparison.
+export function cmpCols(nameCol, metrics, derive) {
+  return [nameCol, ...metrics.map((m) => ({ k: m.k, label: m.label, align: 'r', render: (r) => { const c = derive(r) || {}; const p = r.prev ? derive(r.prev) : null; return <MRCmpCell cur={c[m.k]} prev={p ? p[m.k] : null} fmt={m.fmt} good={m.good} /> } }))]
+}
 export function MRMetaPerf({ trend, monthKey, money, n0, resultType, cmp }) {
   const hasImpr = (trend || []).some((r) => r && r.impressions > 0)
   const resLabel = resultType || 'Leads'
   const one = resLabel.toLowerCase().replace(/s$/, '')
-  const pct2 = (v) => fmtPct(v, 2)
+  const metrics = metaMetrics({ money, n0, resLabel, hasImpr })
   const spec = {
-    derive: (r) => ({ ...r, cpm: r.impressions ? (r.spend / r.impressions) * 1000 : null, ctr: r.impressions ? ((r.linkClicks || 0) / r.impressions) * 100 : null, cpc: r.linkClicks ? r.spend / r.linkClicks : null, cpl: r.leads ? r.spend / r.leads : null }),
-    tiles: [
-      { k: 'spend', label: 'Amount spent', fmt: money, good: 'neu' },
-      hasImpr && { k: 'cpm', label: 'CPM', fmt: money, good: 'down' },
-      hasImpr && { k: 'impressions', label: 'Impressions', fmt: n0, good: 'neu' },
-      hasImpr && { k: 'linkClicks', label: 'Link clicks', fmt: n0, good: 'up' },
-      hasImpr && { k: 'ctr', label: 'CTR', fmt: pct2, good: 'up' },
-      hasImpr && { k: 'cpc', label: 'CPC', fmt: money, good: 'down' },
-      { k: 'leads', label: resLabel, fmt: n0, good: 'up' },
-      { k: 'cpl', label: `Cost / ${one}`, fmt: money, good: 'down', strong: true },
-    ],
+    derive: metaDerive,
+    tiles: metrics,
     bars: { k: 'leads', name: resLabel, fmt: (v) => fmtNumber(v) }, bars2: { k: 'cpl', name: `Cost / ${one}` }, line: { k: 'spend', name: 'Amount spent' },
-    cols: [hasImpr && { k: 'impressions', label: 'Impressions', fmt: n0 }, hasImpr && { k: 'linkClicks', label: 'Link clicks', fmt: n0 }, { k: 'leads', label: resLabel, fmt: n0 }, { k: 'spend', label: 'Cost', fmt: money }, hasImpr && { k: 'cpc', label: 'CPC', fmt: money }, hasImpr && { k: 'cpm', label: 'CPM', fmt: money }, hasImpr && { k: 'ctr', label: 'CTR', fmt: pct2 }, { k: 'cpl', label: `Cost / ${one}`, fmt: money }],
+    cols: metrics,
     cmp,
   }
   return <MRMonthPerf trend={trend} monthKey={monthKey} money={money} spec={spec} />
 }
 export function MRGooglePerf({ trend, monthKey, money, n0, cmp }) {
   const n1 = (v) => (v == null || isNaN(v) ? '-' : fmtNumber(Math.round(v * 10) / 10))
-  const pct2 = (v) => fmtPct(v, 2)
+  const metrics = googleMetrics({ money, n0 })
   const spec = {
-    derive: (r) => ({ ...r, ctr: r.impressions ? (r.clicks / r.impressions) * 100 : null, cpc: r.clicks ? r.cost / r.clicks : null, cpa: r.conversions ? r.cost / r.conversions : null, cvr: r.clicks ? (r.conversions / r.clicks) * 100 : null }),
-    tiles: [
-      { k: 'impressions', label: 'Impressions', fmt: n0, good: 'neu' },
-      { k: 'clicks', label: 'Clicks', fmt: n0, good: 'up' },
-      { k: 'ctr', label: 'CTR', fmt: pct2, good: 'up' },
-      { k: 'cost', label: 'Cost', fmt: money, good: 'neu' },
-      { k: 'conversions', label: 'Conversions', fmt: n1, good: 'up' },
-      { k: 'cpa', label: 'Cost / conv.', fmt: money, good: 'down', strong: true },
-      { k: 'cvr', label: 'Conv. rate', fmt: pct2, good: 'up' },
-      { k: 'cpc', label: 'Avg CPC', fmt: money, good: 'down' },
-    ],
+    derive: googleDerive,
+    tiles: metrics,
     bars: { k: 'conversions', name: 'Conversions', fmt: n1 }, bars2: { k: 'cpa', name: 'Cost / conv.' }, line: { k: 'cost', name: 'Cost' },
-    cols: [{ k: 'impressions', label: 'Impressions', fmt: n0 }, { k: 'cvr', label: 'Conv. rate', fmt: pct2 }, { k: 'clicks', label: 'Clicks', fmt: n0 }, { k: 'ctr', label: 'CTR', fmt: pct2 }, { k: 'cost', label: 'Cost', fmt: money }, { k: 'conversions', label: 'Conversions', fmt: n1 }, { k: 'cpa', label: 'Cost / conv.', fmt: money }],
+    cols: metrics,
     cmp,
   }
   return <MRMonthPerf trend={trend} monthKey={monthKey} money={money} spec={spec} />
@@ -1583,6 +1627,7 @@ export function renderMonthlyDeck(rep, h) {
   // needs a client and a range; frozen decks rendered without them stay static.
   const fDrillOk = !!(setFormDrill && rep.client && rep.client.id && rep.period && rep.period.from && rep.period.to)
   const b = rep.period
+  const prevLab = rep.prevPeriod && rep.prevPeriod.label ? rep.prevPeriod.label : 'the period before'
   const meta = rep.meta, google = rep.google, blend = rep.blend, attribution = rep.attribution
   const won = rep.wonClosed || (blend && blend.wonClosed) || null
   const paid = (blend && blend.paid) || {}
@@ -1719,28 +1764,16 @@ export function renderMonthlyDeck(rep, h) {
     // Link-click CTR, conversion rate (results ÷ link clicks) and CPM read truer than
     // impressions / reach / all-click CTR for lead campaigns - and ad-set reach comes
     // back 0 from Meta's per-adset breakdown, so drop it here.
-    const metaDrillCols = (nameLabel) => [
-      { k: 'name', label: nameLabel, render: (r) => <span className="mr-name">{r.name}</span> },
-      { k: 'spend', label: 'Spend', align: 'r', render: (r) => money(r.spend) },
-      { k: 'lctr', label: 'Link CTR', align: 'r', render: (r) => (r.impressions ? fmtPct((r.linkClicks / r.impressions) * 100, 2) : '-') },
-      { k: 'cvr', label: 'Conv. rate', align: 'r', render: (r) => { const res = r.results != null ? r.results : r.leads; return r.linkClicks ? fmtPct((res / r.linkClicks) * 100, 1) : '-' } },
-      { k: 'cpm', label: 'CPM', align: 'r', render: (r) => (r.impressions ? money((r.spend / r.impressions) * 1000) : '-') },
-      { k: 'results', label: 'Results', align: 'r', render: (r) => n0(r.results != null ? r.results : r.leads) },
-      { k: 'cpl', label: 'Cost/res', align: 'r', render: (r) => { const res = r.results != null ? r.results : r.leads; return res ? money(r.spend / res) : '-' } },
-    ]
-    const adsetsOf = (campName) => (meta.adsets || []).filter((a) => a.campaign === campName)
+    const mMetrics = metaMetrics({ money, n0, resLabel: t.resultBreakdown && t.resultBreakdown.length === 1 ? t.resultBreakdown[0].label : 'Results', hasImpr: (meta.campaigns || []).some((c) => c.impressions > 0) })
+    const mCols = (nameLabel, sub) => cmpCols({ k: 'name', label: nameLabel, render: (r) => <span className="mr-name">{r.name}{sub && r.campaign ? <small>{r.campaign}</small> : null}</span> }, mMetrics, metaDerive)
     const spendAds = (meta.ads || []).filter((a) => (a.spend || 0) > 0)
     push(
       <MRSlide key="m-camp" kicker="Meta Ads · Platform" title="Meta performance" sub={`${b.label} against the months before it · ${(meta.campaigns || []).length} campaign(s) · ${spendAds.length} creative(s) with spend`}>
         <MRMetaPerf cmp={h.cmp} trend={rep.trend} monthKey={String(b.to || b.from || '').slice(0, 7)} money={money} n0={n0} resultType={t.resultBreakdown && t.resultBreakdown.length === 1 ? t.resultBreakdown[0].label : null} />
-        <MRCard title="Campaigns &amp; ad sets" sub={`${b.label} · click a campaign to drill into its ad sets`}>
-          <MRDrillTable
-            cols={metaDrillCols('Campaign')} rows={meta.campaigns || []} max={16}
-            rowKey={(r) => r.name}
-            childrenOf={(r) => adsetsOf(r.name)}
-            renderChildren={(kids) => <div className="mr-kids-inner"><div className="mr-kids-lab">Ad sets</div><MRTable cols={metaDrillCols('Ad set')} rows={kids} /></div>}
-          />
-        </MRCard>
+        <div className="mr-two mr-gcards mr-cmp2">
+          <MRCard title="Campaigns" sub={`${b.label} · each figure against ${prevLab} beneath it`}><MRTable cols={mCols('Campaign', false)} rows={meta.campaigns || []} max={10} wrapClass="mr-cmptbl" /></MRCard>
+          <MRCard title="Ad sets" sub={`The same figures by ad set · ${b.label}`}><MRTable cols={mCols('Ad set', true)} rows={meta.adsets || []} max={10} wrapClass="mr-cmptbl" /></MRCard>
+        </div>
         <MRCard title="Creative performance" sub={`${spendAds.length} creative(s) with spend · sort & page through, 10 at a time`}>
           {spendAds.length
             ? <MRCreativeSection ads={spendAds} oCre={oCre} o360cols={o360cols} o360colsFor={o360colsFor} pipeLabelFor={multiPipe ? pipeLabelFor : null} money={money} n0={n0} currency={currency} showTable keOff={h.keOff} onKeOff={h.onKeOff} clientId={rep.client && rep.client.id} range={b} channel="meta" />
@@ -1898,15 +1931,9 @@ export function renderMonthlyDeck(rep, h) {
     const gt = google.totals || {}
     const gctr = (r) => (r.impressions ? (r.clicks / r.impressions) * 100 : null)
     const gcpc = (r) => (r.clicks ? r.cost / r.clicks : null)
-    const gcpa = (r) => (r.conversions ? r.cost / r.conversions : null)
     const n1 = (v) => (v == null || isNaN(v) ? '-' : fmtNumber(Math.round(v * 10) / 10))
-    const gSideCols = (nameLabel) => [
-      { k: 'name', label: nameLabel, render: (r) => <span className="mr-name">{r.name}{r.campaign ? <small>{r.campaign}</small> : null}</span> },
-      { k: 'cost', label: 'Cost', align: 'r', render: (r) => money(r.cost) },
-      { k: 'clicks', label: 'Clicks', align: 'r', render: (r) => n0(r.clicks) },
-      { k: 'conversions', label: 'Conv.', align: 'r', render: (r) => n1(r.conversions) },
-      { k: 'cpa', label: 'Cost/conv.', align: 'r', render: (r) => { const v = gcpa(r); return v == null ? '-' : money(v) } },
-    ]
+    const gMetrics = googleMetrics({ money, n0 })
+    const gSideCols = (nameLabel) => cmpCols({ k: 'name', label: nameLabel, render: (r) => <span className="mr-name">{r.name}{r.campaign ? <small>{r.campaign}</small> : null}</span> }, gMetrics, googleDerive)
     // Primary conversion actions are the ones counted in Google's "Conversions"
     // column (conversions > 0); secondary actions only report All-conversions.
     const caColsCompact = [
@@ -1925,9 +1952,9 @@ export function renderMonthlyDeck(rep, h) {
     push(
       <MRSlide key="g-camp" kicker="Google Ads · Platform" title="Google Ads" sub={`${b.label} against the months before it · ${(google.campaigns || []).length} campaign(s) · ${(google.adGroups || []).length} ad group(s)`}>
         <MRGooglePerf cmp={h.cmp} trend={rep.gtrend} monthKey={String(b.to || b.from || '').slice(0, 7)} money={money} n0={n0} />
-        <div className="mr-two mr-gcards">
-          <MRCard title="Campaigns" sub={`Spend, clicks and conversions by campaign · ${b.label}`}><MRTable cols={gSideCols('Campaign')} rows={google.campaigns || []} max={10} /></MRCard>
-          <MRCard title="Ad groups" sub={`The same figures by ad group · ${b.label}`}><MRTable cols={gSideCols('Ad group')} rows={google.adGroups || []} max={10} /></MRCard>
+        <div className="mr-two mr-gcards mr-cmp2">
+          <MRCard title="Campaigns" sub={`${b.label} · each figure against ${prevLab} beneath it`}><MRTable cols={gSideCols('Campaign')} rows={google.campaigns || []} max={10} wrapClass="mr-cmptbl" /></MRCard>
+          <MRCard title="Ad groups" sub={`The same figures by ad group · ${b.label}`}><MRTable cols={gSideCols('Ad group')} rows={google.adGroups || []} max={10} wrapClass="mr-cmptbl" /></MRCard>
         </div>
         <div className="mr-three mr-gblocks mr-gcards">
           <MRCard title="Spend by match type" sub="Where the budget is landing">{matchAgg.length ? <MRDonut data={matchAgg} money={money} isMoney /> : <div className="mr-empty">No keyword spend this period.</div>}</MRCard>

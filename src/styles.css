@@ -6048,3 +6048,16 @@ body.hub-tv-on { overflow: hidden; }
 .mr-mnotes-ins { color: var(--muted); }
 .mr-mnotes-ins > span, .mr-mnotes-txt > span { display: block; font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; color: var(--brand); }
 .mr-mnotes-acts { display: flex; gap: 6px; flex-wrap: wrap; }
+/* Campaign / ad set / ad group tables: every figure with its move beneath it */
+.mr-ccell { display: inline-flex; flex-direction: column; align-items: flex-end; line-height: 1.25; }
+.mr-ccell .tr-dl { font-size: 10px; }
+.mr-cmptbl .mr-table { font-size: 12px; }
+.mr-cmptbl .mr-table th, .mr-cmptbl .mr-table td { padding: 6px 6px; }
+.mr-cmptbl .mr-table th { white-space: normal; line-height: 1.2; }
+.mr-cmptbl .mr-name { max-width: 170px; }
+.mr-cmptbl td:first-child, .mr-cmptbl th:first-child { min-width: 130px; }
+.mr-cmptbl .mr-name { white-space: normal; }
+/* The two campaign tables sit side by side on a wide screen, stacked below it */
+@media (max-width: 1500px) { .mr-two.mr-cmp2 { grid-template-columns: 1fr; } }
+/* Nine Meta scorecards on one row */
+.mr-mp .mr-kpirow-wide { grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); }

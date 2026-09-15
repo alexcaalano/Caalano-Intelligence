@@ -538,7 +538,7 @@ function rollupMeta(adRows, dayRows, accRows, campRows, adsetRows, pCampRows, fa
     a.breakdown = breakdownOf(a, ccNames)
     const pa = prevAdset.get(a.name)
     const pres = prevResult(pa, rr.field)
-    a.prev = pa ? { spend: pa.spend, impressions: pa.impressions, clicks: pa.clicks, linkClicks: pa.linkClicks, leads: pa.leads, results: pres, costPerResult: pres != null ? costPer(pa.spend, pres, rr.field) : null } : null
+    a.prev = pa ? { spend: pa.spend, impressions: pa.impressions, clicks: pa.clicks, linkClicks: pa.linkClicks, leads: pa.leads, reach: pa.reach, results: pres, costPerResult: pres != null ? costPer(pa.spend, pres, rr.field) : null } : null
   }
   const adsetByName = new Map(adsets.map((a) => [a.name, a]))
   // Per-campaign result: sum of its ad sets' own results; type is uniform label

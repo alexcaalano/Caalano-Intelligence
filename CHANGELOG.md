@@ -16,6 +16,16 @@ git commit that produced it, so any version can be redeployed or reverted to.
 
 The version number also appears in the app sidebar. Newest first.
 
+## v3.659.0 - 2026-09-15 (commit PENDING)
+
+Monthly Report: the same figures all the way down the Meta and Google pages, with comparisons on the campaign and ad set / ad group tables.
+
+- **Meta, one set of figures.** Amount spent, CPM, Frequency (impressions ÷ reach, replacing Impressions), Link clicks, CTR, CPC, Results, CVR (results ÷ link clicks) and Cost per result, in that order on the scorecards, the month-by-month table, and the Campaigns and Ad sets tables.
+- **Meta campaigns and ad sets side by side.** The drill table is replaced by two half-width boxes, Campaigns and Ad sets (each ad set names its campaign beneath), the same layout as the Google page. Below a 1500px-wide window the two stack.
+- **Google, one set of figures.** Impressions, Clicks, CTR, Cost, Conversions, Cost per conversion, Conversion rate and Avg CPC on the scorecards, the month table, and the Campaigns and Ad groups tables (conversion rate is new on those tables).
+- **Comparisons on the tables.** Every figure on the campaign, ad set and ad group tables shows its move against the equal period before beneath it (nothing when the row did not run then). The month-by-month tables stay plain.
+- Server: an ad set's previous-period figures now include reach, so its frequency can compare too.
+
 ## v3.658.0 - 2026-09-15 (commit f993bd0)
 
 Monthly Report: Meta on one page, a calmer Account summary, meeting notes in one place, and a tidier present mode.

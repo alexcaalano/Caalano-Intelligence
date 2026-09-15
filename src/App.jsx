@@ -36,7 +36,7 @@ const lazyView = (load, name) => {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-export const APP_VERSION = '3.678.0'
+export const APP_VERSION = '3.679.0'
 // The business clock. Every server window is cut on the client's local day
 // (Caalano Systems location timezone), so any day the app derives on its own -
 // preset ranges, "today", CSV dates - must use the same clock rather than the
@@ -16690,7 +16690,7 @@ function ClientWorkspace({ client, index, data, config, range, nonce, wonBasis =
   const tabs = clientTabList(client, cfg, authUser, isClinic)
   const dashAll = loadDashboard(client.id)
   const dash = dashAll && (!authUser || dashVisibleTo(authUser.role, dashAll)) ? dashAll : null
-  const curTab = tabs.some((t) => t.id === tab) ? tab : (tabs[0] ? tabs[0].id : 'overall')
+  const curTab = tabs.some((t) => t.id === tab) ? tab : (tabs[0] ? tabs[0].id : '')
   // On a phone the tab strip scrolls sideways: keep the active tab in view, and
   // drop the edge fade once the strip is scrolled to its end.
   // Report the active tab up so the URL (?t=) tracks it, incl. any allowed-tab
@@ -16736,6 +16736,7 @@ function ClientWorkspace({ client, index, data, config, range, nonce, wonBasis =
           ? <IntelBanner model={liveOK(curTab) ? intelAds(live.data[curTab], curTab, (v) => fmtCurrency(v, data.currency)) : null} status={live.status === 'ok' && !liveOK(curTab) ? 'err' : live.status} tab={curTab} pipeName={pipeName} range={range} />
           : tabIntel[curTab] ? <IntelBanner model={tabIntel[curTab]} status="ok" tab={curTab} pipeName={pipeName} range={range} />
             : crmId && INTEL_TABS.has(curTab) ? <IntelBanner model={intel} status={ccForPipes.status} tab={curTab} pipeName={pipeName} range={range} /> : null}
+        {!tabs.length && <div className="card empty-deep"><div className="big">🔒</div><b>No pages have been switched on for this account yet.</b><p className="cap">Ask your Caalano contact if you were expecting something here.</p></div>}
         {SET_GROUP[curTab] && <ClientSettingsPage client={((config && config.clients) || []).find((x) => x.id === client.id) || client} clients={(config && config.clients) || []} currency={data.currency} canManageAccounts={!authUser || authUser.role === 'superadmin'} group={SET_GROUP[curTab]} onDeleted={onBack || (() => {})} />}
         {curTab === 'overall' && <ExecutiveDashboard clientId={client.id} clientName={client.name} currency={data.currency} range={range} nonce={nonce} onNav={setTab} authUser={authUser} wonBasis={wonBasis} pipe={pipe} onPipe={setPipe} pipes={pipes} />}
         {curTab === 'custom' && dash && <ExecutiveDashboard key={`custom:${dash.updatedAt || ''}`} clientId={client.id} clientName={client.name} currency={data.currency} range={range} nonce={nonce} onNav={setTab} authUser={authUser} wonBasis={wonBasis} pipe={pipe} onPipe={setPipe} pipes={pipes} layout={dash} />}
@@ -16975,7 +16976,10 @@ export function userHidden(u) {
 }
 function allowedTabsFE(user, offered) {
   if (!user) return offered
-  { const hid = userHidden(user); if (hid.tabs.length) { const keep = offered.filter((t) => !isHiddenTab(hid, t.id)); if (keep.length) offered = keep } }
+  // What is switched on is what they get. This used to ignore the whole hidden
+  // list when it left nothing for this client, which handed that person every
+  // tab instead of none.
+  { const hid = userHidden(user); if (hid.tabs.length) offered = offered.filter((t) => !isHiddenTab(hid, t.id)) }
   // An Account User works from the Action Centre (and Sales Hub when switched on); no dashboard tabs.
   if (user.role === 'account_user') return offered.filter((t) => t.id === 'actionhub' || t.id === 'saleshub')
   return offered
@@ -19601,7 +19605,10 @@ function Dashboard({ authUser, authEnabled, onLogout, realUser, onViewAs }) {
     ? ((picked && baseClients.some((c) => c.id === picked.id) && canSeeClientFE(authUser, picked.id) && (seeRestricted || !restricted[picked.id])) ? picked
       : (isViewer ? ((urlClientId && myClients.find((c) => c.id === urlClientId)) || myClients[0])
         : ((urlClientId && baseClients.find((c) => c.id === urlClientId && canSeeClientFE(authUser, c.id) && (seeRestricted || !restricted[c.id]))) || picked)))
-    : picked
+    // Off the account pages (Monthly Reports, Settings) a client-side person
+    // still has their account resolved: the sidebar keeps their pages, and the
+    // way back from Reports, instead of collapsing to a single button.
+    : (isViewer ? ((urlClientId && myClients.find((c) => c.id === urlClientId)) || myClients[0] || picked) : picked)
   const inAccount = curView === 'clients' && !!curPicked
   const noPick = curView === 'clients' && !curPicked
   const idx = curPicked ? Math.max(0, baseClients.findIndex((c) => c.id === curPicked.id)) : 0

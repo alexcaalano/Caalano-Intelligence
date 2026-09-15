@@ -16,6 +16,16 @@ git commit that produced it, so any version can be redeployed or reverted to.
 
 The version number also appears in the app sidebar. Newest first.
 
+## v3.679.0 - 2026-09-16 (commit PENDING)
+
+A client-side person now sees exactly what Visibility says, on every page.
+
+- **Their account navigation no longer disappears on Monthly Reports.** Opening Reports dropped the whole account sidebar, leaving a single "Monthly Reports" button and no way back, so pages that were switched on (Reps, for one) looked as though they had not been granted. Their account is now resolved on every page, so the sidebar keeps its sections and the Reports entry together.
+- **Switching pages off no longer switches them all on.** When the pages someone was allowed left nothing for a particular client, the whole hidden list was ignored and that person was handed every tab instead of none. What is switched on is now what they get.
+- **Nothing allowed says so.** An account with no pages switched on shows a short message instead of falling back to the overall dashboard.
+
+A page still only appears when the client has the source behind it connected: Reps, Speed to Lead and the other CRM pages need the CRM linked, Meta Ads needs Meta, and so on. Visibility lists every page, so a page can be on for a person and still be absent for a client that is not connected to it.
+
 ## v3.678.0 - 2026-09-15 (commit e4bb8da)
 
 Role defaults stop governing people. They are now a starting point, and every person carries their own set.

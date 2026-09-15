@@ -18,6 +18,15 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.653.0 - 2026-09-15
+
+**Meta and Google month-by-month: cost per result on its own scale; six months in view** (commit PENDING)
+
+- On the Meta performance and Google Ads charts the cost-per-result bars now sit on their own scale, so a $10 cost per lead is no longer a sliver against $1,500 of spend; spend keeps the right-hand dollar axis and results the left.
+- The month table shows six months and scrolls for the rest, with the header pinned.
+
+---
+
 ## v3.652.0 - 2026-09-15
 
 **Potential revenue on the trailing three months** (commit e6f5cf1)

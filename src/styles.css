@@ -5949,3 +5949,6 @@ body.hub-tv-on { overflow: hidden; }
 .mr-funnel-tbl td.r, .mr-funnel-tbl th.r { text-align: right; font-variant-numeric: tabular-nums; }
 .mr-reach .card { box-shadow: none; }
 .mr-kpi .mr-cmp-row { margin-top: 2px; }
+/* The month table shows six months; the rest scroll under a pinned header. */
+.mr-mp-tbl-wrap { max-height: 192px; overflow-y: auto; }
+.mr-mp-tbl thead th { position: sticky; top: 0; background: var(--panel); z-index: 1; }

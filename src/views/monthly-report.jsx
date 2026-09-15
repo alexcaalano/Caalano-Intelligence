@@ -390,17 +390,20 @@ export function MRMonthPerf({ trend, monthKey, money, spec }) {
             <XAxis dataKey="lbl" tick={{ fontSize: 11, fill: 'var(--muted)' }} axisLine={false} tickLine={false} interval={0} />
             <YAxis yAxisId="n" tick={{ fontSize: 10, fill: 'var(--muted)' }} axisLine={false} tickLine={false} width={36} tickFormatter={(v) => fmtCompact(v)} />
             <YAxis yAxisId="$" orientation="right" tick={{ fontSize: 10, fill: 'var(--muted)' }} axisLine={false} tickLine={false} width={46} tickFormatter={(v) => '$' + fmtCompact(v)} />
+            {/* The cost-per bars keep their own hidden scale, so a $10 cost is not
+                a sliver against $1,500 of spend. */}
+            <YAxis yAxisId="c" orientation="right" hide domain={[0, (max) => max * 1.6]} />
             <Tooltip formatter={(v, name, item) => [item && item.dataKey === spec.bars.k ? spec.bars.fmt(v) : money(v), name]} contentStyle={{ fontSize: 12 }} />
             <Legend wrapperStyle={{ fontSize: 12 }} />
             <Bar yAxisId="n" dataKey={spec.bars.k} name={spec.bars.name} fill="#4f7cff" radius={[4, 4, 0, 0]} />
-            <Bar yAxisId="$" dataKey={spec.bars2.k} name={spec.bars2.name} fill="#c3c7d3" radius={[4, 4, 0, 0]}>
+            <Bar yAxisId="c" dataKey={spec.bars2.k} name={spec.bars2.name} fill="#c3c7d3" radius={[4, 4, 0, 0]}>
               <LabelList dataKey={spec.bars2.k} position="top" formatter={(v) => (v == null ? '' : money(v))} style={{ fontSize: 10, fill: 'var(--muted)' }} />
             </Bar>
             <Line yAxisId="$" type="monotone" dataKey={spec.line.k} name={spec.line.name} stroke="var(--text)" strokeWidth={2} dot={{ r: 2.5 }} />
           </ComposedChart>
         </ResponsiveContainer>
       </div>
-      <div className="table-wrap">
+      <div className="table-wrap mr-mp-tbl-wrap">
         <table className="mini-tbl mr-mp-tbl">
           <thead><tr><th className="lft">Month</th>{cols.map((c) => <th key={c.k}>{c.label}</th>)}</tr></thead>
           <tbody>{tableRows.map((r) => (

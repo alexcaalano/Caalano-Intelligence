@@ -5984,3 +5984,4 @@ body.hub-tv-on { overflow: hidden; }
 .mr-cre-ketbl th.r, .mr-cre-ketbl td.r { white-space: nowrap; overflow: visible; text-overflow: clip; padding-left: 4px; padding-right: 4px; }
 .mr-cre-ketbl th { white-space: normal; line-height: 1.15; }
 .mr-cre-ketbl td:first-child { min-width: 72px; }
+.mr-cre-ketbl .mr-ke-shown { display: block; white-space: nowrap; color: var(--faint); font-weight: 500; }

@@ -727,6 +727,7 @@ export function MonthlyReport({ clients, currency, authUser }) {
   // three-month average and the same month a year earlier, per client, off
   // until switched on.
   const cmpSet = (client && loadMReport(client.id).cmp) || {}
+  const keLabels = useMemo(() => reportKeLabels(rep), [rep])
   const toggleCmp = (k) => { if (!client) return; const cur = loadMReport(client.id).cmp || {}; saveMReport(client.id, { cmp: { ...cur, [k]: !cur[k] } }); setAutoSaved(new Date()) }
   // Pages the client does not get: a saved list per client, or the default
   // (the key-events-by-campaign and form pages stay off until switched on).
@@ -881,10 +882,10 @@ export function MonthlyReport({ clients, currency, authUser }) {
                   <label className={`pv-ke-box${cmpSet.yoy ? ' on' : ''}`}><input type="checkbox" checked={!!cmpSet.yoy} onChange={() => toggleCmp('yoy')} />Same month a year ago</label>
                 </div>
               </div>
-              <div className="mr-set-row">
+              {keLabels.length ? <div className="mr-set-row">
                 <span className="mr-notes-fld-lab">Key events on the creative screen</span>
-                <p className="cap" style={{ margin: 0 }}>Ticked on the Creative performance page while this panel is open.</p>
-              </div>
+                <div className="mr-pages-pick">{keLabels.map((l) => <label key={l} className={`pv-ke-box${keOffArr.includes(l) ? '' : ' on'}`}><input type="checkbox" checked={!keOffArr.includes(l)} onChange={() => toggleKe(l)} />{l}</label>)}</div>
+              </div> : null}
               {canToggleDownload && client ? <div className="mr-set-row">
                 <span className="mr-notes-fld-lab">PDF download for the client</span>
                 <div className="mr-pages-pick"><label className={`pv-ke-box${clientDownloadOn(client.id) ? ' on' : ''}`}><input type="checkbox" checked={clientDownloadOn(client.id)} onChange={() => setClientDownload(client.id, !clientDownloadOn(client.id))} />{client.name} can download the PDF of published reports</label></div>
@@ -1162,7 +1163,7 @@ export function MRCreative({ a, money, n0, clientId, range, channel, currency })
                   const openDrill = rowDrill ? () => setDrill({ kind: e.kind, label: e.label, stage: e.stage || null, pipeline: e.kind === 'lead' ? null : (e.pipeline || null), refs: e.kind === 'calendar' ? (e.refs || null) : null, ad: a.name }) : undefined
                   return (
                     <tr key={i} className={`${cls}${rowDrill ? ' mr-ketbl-clickable' : ''}`} onClick={openDrill} title={rowDrill ? 'Click to see the people behind this' : undefined}>
-                      <td title={e.label}>{e.label}{isCal && e.shown != null ? <small> · {n0(e.shown)} shown</small> : null}{rowDrill ? <span className="mr-ketbl-chev"> ›</span> : null}</td>
+                      <td title={e.label}>{e.label}{rowDrill ? <span className="mr-ketbl-chev"> ›</span> : null}{isCal && e.shown != null ? <small className="mr-ke-shown">{n0(e.shown)} shown</small> : null}</td>
                       <td className="r">{n0(e.count)}</td>
                       <td className="r">{costEv == null ? '-' : money(costEv)}</td>
                       <td className="r">{e.kind === 'lead' ? '100%' : pctLeads == null ? '-' : fmtPct(pctLeads, 0)}</td>
@@ -1460,12 +1461,8 @@ export function MRCreativeSection({ ads, oCre, o360cols: o360colsAll, o360colsFo
     return arr
   })()
   const sortToken = sortK + '|' + dir
-  const kePick = onKeOff && allLabels.length ? (
-    <div className="mr-ke-pick no-print">
-      <span className="mr-ke-pick-lab">Key events shown to the client</span>
-      {allLabels.map((l) => <label key={l} className={`pv-ke-box${off.has(l) ? '' : ' on'}`}><input type="checkbox" checked={!off.has(l)} onChange={() => onKeOff(l)} />{l}</label>)}
-    </div>
-  ) : null
+  const kePick = null
+  void onKeOff; void allLabels
   const tblToggle = showTable ? <button type="button" className="mr-collapse no-print" onClick={() => setTblOpen((o) => !o)}>{tblOpen ? '▾' : '▸'} Creative table</button> : null
   const sortCtl = (
     <div className="mr-cre-sort no-print">
@@ -1510,6 +1507,16 @@ export function MRCreativeSection({ ads, oCre, o360cols: o360colsAll, o360colsFo
   )
 }
 
+// The key events a client's report can show on the creative screen: the same
+// columns the deck builds, by label.
+export function reportKeLabels(rep) {
+  if (!rep || !rep.hasCrm || !rep.client) return []
+  const attribution = rep.attribution, pipelines = (rep.blend && rep.blend.pipelines) || []
+  const stagePos = stagePosMap([...((attribution && attribution.allPipelines) || []), ...pipelines])
+  const calNames = new Map(((attribution && attribution.appointments && attribution.appointments.byCalendar) || []).map((cc) => [cc.id, cc.name]))
+  const cols = buildO360Cols(loadKeyEvents(rep.client.id), stagePos, calNames)
+  return [...new Set(((cols && cols.groups) || []).map((g) => g.label))]
+}
 // Pages off by default for every client until switched on in the notes panel.
 export const MR_DEFAULT_HIDDEN = ['c360-camp', 'forms']
 // Pure renderer for the deck so it can be reused by both the live view and the

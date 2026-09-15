@@ -16,7 +16,7 @@ git commit that produced it, so any version can be redeployed or reverted to.
 
 The version number also appears in the app sidebar. Newest first.
 
-## v3.672.0 - 2026-09-15 (commit PENDING)
+## v3.672.0 - 2026-09-15 (commit 1c40069)
 
 Account sidebar as sections, Revenue and ROAS by lead source in the Trend Report, and a plainer sign-in page.
 

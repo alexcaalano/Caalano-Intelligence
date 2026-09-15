@@ -563,7 +563,7 @@ export function ClientReports({ clients, currency }) {
   const [copied, setCopied] = useState(false)
   // Slides by default, as on the staff view: one page at a time reads better
   // than a long scroll. Scroll stays one click away.
-  const [view, setView] = useState('slides')
+  const [view] = useState('slides')
   const [idx, setIdx] = useState(0)
   const copyLink = () => { try { navigator.clipboard.writeText(window.location.href); setCopied(true); setTimeout(() => setCopied(false), 1600) } catch { /* clipboard blocked */ } }
   const deckRef = useRef(null)
@@ -631,10 +631,6 @@ export function ClientReports({ clients, currency }) {
         </select>
         <div className="mr-bar-spacer" />
         {st.publishedAt && <span className="mr-saved pub" title={`Published ${new Date(st.publishedAt).toLocaleString('en-AU')}`}>🟢 Published {new Date(st.publishedAt).toLocaleDateString('en-AU')}</span>}
-        {rep && <span className="mr-seg" role="group" aria-label="Layout">
-          <button className={view === 'slides' ? 'on' : ''} onClick={() => setView('slides')}>▤ Slides</button>
-          <button className={view === 'scroll' ? 'on' : ''} onClick={() => setView('scroll')}>▦ Scroll</button>
-        </span>}
         {rep && <button className="mr-btn" onClick={copyLink} title="Copy a direct link to this report">{copied ? '✓ Link copied' : '🔗 Copy link'}</button>}
         {canDownload && <button className="mr-btn" onClick={downloadPdf} disabled={!rep || exporting} title="Download as PDF">{exporting ? 'Exporting…' : '⤓ Download PDF'}</button>}
       </div>
@@ -696,7 +692,7 @@ export function MonthlyReport({ clients, currency, authUser }) {
   const [exporting, setExporting] = useState(false)
   const [drill, setDrill] = useState(null) // {title, kind, deals}
   const [formDrill, setFormDrill] = useState(null) // {form, event, pipeKey} - who is behind one Form performance cell
-  const [view, setView] = useState('slides') // slides (one page at a time) | scroll (continuous)
+  const [view] = useState('slides') // one page at a time (the continuous layout stays for print / PDF export)
   const [idx, setIdx] = useState(0)
   const deckRef = useRef(null)
   const pageRef = useRef(null)
@@ -837,26 +833,17 @@ export function MonthlyReport({ clients, currency, authUser }) {
         <select className="mr-select" value={toMonth} onChange={(e) => { const v = e.target.value; setToMonth(v); if (fromMonth > v) setFromMonth(v) }} title="To month (same as From = single month)">
           {MR_MONTHS().map((m) => <option key={m} value={m}>{monthBounds(m).label}</option>)}
         </select>
-        <button className="mr-btn primary" onClick={generate} disabled={busy}>{busy ? 'Generating…' : (saved ? 'Refresh snapshot' : 'Generate snapshot')}</button>
-        {saved && (saved.published
-          ? <button className="mr-btn" onClick={() => publishAction(period.key, 'unpublish')} disabled={pubBusy} title={`Published ${saved.publishedAt ? new Date(saved.publishedAt).toLocaleString('en-AU') : ''}${saved.publishedBy ? ' by ' + saved.publishedBy : ''} - click to hide from clients`}>{pubBusy ? '…' : (saved.edited ? '● Re-publish' : '✕ Unpublish')}</button>
-          : <button className="mr-btn primary" onClick={() => publishAction(period.key, 'publish')} disabled={pubBusy} title="Make this frozen report visible to clients with Monthly Reports access">{pubBusy ? '…' : '▲ Publish'}</button>)}
-        {saved && saved.published && saved.edited && <button className="mr-btn primary" onClick={() => publishAction(period.key, 'publish')} disabled={pubBusy} title="You've regenerated since publishing - push the new version to clients">↻ Push update</button>}
-        <button className={`mr-btn${showList ? ' on' : ''}`} onClick={() => setShowList((v) => !v)} title="Show every generated report for this client">☰ Reports{snapList && snapList.length ? ` (${snapList.length})` : ''}</button>
+        <button className="mr-btn primary" onClick={generate} disabled={busy} title={saved ? 'Read every part again and refreeze this report' : 'Read every part and freeze this report'}>{busy ? 'Generating…' : (saved ? 'Refresh' : 'Generate')}</button>
+        <button className={`mr-btn${showList ? ' on' : ''}${saved && !saved.published ? ' mr-btn-dot' : ''}`} onClick={() => setShowList((v) => !v)} title={saved ? `${saved.published ? (saved.edited ? 'Published, edited since' : 'Published') : 'Frozen, not published yet'} · every generated report for this client, with Publish` : 'Every generated report for this client'}>☰ Reports{snapList && snapList.length ? ` (${snapList.length})` : ''}</button>
         <div className="mr-bar-spacer" />
-        {saved && <span className={`mr-saved${saved.published ? ' pub' : ''}`} title={`Frozen ${new Date(saved.savedAt).toLocaleString('en-AU')}${saved.savedBy ? ' by ' + saved.savedBy : ''}`}>{saved.published ? (saved.edited ? '🟠 Published (edited since)' : '🟢 Published') : '🔒 Frozen - not published'} {saved.savedAt ? new Date(saved.savedAt).toLocaleDateString('en-AU') : ''}</span>}
-        <div className="mr-viewtoggle" title="Slides = one section per page · Scroll = continuous">
-          <button className={view === 'slides' ? 'on' : ''} onClick={() => setView('slides')}>▤ Slides</button>
-          <button className={view === 'scroll' ? 'on' : ''} onClick={() => setView('scroll')}>▦ Scroll</button>
-        </div>
         <div className="mr-btn-grp">
           {canEdit && <button className={`mr-btn${showNotes ? ' on' : ''}`} onClick={() => { setShowNotes((v) => !v); setEditing(false) }} disabled={!rep} title="The page's insights beside the deck, with a notes box for what comes up on the call">Notes</button>}
-          {canEdit && <button className={`mr-btn${editing ? ' on' : ''}`} onClick={() => { setEditing((e) => !e); setShowNotes(false) }} disabled={!rep} title="Insights for each page of this report, and the settings for every report of this client">⚙ Report settings</button>}
+          {canEdit && <button className={`mr-btn${editing ? ' on' : ''}`} onClick={() => { setEditing((e) => !e); setShowNotes(false) }} disabled={!rep} title="Insights for each page of this report, and the settings for every report of this client">⚙ Settings</button>}
           <button className="mr-btn" onClick={present} disabled={!rep} title="Present fullscreen (for screen-share)">{fs ? '⤢ Exit' : '⛶ Present'}</button>
-          <button className="mr-btn" onClick={downloadPdf} disabled={!rep || exporting} title="Download as PDF">{exporting ? 'Exporting…' : '⤓ PDF'}</button>
           <details className="mr-more">
             <summary className="mr-btn" title="More">···</summary>
             <div className="mr-more-menu">
+              <button type="button" onClick={downloadPdf} disabled={!rep || exporting}>{exporting ? 'Exporting…' : '⤓ Download PDF'}</button>
               <button type="button" onClick={copyLink}>{copied ? '✓ Link copied' : '🔗 Copy link'}</button>
               <button type="button" onClick={() => window.print()} disabled={!rep}>🖨 Print</button>
             </div>
@@ -866,7 +853,9 @@ export function MonthlyReport({ clients, currency, authUser }) {
 
       {showList && (
         <div className="mr-snaplist card">
-          <div className="cap" style={{ fontWeight: 700, marginBottom: 6 }}>Generated reports · {client ? client.name : ''} <span style={{ fontWeight: 400 }}>· {(snapList || []).length} · a report is only visible to clients once <b>Published</b></span></div>
+          <div className="cap" style={{ fontWeight: 700, marginBottom: 6 }}>Generated reports · {client ? client.name : ''} <span style={{ fontWeight: 400 }}>· {(snapList || []).length} · a report is only visible to clients once <b>Published</b></span>
+            {saved ? <span className={`mr-saved${saved.published ? ' pub' : ''}`} style={{ marginLeft: 10 }} title={`Frozen ${new Date(saved.savedAt).toLocaleString('en-AU')}${saved.savedBy ? ' by ' + saved.savedBy : ''}`}>{saved.published ? (saved.edited ? '🟠 This report · published, edited since' : '🟢 This report · published') : '🔒 This report · frozen, not published'}</span> : null}
+          </div>
           {snapList == null ? <Spinner label="Loading…" />
             : snapList.length === 0 ? <p className="cap" style={{ margin: 0 }}>No reports generated for this client yet.</p>
               : <div className="table-wrap"><table className="mini-tbl"><thead><tr><th className="lft">Month</th><th className="lft" title="When this report snapshot was last built / refreshed">Generated</th><th className="lft" title="When this report was last published (made visible to the client)">Published to client</th><th className="lft">Status</th><th /></tr></thead>
@@ -885,7 +874,7 @@ export function MonthlyReport({ clients, currency, authUser }) {
         </div>
       )}
 
-      {genWarn && <div className="mr-note mr-warn">⚠ These sections didn’t load after a few tries: <b>{genWarn.join(', ')}</b>. They may be missing from this snapshot - click <b>Refresh snapshot</b> to try again (the data is usually cached by now).</div>}
+      {genWarn && <div className="mr-note mr-warn">⚠ These sections didn’t load after a few tries: <b>{genWarn.join(', ')}</b>. They may be missing from this snapshot - click <b>Refresh</b> to try again (the data is usually cached by now).</div>}
       {st.status === 'loading' && (
         <div className="card pv-loading">
           <Spinner big label={prog ? `Building ${client ? client.name : ''} · ${period.label}` : 'Loading the report…'} />
@@ -893,7 +882,7 @@ export function MonthlyReport({ clients, currency, authUser }) {
         </div>
       )}
       {st.status === 'err' && <div className="card"><p className="cap act-bad" style={{ margin: 0 }}>Couldn’t build the report: {st.error}</p><p style={{ margin: '10px 0 0' }}><button className="mr-btn primary" onClick={generate} disabled={busy}>Try again</button></p></div>}
-      {st.status === 'empty' && <div className="mr-note mr-empty-deep"><div className="big">🗓️</div><b>No snapshot for {period.label} yet.</b><p>Pick the client and period (one month, or a range via the two pickers), then <b>Generate snapshot</b> to freeze these numbers. Wins are captured by the month a deal was marked won - so late-closing leads show in the month they closed.</p></div>}
+      {st.status === 'empty' && <div className="mr-note mr-empty-deep"><div className="big">🗓️</div><b>No snapshot for {period.label} yet.</b><p>Pick the client and period (one month, or a range via the two pickers), then <b>Generate</b> to freeze these numbers. Wins are captured by the month a deal was marked won - so late-closing leads show in the month they closed.</p></div>}
 
       <div className={'mr-split' + ((editing || showNotes) && rep ? ' on' : '') + (rep && view === 'slides' && total > 0 ? ' has-nav' : '')}>
         <div className="mr-main">
@@ -1244,7 +1233,7 @@ export function MRCreative({ a, money, n0, clientId, range, channel, currency })
       </div>
       {events && events.length ? (
         <div className="mr-cre-ke">
-          <div className="mr-cre-ke-lab">📈 Caalano360 · key events <span className="mr-cre-ke-hint">· “Cost per” = spend ÷ reached</span></div>
+          <div className="mr-cre-ke-lab">📈 Caalano360 · key events</div>
           <div className="mr-cre-ketbl-wrap">
             <table className="mr-cre-ketbl">
               <colgroup>
@@ -1288,7 +1277,7 @@ export function MRCreative({ a, money, n0, clientId, range, channel, currency })
             <div><b>{roas == null ? '-' : roas.toFixed(1) + 'x'}</b><span>ROAS</span></div>
           </div>
         </div>
-      ) : <div className="mr-cre-ke mr-cre-ke-empty">No CRM-attributed leads matched this creative’s UTM (utm_content).</div>}
+      ) : null}
       {play && canPlay && createPortal(
         <div className="mr-play-overlay no-print" onClick={() => setPlay(false)}>
           <div className="mr-play-modal" onClick={(e) => e.stopPropagation()}>

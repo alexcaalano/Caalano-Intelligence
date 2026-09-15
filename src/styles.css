@@ -6075,3 +6075,6 @@ body.hub-tv-on { overflow: hidden; }
 .u-terms.no { color: #b42318; background: color-mix(in srgb, #ef4444 14%, transparent); }
 .hub-choose { padding: 34px 20px; }
 .hub-choose b { font-size: 15px; color: var(--text); }
+/* Reports button: a dot while the report on screen is frozen but unpublished */
+.mr-btn-dot { position: relative; }
+.mr-btn-dot::after { content: ''; position: absolute; top: 6px; right: 6px; width: 7px; height: 7px; border-radius: 50%; background: #f0a53a; }

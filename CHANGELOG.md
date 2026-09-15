@@ -16,6 +16,15 @@ git commit that produced it, so any version can be redeployed or reverted to.
 
 The version number also appears in the app sidebar. Newest first.
 
+## v3.666.0 - 2026-09-15 (commit PENDING)
+
+Monthly Report toolbar, slimmed down.
+
+- **Toolbar.** Generate / Refresh (was Generate snapshot / Refresh snapshot), Reports, then Notes, Settings (was Report settings), Present and the ··· menu, which now holds Download PDF, Copy link and Print.
+- **Publishing lives in Reports.** The Publish / Unpublish / Push update buttons and the frozen-or-published pill leave the toolbar. The Reports panel says where the report on screen stands at the top, and each row keeps its own Publish / Unpublish / Push update. The Reports button shows a small dot while the report on screen is frozen but not yet published.
+- **Slides only.** The Slides / Scroll toggle is gone from the agency and client toolbars; the deck is always one page at a time (print and PDF still lay every page out in full).
+- **Creative cards.** The "Cost per = spend ÷ reached" hint and the "No CRM-attributed leads matched this creative's UTM" line are gone.
+
 ## v3.665.0 - 2026-09-15 (commit a0d8466)
 
 - **Daily Performance · Biggest movers** shows nine movers instead of eight, so the three-across grid fills its three rows.

@@ -16,7 +16,7 @@ git commit that produced it, so any version can be redeployed or reverted to.
 
 The version number also appears in the app sidebar. Newest first.
 
-## v3.677.0 - 2026-09-15 (commit PENDING)
+## v3.677.0 - 2026-09-15 (commit c2e4f81)
 
 Visibility saves reliably, and two people editing it no longer overwrite each other.
 

@@ -16,6 +16,10 @@ git commit that produced it, so any version can be redeployed or reverted to.
 
 The version number also appears in the app sidebar. Newest first.
 
+## v3.667.0 - 2026-09-15 (commit PENDING)
+
+- **Creative cards show CPM and CVR.** Each card now reads Spend, Impressions, CPM, Frequency, CTR, CVR (results ÷ link clicks), Results and Cost per result, two rows of four. The collapsed creative table gains the same two columns.
+
 ## v3.666.0 - 2026-09-15 (commit 08a4b7b)
 
 Monthly Report toolbar, slimmed down.

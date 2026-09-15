@@ -1193,6 +1193,9 @@ export function MRCreative({ a, money, n0, clientId, range, channel, currency })
   const results = a.results != null ? a.results : a.leads
   const cprV = results ? a.spend / results : null
   const freqV = a.reach ? a.impressions / a.reach : null
+  const cpmV = a.impressions ? (a.spend / a.impressions) * 1000 : null
+  const clicksForCvr = a.linkClicks != null ? a.linkClicks : a.clicks
+  const cvrV = clicksForCvr && results != null ? (results / clicksForCvr) * 100 : null
   const embed = a.igUrl ? a.igUrl.replace(/\/+$/, '') + '/embed' : null
   const canPlay = !!((a.video && !videoFailed) || embed)
   const openHref = a.preview || a.igUrl || null
@@ -1224,8 +1227,10 @@ export function MRCreative({ a, money, n0, clientId, range, channel, currency })
           <div className="mr-cre-metrics">
             <div><b>{money(a.spend)}</b><span>Spend</span></div>
             <div><b>{n0(a.impressions)}</b><span>Impr</span></div>
-            <div><b>{ctrV == null ? '-' : fmtPct(ctrV, 2)}</b><span>CTR</span></div>
+            <div><b>{cpmV == null ? '-' : money(cpmV)}</b><span>CPM</span></div>
             <div><b>{freqV != null ? freqV.toFixed(1) + 'x' : '-'}</b><span>Freq</span></div>
+            <div><b>{ctrV == null ? '-' : fmtPct(ctrV, 2)}</b><span>CTR</span></div>
+            <div><b>{cvrV == null ? '-' : fmtPct(cvrV, 1)}</b><span>CVR</span></div>
             <div><b>{n0(results)}</b><span>{a.resultType || 'Results'}</span></div>
             <div><b>{cprV == null ? '-' : money(cprV)}</b><span>Cost/result</span></div>
           </div>
@@ -1421,8 +1426,10 @@ export function MRCreativeTable({ rows, o360cols, tsort, onTsort, currency, mone
             <SortTh k="type" sort={tsort} on={onTsort}>Type</SortTh>
             <SortTh k="spend" sort={tsort} on={onTsort}>Spend</SortTh>
             <SortTh k="impressions" sort={tsort} on={onTsort}>Impr.</SortTh>
-            <SortTh k="ctrV" sort={tsort} on={onTsort}>CTR</SortTh>
+            <SortTh k="cpmV" sort={tsort} on={onTsort}>CPM</SortTh>
             <SortTh k="freqV" sort={tsort} on={onTsort}>Freq</SortTh>
+            <SortTh k="ctrV" sort={tsort} on={onTsort}>CTR</SortTh>
+            <SortTh k="cvrV" sort={tsort} on={onTsort}>CVR</SortTh>
             <SortTh k="leads" sort={tsort} on={onTsort}>{tableRows[0] && tableRows[0].resultType ? tableRows[0].resultType : 'Results'}</SortTh>
             <SortTh k="cpl" sort={tsort} on={onTsort}>Cost/res</SortTh>
             {o360cols && <O360Head sort={tsort} on={onTsort} cols={o360cols} />}
@@ -1434,8 +1441,10 @@ export function MRCreativeTable({ rows, o360cols, tsort, onTsort, currency, mone
             <td>{a.type}</td>
             <td>{money(a.spend)}</td>
             <td>{n0(a.impressions)}</td>
-            <td>{a.ctrV == null ? '-' : fmtPct(a.ctrV, 2)}</td>
+            <td>{a.cpmV == null ? '-' : money(a.cpmV)}</td>
             <td>{a.freqV == null ? '-' : a.freqV.toFixed(1) + 'x'}</td>
+            <td>{a.ctrV == null ? '-' : fmtPct(a.ctrV, 2)}</td>
+            <td>{a.cvrV == null ? '-' : fmtPct(a.cvrV, 1)}</td>
             <td>{n0(a.leads)}</td>
             <td>{a.cpl == null ? '-' : money(a.cpl)}</td>
             {o360cols && o360Cells(a, currency, o360cols)}
@@ -1540,7 +1549,7 @@ export function MRCreativeSection({ ads, oCre, o360cols: o360colsAll, o360colsFo
   // Data-table view (same sortable green Caalano360 table as the Meta ads view).
   // Header sort is shared, so every pipeline's table sorts together.
   const [tsort, onTsort] = useSort('spend')
-  const mapRow = (a) => ({ ...a, freqV: a.reach ? a.impressions / a.reach : null, ...o360Fields(oCre.get(unorm(a.name)), a.spend, a.leads, o360cols) })
+  const mapRow = (a) => ({ ...a, freqV: a.reach ? a.impressions / a.reach : null, cpmV: a.impressions ? (a.spend / a.impressions) * 1000 : null, cvrV: (a.linkClicks != null ? a.linkClicks : a.clicks) && a.leads != null ? (a.leads / (a.linkClicks != null ? a.linkClicks : a.clicks)) * 100 : null, ...o360Fields(oCre.get(unorm(a.name)), a.spend, a.leads, o360cols) })
   // Multi-pipeline decks split the whole screen by pipeline: every pipeline's
   // cards first (Cards P1, Cards P2 …), then every pipeline's table (Table P1,
   // Table P2 …). A creative's pipeline comes from its campaign (pipeLabelFor);

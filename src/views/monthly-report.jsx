@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Bar, BarChart, CartesianGrid, Cell, ComposedChart, LabelList, Legend, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { C360GrpRow, ChannelPerfBody, Dlt, ExecReach, KeyEventsFunnel, KeyPeopleModal, MRKpi, O360ColGroup, O360Head, SortTh, Spinner, aliasedOutcomeMap, buildIntel, buildO360Cols, ccKeyEventFunnel, calCountMap, clientDownloadOn, fmtDate, formKeyEvents, isAdminishFE, isClientRoleFE, keyEventRows, campIsSplit, keyEventsForPipe, loadAdsetRules, loadCampMap, loadCashOn, loadKeyEvents, loadMReport, mkOutcomeMap, mrFetch, o360Cells, o360ColClass, o360Fields, pipeOfAdset, rangeQuery, reachedByStage, readNavUrl, resolveKeyEvents, saveMReport, setClientDownload, sortRows, stagePosMap, stageReachOf, suggestPipeline, unorm, useSettingsSync, useSort, writeNavUrl } from '../App.jsx'
+import { C360GrpRow, ChannelPerfBody, Dlt, ExecReach, KeyEventsFunnel, KeyPeopleModal, MRKpi, fmtDuration, hoursQuery, loadHours, O360ColGroup, O360Head, SortTh, Spinner, aliasedOutcomeMap, buildIntel, buildO360Cols, ccKeyEventFunnel, calCountMap, clientDownloadOn, fmtDate, formKeyEvents, isAdminishFE, isClientRoleFE, keyEventRows, campIsSplit, keyEventsForPipe, loadAdsetRules, loadCampMap, loadCashOn, loadKeyEvents, loadMReport, mkOutcomeMap, mrFetch, o360Cells, o360ColClass, o360Fields, pipeOfAdset, rangeQuery, reachedByStage, readNavUrl, resolveKeyEvents, saveMReport, setClientDownload, sortRows, stagePosMap, stageReachOf, suggestPipeline, unorm, useSettingsSync, useSort, writeNavUrl } from '../App.jsx'
 import { fmtCompact, fmtCurrency, fmtNumber, fmtPct } from '../lib/format.js'
 
 // ---------------------------------------------------------------------------
@@ -148,10 +148,16 @@ export async function assembleMonthlyReport(client, period, onProgress) {
   const wanted = []
   let done = 0
   const note = (t) => { if (onProgress) onProgress({ done, total: wanted.length, note: t }) }
-  const section = (label, want, qs2, pick) => {
+  const section = (label, want, qs2, pick, optional = false) => {
     if (!want) return Promise.resolve(null)
     wanted.push(label)
-    return mrFetchTry(qs2, { tries: 12 }).then(pick).catch(() => { failed.push(label); return null }).finally(() => { done++; note(`${label} · ${done} of ${wanted.length} parts`) })
+    return mrFetchTry(qs2, { tries: optional ? 3 : 12 }).then(pick).catch(() => { if (!optional) failed.push(label); return null }).finally(() => { done++; note(`${label} · ${done} of ${wanted.length} parts`) })
+  }
+  // Speed to lead for the period, without the people lists behind each figure.
+  const trimSpeed = (r) => {
+    if (!r || r.connected === false || r.error || !r.sampled) return null
+    const t = r.touch ? { ...r.touch } : null; if (t) delete t.deals
+    return { full: r.full, sampled: r.sampled, totalLeads: r.totalLeads, measured: r.measured, measuredAll: r.measuredAll, medianMin: r.medianMin, avgMin: r.avgMin, within5Pct: r.within5Pct, onlyAuto: r.onlyAuto, noOutbound: r.noOutbound, hours: r.hours || null, after: r.after || null, touch: t, byUser: r.byUser || null }
   }
   // The Caalano360 tab's drill (channel performance, key event reach), for the
   // period and the equal period before it, kept without its heavy people lists.
@@ -183,10 +189,11 @@ export async function assembleMonthlyReport(client, period, onProgress) {
     section('Form performance', client.ghl, `scope=forms&${q}`, (r) => ({ forms: r.forms, pipelines: r.pipelines })),
     section('Channel performance', client.ghl, `scope=ccdrill&channel=all&wonBasis=closed&${q}`, trimCc),
     section('Channel performance · period before', client.ghl, `scope=ccdrill&channel=all&wonBasis=closed&${qPrev}`, trimCc),
+    section('Speed to lead', client.ghl, `scope=speed&byUser=1&${q}${hoursQuery(loadHours(client.id))}`, trimSpeed, true),
     ...trailMonths.map((m) => section(`CRM · ${m}`, client.ghl, `scope=pivot&by=month&src=crm&client=${encodeURIComponent(client.id)}&from=${monthBounds(m).from}&to=${monthBounds(m).to}`, trailPick)),
   ])
   note('Reading Meta, Google and the CRM…')
-  const [meta, google, blend, attribution, trendR, dealsR, formsR, ccR, ccPrevR, ...trailR] = await parts
+  const [meta, google, blend, attribution, trendR, dealsR, formsR, ccR, ccPrevR, speedR, ...trailR] = await parts
   const trail3 = trailR.filter(Boolean)
   if (failed.length) throw new Error(`These parts did not answer after twelve tries: ${failed.join(', ')}. Nothing was saved - press Generate to try again.`)
   // Join CRM key-event outcomes (utm_content) onto each Meta creative so the
@@ -249,7 +256,7 @@ export async function assembleMonthlyReport(client, period, onProgress) {
     v: 1, client: { id: client.id, name: client.name, industry: client.industry || null },
     month: period.key, period: b, currency: undefined,
     hasMeta: !!client.meta, hasGoogle: !!client.google, hasCrm: !!client.ghl,
-    meta, google, blend, attribution: attrTrim, trend: (trendR && trendR.trend) || [], gtrend: (trendR && trendR.gtrend) || [], deals: dealsR || null, cc: ccR || null, ccPrev: ccPrevR || null, prevPeriod: prevP, trail3,
+    meta, google, blend, attribution: attrTrim, trend: (trendR && trendR.trend) || [], gtrend: (trendR && trendR.gtrend) || [], deals: dealsR || null, cc: ccR || null, ccPrev: ccPrevR || null, prevPeriod: prevP, trail3, speed: speedR || null,
     // ID→name folds so Google's utm_campaign / utm_content (which carry the numeric
     // campaign / ad-group ID, not the name) resolve to the live campaign name - the
     // exact map the Meta/Google views pass to aliasedOutcomeMap. Without it the
@@ -2264,6 +2271,52 @@ export function renderMonthlyDeck(rep, h) {
             : <UserPerfTable bundle={{ ke, rows: urows }} pname={null} />}
           <p className="mr-foot-note">“Won (cohort)” counts this month's leads that are already won; “Closed this mo” counts deals won this month regardless of when the lead came in - click a number to see the deals.{cashOn ? ' “Cash collected” is the cash recorded on those closed deals.' : ''}{multiPipe ? ' Each table is scoped to that pipeline.' : ''}</p>
         </section>
+
+        {(() => {
+          const sp = rep.speed; if (!sp) return null
+          const t = sp.touch || null
+          const pct = (v) => (v == null ? '-' : `${v}%`)
+          const n1 = (v) => (v == null ? '-' : String(v))
+          const nameOf = (uid, u) => (u && u.name) || ((users.find((x) => x.id === uid) || {}).name) || (uid === 'unassigned' ? 'Unassigned' : 'User ' + String(uid).slice(-4))
+          const reps = Object.entries(sp.byUser || {}).map(([uid, u]) => ({ uid, ...u, name: nameOf(uid, u), t: u.touch || {} })).filter((u) => u.leads > 0).sort((a, b2) => b2.leads - a.leads)
+          return (
+            <section className="mr-bubble">
+              <div className="mr-bubble-lab">⏱ Speed to lead &amp; contact</div>
+              <p className="mr-bubble-sub">How fast this month's leads got a human reply, how many the team reached, and how many attempts that took{sp.hours ? ' · in-hours leads, measured in business minutes' : ''}.</p>
+              <div className="mr-kpirow mr-kpirow-wide">
+                <MRKpi label="Median speed to lead" value={fmtDuration(sp.medianMin)} sub="lead-in → first manual message or call" strong />
+                <MRKpi label="Replied < 5 min" value={pct(sp.within5Pct)} sub={`of ${n0(sp.measured)} leads reached`} />
+                {t ? <>
+                  <MRKpi label="Touch rate" value={pct(t.touchRate)} sub={`${n0(t.touched)} of ${n0(t.base)} leads had an attempt`} />
+                  <MRKpi label="Contact rate" value={pct(t.contactRate)} sub={`${n0(t.contacted)} connected, replied or booked`} />
+                  <MRKpi label="Touches per contact" value={n1(t.perContact)} sub={`${n1(t.perLead)} per lead · ${n0(t.attempts)} attempts`} />
+                  <MRKpi label="Touches to close" value={n1(t.toClose)} sub={`across ${n0(t.wonN)} won lead${t.wonN === 1 ? '' : 's'}`} />
+                </> : <>
+                  <MRKpi label="Only automation" value={n0(sp.onlyAuto)} sub="no human message yet" />
+                  <MRKpi label="No outreach" value={n0(sp.noOutbound)} sub="no outbound at all" />
+                </>}
+              </div>
+              {reps.length ? <div style={{ marginTop: 12 }}><MRTable
+                cols={[
+                  { k: 'name', label: 'Rep', render: (r) => <span className="mr-name">{r.name}</span> },
+                  { k: 'leads', label: 'Leads', align: 'r', render: (r) => n0(r.leads) },
+                  { k: 'medianMin', label: 'Median reply', align: 'r', render: (r) => fmtDuration(r.medianMin) },
+                  { k: 'within5Pct', label: '≤5 min', align: 'r', render: (r) => pct(r.within5Pct) },
+                  ...(t ? [
+                    { k: 'touchRate', label: 'Touch rate', align: 'r', render: (r) => pct(r.t.touchRate) },
+                    { k: 'contactRate', label: 'Contact rate', align: 'r', render: (r) => pct(r.t.contactRate) },
+                    { k: 'perContact', label: 'Touches / contact', align: 'r', render: (r) => n1(r.t.perContact) },
+                    { k: 'toClose', label: 'Touches to close', align: 'r', render: (r) => (r.t.toClose == null ? '-' : `${r.t.toClose} · ${n0(r.t.wonN)} won`) },
+                    { k: 'calls', label: 'Calls · connected', align: 'r', render: (r) => (r.t.calls ? `${n0(r.t.calls)} · ${r.t.connectPct}%` : '-') },
+                    { k: 'replies', label: 'Replies', align: 'r', render: (r) => (r.t.replies == null ? '-' : n0(r.t.replies)) },
+                  ] : []),
+                ]}
+                rows={reps} max={12} wrapClass="mr-userperf"
+              /></div> : null}
+              <p className="mr-foot-note">Speed to lead = time from the lead coming in to the first manual message or call (automation excluded). <b>Touch</b> = a manual call, SMS or email after lead-in. <b>Contact</b> = the lead engaged: a connected call (voicemail and no-answer do not count), a reply, or an appointment booked. Touches to close = attempts on a won lead up to the day it was marked won.{sp.full ? '' : ` Figures are from a sample of ${n0(sp.sampled)} of ${n0(sp.totalLeads)} leads.`}</p>
+            </section>
+          )
+        })()}
 
         <section className="mr-bubble">
           <div className="mr-bubble-lab">📉 Lost reasons &amp; pipeline status</div>

@@ -4583,11 +4583,16 @@ export default async (req) => {
   if (url.searchParams.get('scope') === 'speed') {
     const cc = CLIENTS[client]
     if (!cc || !cc.ghl) return json({ scope: 'speed', client, ghl: false })
-    if (!(await isConnected().catch(() => false))) return json({ scope: 'speed', client, connected: false })
+    if (client !== DEMO_CLIENT_ID && !(await isConnected().catch(() => false))) return json({ scope: 'speed', client, connected: false })
     const sample = Math.min(Number(url.searchParams.get('sample')) || 60, 120)
     const dbg = url.searchParams.get('debug') === '1'
     const hours = parseHours(url) // working-hours adjustment (business minutes only)
-    try { return json({ scope: 'speed', client, period: { from, to, preset }, ...(await buildSpeedToLead(cc.ghl, from, to, { sample, debug: dbg, hours })) }, 200, !dbg) }
+    const wantUsers = url.searchParams.get('byUser') === '1'
+    try {
+      const [sp, urows] = await Promise.all([buildSpeedToLead(cc.ghl, from, to, { sample, debug: dbg, hours, byUser: wantUsers }), wantUsers ? ghlUserRows(cc.ghl).catch(() => []) : Promise.resolve([])])
+      if (sp && sp.byUser) { const nm = {}; for (const u of urows) if (u.user_id) nm[u.user_id] = u.user_name; for (const uid of Object.keys(sp.byUser)) sp.byUser[uid].name = nm[uid] || (uid === 'unassigned' ? 'Unassigned' : null) }
+      return json({ scope: 'speed', client, period: { from, to, preset }, ...sp }, 200, !dbg)
+    }
     catch (e) { return json({ scope: 'speed', client, error: String(e.message || e).slice(0, 200), connected: true }, 200) }
   }
 

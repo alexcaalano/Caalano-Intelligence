@@ -3264,8 +3264,14 @@ function contactSummarise(cr, base) {
 async function speedFirstOutboundMap(locTok, locationId, startIso, endIso, started, budgetMs) {
   const map = new Map()
   const srcCounts = {}
-  for (const channel of ['Call', 'SMS']) {
-    let cursor = null, guard = 0
+  const seenIds = new Set()   // the demo (and a permissive export) can answer every channel with the same rows
+  const channels = []
+  const TOUCH_CAP = 60
+  // Call and SMS are the manual outreach channels; Email comes last so a tight
+  // budget drops it first (it is mostly automation, but a lead's email reply is
+  // still a contact).
+  for (const channel of ['Call', 'SMS', 'Email']) {
+    let cursor = null, guard = 0, got = false
     while (guard++ < 10) {
       if (Date.now() - started > budgetMs) break
       // See buildUserCalls: the export needs locationId in the query; sortBy makes
@@ -3276,24 +3282,82 @@ async function speedFirstOutboundMap(locTok, locationId, startIso, endIso, start
       if (cursor) q.cursor = cursor
       const j = await ghlGet(locTok, '/conversations/messages/export', q).catch(() => null)
       if (!j) break
+      got = true
       const msgs = j.messages || []
       for (const m of msgs) {
-        if (String(m.direction || '').toLowerCase() !== 'outbound') continue
         const cid = m.contactId; if (!cid) continue
+        const mid = m.id || m._id; if (mid) { if (seenIds.has(mid)) continue; seenIds.add(mid) }
         const ms = Date.parse(m.dateAdded || m.dateUpdated || m.createdAt); if (!isFinite(ms)) continue
-        const kind = classifyOutbound(m)
+        const dir = String(m.direction || '').toLowerCase()
+        const call = isCallMsg(m)
+        const kind = call ? 'call' : /email/.test(String(m.messageType || m.type || '').toLowerCase()) ? 'email' : 'sms'
+        const connected = call && String((m.meta && m.meta.call && m.meta.call.status) || m.status || '').toLowerCase() === 'completed'
+        let e = map.get(cid); if (!e) { e = { manual: null, any: null, touches: [], replies: [] }; map.set(cid, e) }
+        if (dir === 'inbound') {
+          // A reply (SMS / email) or an answered inbound call = the lead interacted.
+          if (!call || connected) { if (e.replies.length < TOUCH_CAP) e.replies.push({ ms, kind }) }
+          continue
+        }
+        if (dir !== 'outbound') continue
+        const cls = classifyOutbound(m)
         const sk = `${String(m.source || 'none').toLowerCase()} · ${msgUserId(m) ? 'user' : 'no-user'}`
-        if (!srcCounts[sk]) srcCounts[sk] = { count: 0, kind }
+        if (!srcCounts[sk]) srcCounts[sk] = { count: 0, kind: cls }
         srcCounts[sk].count++
-        let e = map.get(cid); if (!e) { e = { manual: null, any: null }; map.set(cid, e) }
         if (e.any == null || ms < e.any) e.any = ms
-        if (kind === 'manual' && (e.manual == null || ms < e.manual)) e.manual = ms
+        if (cls === 'manual') {
+          if (e.manual == null || ms < e.manual) e.manual = ms
+          if (e.touches.length < TOUCH_CAP) e.touches.push({ ms, kind, connected, uid: msgUserId(m) || null })
+        }
       }
       cursor = j.nextCursor
       if (!cursor || msgs.length < 200) break
     }
+    if (got) channels.push(channel)
   }
-  return { map, srcCounts }
+  return { map, srcCounts, channels }
+}
+// Touches and contact for one lead from the bulk map: every manual attempt after
+// the lead came in (a touch), the ones that connected, and the lead's replies.
+// Contacted = a connected call, a reply, or an appointment on the books; touched
+// = any attempt or contact at all.
+function leadTouchFacts(lead, e) {
+  const t0 = lead.leadIn - 60000
+  const touches = ((e && e.touches) || []).filter((t) => t.ms >= t0).sort((a, b) => a.ms - b.ms)
+  const replies = ((e && e.replies) || []).filter((r) => r.ms >= t0).sort((a, b) => a.ms - b.ms)
+  const calls = touches.filter((t) => t.kind === 'call').length
+  const connected = touches.filter((t) => t.kind === 'call' && t.connected).length
+  const sms = touches.filter((t) => t.kind === 'sms').length
+  const email = touches.filter((t) => t.kind === 'email').length
+  const firstConn = touches.find((t) => t.kind === 'call' && t.connected)
+  const cands = [firstConn ? firstConn.ms : null, replies.length ? replies[0].ms : null, lead.staffBookedMs, lead.selfBookedMs].filter((v) => v != null)
+  const firstContactMs = cands.length ? Math.min(...cands) : null
+  const contacted = connected > 0 || replies.length > 0 || !!lead.booked
+  const touched = touches.length > 0 || contacted
+  const toContact = firstContactMs != null ? touches.filter((t) => t.ms <= firstContactMs).length : null
+  const closeMs = lead.won && lead.statusAtISO ? Date.parse(lead.statusAtISO) : null
+  const toClose = lead.won ? (isFinite(closeMs) ? touches.filter((t) => t.ms <= closeMs).length : touches.length) : null
+  return { touches: touches.length, calls, connected, sms, email, replies: replies.length, contacted, touched, toContact, toClose, firstContactMs, touchUids: touches.map((t) => t.uid) }
+}
+// Roll a set of leads' touch facts up: rates, attempts per lead / per contacted
+// lead, attempts to first contact and to close.
+function touchSummarise(rows) {
+  const base = rows.length
+  const touched = rows.filter((r) => r.tf.touched), contacted = rows.filter((r) => r.tf.contacted)
+  const sum = (list, f) => list.reduce((a, r) => a + (f(r) || 0), 0)
+  const avg = (list, f) => { const v = list.map(f).filter((x) => x != null); return v.length ? Math.round((v.reduce((a, x) => a + x, 0) / v.length) * 10) / 10 : null }
+  const attempts = sum(rows, (r) => r.tf.touches), calls = sum(rows, (r) => r.tf.calls), connected = sum(rows, (r) => r.tf.connected)
+  const won = rows.filter((r) => r.won)
+  return {
+    base, touched: touched.length, touchRate: base ? Math.round((touched.length / base) * 100) : null,
+    contacted: contacted.length, contactRate: base ? Math.round((contacted.length / base) * 100) : null,
+    attempts, perLead: base ? Math.round((attempts / base) * 10) / 10 : null,
+    perTouched: touched.length ? Math.round((sum(touched, (r) => r.tf.touches) / touched.length) * 10) / 10 : null,
+    perContact: contacted.length ? Math.round((sum(contacted, (r) => r.tf.touches) / contacted.length) * 10) / 10 : null,
+    toContact: avg(contacted, (r) => r.tf.toContact), toClose: avg(won, (r) => r.tf.toClose), wonN: won.length,
+    calls, connected, connectPct: calls ? Math.round((connected / calls) * 100) : null,
+    sms: sum(rows, (r) => r.tf.sms), email: sum(rows, (r) => r.tf.email), replies: sum(rows, (r) => r.tf.replies),
+    appts: rows.filter((r) => r.booked).length,
+  }
 }
 export async function buildSpeedToLead(locationId, from, to, opts = {}) {
   const sample = Math.min(opts.sample || 60, 120)
@@ -3448,6 +3512,22 @@ export async function buildSpeedToLead(locationId, from, to, opts = {}) {
       byUser[uid] = { leads: rs.length, measured: st.measured, medianMin: st.medianMin, avgMin: st.avgMin, within5Pct: st.within5Pct, afterCount: afterHoursCount(rs.map((r) => r.leadIn), hours, tz), afterMedianMin: st.after ? st.after.medianMin : null }
     }
   }
+  // Touch & contact (full-range reads only - the sampled path has no attempt list):
+  // every manual attempt is a touch; a connected call, a reply or an appointment
+  // is a contact. Account-wide and per rep (the rep whose lead it is).
+  let touch = null
+  if (useBulk) {
+    for (const r of results) { if (!r.skipped) r.tf = leadTouchFacts(r, bulk.map.get(r.cid)) }
+    const tr = results.filter((r) => !r.skipped && r.tf)
+    touch = { ...touchSummarise(tr), channels: bulk.channels || [], deals: { touched: tr.filter((r) => r.tf.touched).map(speedDealOf).slice(0, 500), contacted: tr.filter((r) => r.tf.contacted).map(speedDealOf).slice(0, 500), untouched: tr.filter((r) => !r.tf.touched).map(speedDealOf).slice(0, 500) } }
+    if (byUser) {
+      for (const uid of Object.keys(byUser)) {
+        const mine = tr.filter((r) => r.uid === uid)
+        const ts = touchSummarise(mine)
+        byUser[uid].touch = { base: ts.base, touched: ts.touched, touchRate: ts.touchRate, contacted: ts.contacted, contactRate: ts.contactRate, attempts: ts.attempts, perLead: ts.perLead, perContact: ts.perContact, toContact: ts.toContact, toClose: ts.toClose, wonN: ts.wonN, calls: ts.calls, connected: ts.connected, connectPct: ts.connectPct, replies: ts.replies }
+      }
+    }
+  }
   // Contact rate: of the sampled leads, how many did we make human contact with -
   // a manual message OR any appointment booked. Appointments split into
   // user-booked (a staff member booked it) vs customer self-booked. A lead can be
@@ -3460,7 +3540,7 @@ export async function buildSpeedToLead(locationId, from, to, opts = {}) {
   return {
     connected: true, tz, full: useBulk,
     totalLeads: leads.length, sampled: useBulk ? leads.length : (pick.length - skipped), skipped,
-    outcome, contactRate,
+    outcome, contactRate, touch,
     ...speedShape(stats, afterCount, onlyAuto, noOutbound),
     hours: hours ? { days: hours.days, startMin: hours.startMin, endMin: hours.endMin } : null,
     ...(byUser ? { byUser } : {}),

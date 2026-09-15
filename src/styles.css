@@ -6061,3 +6061,7 @@ body.hub-tv-on { overflow: hidden; }
 @media (max-width: 1500px) { .mr-two.mr-cmp2 { grid-template-columns: 1fr; } }
 /* Nine Meta scorecards on one row */
 .mr-mp .mr-kpirow-wide { grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); }
+/* Timing: the channel split under touch & contact rate */
+.tm-contact-sub { margin-top: 10px; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); }
+.tm-contact .tm-oc.warn { border-color: color-mix(in srgb, #ef4444 40%, var(--border)); }
+.tm-contact .tm-oc.warn b { color: #ef4444; }

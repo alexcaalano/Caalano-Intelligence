@@ -36,7 +36,7 @@ const lazyView = (load, name) => {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-export const APP_VERSION = '3.659.0'
+export const APP_VERSION = '3.660.0'
 // The business clock. Every server window is cut on the client's local day
 // (Caalano Systems location timezone), so any day the app derives on its own -
 // preset ranges, "today", CSV dates - must use the same clock rather than the
@@ -5171,7 +5171,8 @@ export const DASH_MODULES = [
   { type: 'forms:charts', label: 'Form charts', group: 'Forms', needs: 'ghl' },
   { type: 'forms:table', label: 'Form performance', group: 'Forms', needs: 'ghl' },
   { type: 'timing:scorecards', label: 'Speed-to-lead scorecards', group: 'Timing', needs: 'ghl' },
-  { type: 'timing:contact', label: 'Contact rate', group: 'Timing', needs: 'ghl' },
+  { type: 'timing:contact', label: 'Touch & contact rate', group: 'Timing', needs: 'ghl' },
+  { type: 'timing:reps', label: 'Speed to lead by rep', group: 'Timing', needs: 'ghl' },
   { type: 'timing:outcomes', label: 'Lead outcomes', group: 'Timing', needs: 'ghl' },
   { type: 'timing:reply', label: 'How fast leads get a human reply', group: 'Timing', needs: 'ghl' },
   { type: 'timing:convert', label: 'Does responding faster convert better', group: 'Timing', needs: 'ghl' },
@@ -13956,7 +13957,7 @@ function AppointmentsView({ clientId, range, nonce, pipe: pipeProp, onPipe }) {
   )
 }
 /* ============ Timing (Speed to Lead) ============ */
-function fmtDuration(min) {
+export function fmtDuration(min) {
   if (min == null) return '-'
   if (min < 1) return '<1 min'
   if (min < 60) return `${Math.round(min)} min`
@@ -14922,7 +14923,7 @@ function TimingView({ clientId, range, nonce, currency }) {
   useEffect(() => {
     let alive = true; setSt({ status: 'loading', data: null })
     const ctl = new AbortController(); const timer = setTimeout(() => ctl.abort(), 30000)
-    fetch(`/.netlify/functions/windsor?scope=speed&client=${clientId}&${rangeQuery(range)}${hq}${nonce ? `&_r=${nonce}` : ''}`, { signal: ctl.signal })
+    fetch(`/.netlify/functions/windsor?scope=speed&byUser=1&client=${clientId}&${rangeQuery(range)}${hq}${nonce ? `&_r=${nonce}` : ''}`, { signal: ctl.signal })
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`server ${r.status}`))))
       .then((j) => { if (alive) setSt({ status: j && j.error ? 'err' : 'ok', data: j }) })
       .catch((e) => { if (alive) setSt({ status: 'err', data: { error: e && e.name === 'AbortError' ? 'timed out' : String((e && e.message) || e) } }) })
@@ -15016,19 +15017,85 @@ function TimingView({ clientId, range, nonce, currency }) {
       <Blk id="timing:contact">
       {(() => {
         const cr = (d && d.contactRate) || (st.data && st.data.contactRate) || null
+        const tc = (d && d.touch) || (st.data && st.data.touch) || null
         if (!cr || !cr.base) return null
         const dr = (key, title) => { const list = (cr.deals && cr.deals[key]) || []; if (!list.length) return; setDrill({ kind: key, title, deals: list }) }
+        const drT = (key, title) => { const list = (tc && tc.deals && tc.deals[key]) || []; if (!list.length) return; setDrill({ kind: key, title, deals: list }) }
+        const n1 = (v) => (v == null ? '-' : String(v))
         return (
           <div className="card">
-            <div className="cap" style={{ fontWeight: 700, marginBottom: 8 }}>Contact rate <span style={{ fontWeight: 400 }}>· manual messages + appointments booked · of {fmtNumber(cr.base)} {d.full ? 'leads (full scan)' : `sampled lead${cr.base === 1 ? '' : 's'}`} · click to see the leads</span></div>
-            <div className="tm-contact">
-              <button className="tm-oc rate" onClick={() => dr('contacted', 'Contacted leads (message or appointment)')} disabled={!cr.contacted}><span className="tm-oc-lab">Total contact rate</span><b>{cr.rate == null ? '-' : `${cr.rate}%`}</b><span className="tm-oc-sub">{fmtNumber(cr.contacted)} of {fmtNumber(cr.base)} reached</span></button>
-              <button className="tm-oc" onClick={() => dr('messaged', 'Leads reached by a manual message')} disabled={!cr.messaged}><span className="tm-oc-lab">Manual messages</span><b>{fmtNumber(cr.messaged)}</b><span className="tm-oc-sub">human message sent</span></button>
-              <button className="tm-oc" onClick={() => dr('booked', 'Leads with an appointment booked')} disabled={!cr.booked}><span className="tm-oc-lab">Appointments booked</span><b>{fmtNumber(cr.booked)}</b><span className="tm-oc-sub">user + customer booked</span></button>
-              <button className="tm-oc sub" onClick={() => dr('userBooked', 'Leads with a user-booked appointment')} disabled={!cr.userBooked}><span className="tm-oc-lab">↳ User-booked</span><b>{fmtNumber(cr.userBooked)}</b><span className="tm-oc-sub">staff booked the call</span></button>
-              <button className="tm-oc sub" onClick={() => dr('selfBooked', 'Leads with a customer self-booked appointment')} disabled={!cr.selfBooked}><span className="tm-oc-lab">↳ Customer-booked</span><b>{fmtNumber(cr.selfBooked)}</b><span className="tm-oc-sub">lead self-booked</span></button>
-            </div>
-            <Caveat style={{ marginTop: 10 }}>Contacted = a lead we sent a <b>manual message or call</b> to <b>or</b> that had an <b>appointment booked</b>. User-booked = a team member created the appointment; Customer-booked = the lead self-booked via a calendar link. A lead can be both messaged and booked, so the rows overlap - the total rate counts each contacted lead once. Based on the same sample as Speed to Lead; “Scan the whole date range” above makes it exact.</Caveat>
+            <div className="cap" style={{ fontWeight: 700, marginBottom: 8 }}>Touch &amp; contact rate <span style={{ fontWeight: 400 }}>· of {fmtNumber(tc ? tc.base : cr.base)} {d.full ? 'leads (full scan)' : `sampled lead${cr.base === 1 ? '' : 's'}`} · click a figure to see the leads</span></div>
+            {tc ? <>
+              <div className="tm-contact">
+                <button className="tm-oc rate" onClick={() => drT('touched', 'Touched leads - at least one manual call, SMS or email')} disabled={!tc.touched}><span className="tm-oc-lab">Touch rate</span><b>{tc.touchRate == null ? '-' : `${tc.touchRate}%`}</b><span className="tm-oc-sub">{fmtNumber(tc.touched)} leads had at least one attempt</span></button>
+                <button className="tm-oc rate" onClick={() => drT('contacted', 'Contacted leads - a connected call, a reply or an appointment')} disabled={!tc.contacted}><span className="tm-oc-lab">Contact rate</span><b>{tc.contactRate == null ? '-' : `${tc.contactRate}%`}</b><span className="tm-oc-sub">{fmtNumber(tc.contacted)} spoke, replied or booked</span></button>
+                <div className="tm-oc"><span className="tm-oc-lab">Touches per lead</span><b>{n1(tc.perLead)}</b><span className="tm-oc-sub">{fmtNumber(tc.attempts)} attempts ÷ {fmtNumber(tc.base)} leads</span></div>
+                <div className="tm-oc"><span className="tm-oc-lab">Touches per contact</span><b>{n1(tc.perContact)}</b><span className="tm-oc-sub">attempts on the leads reached</span></div>
+                <div className="tm-oc"><span className="tm-oc-lab">Touches to first contact</span><b>{n1(tc.toContact)}</b><span className="tm-oc-sub">attempts before the lead engaged</span></div>
+                <div className="tm-oc"><span className="tm-oc-lab">Touches to close</span><b>{n1(tc.toClose)}</b><span className="tm-oc-sub">attempts on {fmtNumber(tc.wonN)} won lead{tc.wonN === 1 ? '' : 's'}</span></div>
+              </div>
+              <div className="tm-contact tm-contact-sub">
+                <div className="tm-oc sub"><span className="tm-oc-lab">Calls</span><b>{fmtNumber(tc.calls)}</b><span className="tm-oc-sub">{tc.connectPct == null ? 'no manual calls' : `${tc.connectPct}% connected · ${fmtNumber(tc.connected)} answered`}</span></div>
+                <div className="tm-oc sub"><span className="tm-oc-lab">SMS</span><b>{fmtNumber(tc.sms)}</b><span className="tm-oc-sub">manual texts sent</span></div>
+                <div className="tm-oc sub"><span className="tm-oc-lab">Emails</span><b>{fmtNumber(tc.email)}</b><span className="tm-oc-sub">{tc.channels && !tc.channels.includes('Email') ? 'not read this time' : 'manual emails sent'}</span></div>
+                <div className="tm-oc sub"><span className="tm-oc-lab">Replies</span><b>{fmtNumber(tc.replies)}</b><span className="tm-oc-sub">texts, emails and answered inbound calls from leads</span></div>
+                <button className="tm-oc sub" onClick={() => dr('booked', 'Leads with an appointment booked')} disabled={!cr.booked}><span className="tm-oc-lab">Appointments</span><b>{fmtNumber(cr.booked)}</b><span className="tm-oc-sub">{fmtNumber(cr.userBooked)} staff-booked · {fmtNumber(cr.selfBooked)} self-booked</span></button>
+                <button className="tm-oc sub warn" onClick={() => drT('untouched', 'Leads never touched - no manual attempt and no contact')} disabled={!(tc.base - tc.touched)}><span className="tm-oc-lab">Never touched</span><b>{fmtNumber(tc.base - tc.touched)}</b><span className="tm-oc-sub">no attempt at all</span></button>
+              </div>
+            </> : (
+              <div className="tm-contact">
+                <button className="tm-oc rate" onClick={() => dr('contacted', 'Contacted leads (message or appointment)')} disabled={!cr.contacted}><span className="tm-oc-lab">Contact rate</span><b>{cr.rate == null ? '-' : `${cr.rate}%`}</b><span className="tm-oc-sub">{fmtNumber(cr.contacted)} messaged or booked</span></button>
+                <button className="tm-oc" onClick={() => dr('messaged', 'Leads reached by a manual message')} disabled={!cr.messaged}><span className="tm-oc-lab">Manual messages</span><b>{fmtNumber(cr.messaged)}</b><span className="tm-oc-sub">human message sent</span></button>
+                <button className="tm-oc" onClick={() => dr('booked', 'Leads with an appointment booked')} disabled={!cr.booked}><span className="tm-oc-lab">Appointments booked</span><b>{fmtNumber(cr.booked)}</b><span className="tm-oc-sub">{fmtNumber(cr.userBooked)} staff · {fmtNumber(cr.selfBooked)} self</span></button>
+              </div>
+            )}
+            <Caveat style={{ marginTop: 10 }}><b>Touch</b> = a manual call, SMS or email made to the lead after it came in (workflow and campaign sends are excluded). <b>Contact</b> = the lead actually engaged: a <b>connected</b> call (voicemail, no answer and busy do not count), a reply by text or email, an answered inbound call, or an appointment on the books. Touches to first contact counts the attempts up to and including the one that connected; touches to close counts a won lead's attempts up to the day it was marked won.{tc ? '' : ' Attempt counts need the full-range read - run the scan above.'}</Caveat>
+          </div>
+        )
+      })()}
+      </Blk>
+      <Blk id="timing:reps">
+      {(() => {
+        const bu = (d && d.byUser) || (st.data && st.data.byUser) || null
+        if (!bu) return null
+        const rows = Object.entries(bu).map(([uid, u]) => ({ uid, ...u })).filter((u) => u.leads > 0).sort((a, b) => b.leads - a.leads)
+        if (!rows.length) return null
+        const pct = (v) => (v == null ? '-' : `${v}%`)
+        const n1 = (v) => (v == null ? '-' : String(v))
+        return (
+          <div className="card">
+            <div className="cap" style={{ fontWeight: 700, marginBottom: 8 }}>Speed to lead by rep <span style={{ fontWeight: 400 }}>· each rep's own leads (assigned to them) · ranked by leads</span></div>
+            <div className="table-wrap"><table className="mini-tbl appt-tbl">
+              <thead><tr>
+                <th style={{ textAlign: 'left' }}>Rep</th><th>Leads</th>
+                <th title="Median time from lead-in to this rep's first manual message or call">Median reply</th>
+                <th title="Share of this rep's leads replied to within 5 minutes">≤5 min</th>
+                <th title="Share of this rep's leads with at least one manual attempt">Touch rate</th>
+                <th title="Share of this rep's leads that connected on a call, replied or booked">Contact rate</th>
+                <th title="Manual attempts per lead">Touches / lead</th>
+                <th title="Manual attempts per contacted lead">Touches / contact</th>
+                <th title="Attempts up to the first contact">To contact</th>
+                <th title="Attempts on won leads up to the close">To close</th>
+                <th title="Manual calls · share that connected">Calls</th>
+                <th title="Replies from the rep's leads">Replies</th>
+              </tr></thead>
+              <tbody>{rows.map((u) => { const t = u.touch || {}; return (
+                <tr key={u.uid}>
+                  <td style={{ textAlign: 'left' }}>{u.name || (u.uid === 'unassigned' ? 'Unassigned' : 'User ' + String(u.uid).slice(-4))}</td>
+                  <td>{fmtNumber(u.leads)}</td>
+                  <td>{fmtDuration(u.medianMin)}</td>
+                  <td>{pct(u.within5Pct)}</td>
+                  <td>{pct(t.touchRate)}</td>
+                  <td>{pct(t.contactRate)}</td>
+                  <td>{n1(t.perLead)}</td>
+                  <td>{n1(t.perContact)}</td>
+                  <td>{n1(t.toContact)}</td>
+                  <td>{t.toClose == null ? '-' : `${t.toClose} · ${fmtNumber(t.wonN)} won`}</td>
+                  <td>{t.calls ? `${fmtNumber(t.calls)} · ${t.connectPct}%` : '-'}</td>
+                  <td>{t.replies == null ? '-' : fmtNumber(t.replies)}</td>
+                </tr>
+              ) })}</tbody>
+            </table></div>
           </div>
         )
       })()}

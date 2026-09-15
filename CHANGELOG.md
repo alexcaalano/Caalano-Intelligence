@@ -16,6 +16,15 @@ git commit that produced it, so any version can be redeployed or reverted to.
 
 The version number also appears in the app sidebar. Newest first.
 
+## v3.660.0 - 2026-09-15 (commit PENDING)
+
+Speed to lead grows touch and contact rates, attempts per contact and to close, and a by-rep table; the Monthly Report's Sales Performance page gets the consolidated version.
+
+- **Touch vs contact.** A *touch* is any manual call, SMS or email made to a lead after it came in (workflow and campaign sends excluded). A *contact* is the lead actually engaging: a connected call (voicemail, no answer and busy do not count), a reply by text or email, an answered inbound call, or an appointment on the books. Both are read from the full-range message export, so they cover every lead, not a sample.
+- **Timing tab.** The Contact rate block is now Touch & contact rate: touch rate, contact rate, touches per lead, touches per contacted lead, touches to first contact and touches to close, then the channel split (calls with the share that connected, SMS, emails, replies, appointments, never touched). Click a rate to see the leads. A new Speed to lead by rep table shows each rep's leads, median reply, ≤5 min share, touch and contact rates, touches per lead / per contact / to contact / to close, calls with connect rate, and replies.
+- **Monthly Report · Sales Performance.** A Speed to lead & contact box between User performance and Lost reasons: median speed to lead, replied under 5 minutes, touch rate, contact rate, touches per contact, touches to close, and the by-rep table. The part is optional, so a slow CRM read never blocks the report.
+- Server: the speed scope takes `byUser=1` (per-rep figures with names), the message export is read once per message across channels, the demo client answers offline. Cache schema 7.
+
 ## v3.659.0 - 2026-09-15 (commit feee911)
 
 Monthly Report: the same figures all the way down the Meta and Google pages, with comparisons on the campaign and ad set / ad group tables.

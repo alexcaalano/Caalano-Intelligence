@@ -16,7 +16,7 @@ git commit that produced it, so any version can be redeployed or reverted to.
 
 The version number also appears in the app sidebar. Newest first.
 
-## v3.662.0 - 2026-09-15 (commit PENDING)
+## v3.662.0 - 2026-09-15 (commit 5ca3a60)
 
 - **Sidebar in two sections.** Agency first (the client picker, Agency Overview, Daily Performance, Weekly Traffic Light, Funnel Forecaster, Creative Cockpit, Meta Insights, Client Update, Reporting, Organic Social), then a rule and an Account section with Action Centre and Sales Hub. Sales Hub opens the client on screen (or the first client with a CRM) straight on its Sales Hub tab. Client-side users get the Account section above their Monthly Reports and dashboards.
 - **Action Centre loading.** Uses the Caalano360 loading screen while the CRM is read.

@@ -36,7 +36,7 @@ const lazyView = (load, name) => {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-export const APP_VERSION = '3.679.0'
+export const APP_VERSION = '3.680.0'
 // The business clock. Every server window is cut on the client's local day
 // (Caalano Systems location timezone), so any day the app derives on its own -
 // preset ranges, "today", CSV dates - must use the same clock rather than the
@@ -8935,8 +8935,10 @@ const V2_TAB_GROUPS = [
   ['Audience', ['analytics', 'forms', 'location', 'cohorts']],
   ['Sales', ['actionhub', 'saleshub', 'timing', 'calls', 'users', 'lostreasons']],
   ['Appointments', ['appts', 'calperf']],
-  ['Settings', ['set_account', 'set_tracking', 'set_targets', 'set_operations']],
 ]
+// The account's own settings pages. Not sidebar sections: the Settings button at
+// the foot of the sidebar opens them, and they are tabs across the top there.
+const SET_TAB_OF = { Account: 'set_account', Tracking: 'set_tracking', Targets: 'set_targets', Operations: 'set_operations' }
 function v2TabGroups(tabs) {
   const list = Array.isArray(tabs) ? tabs : []
   const seen = new Set()
@@ -8960,6 +8962,9 @@ const ACCOUNT_TAB_LABELS = {
 // Which settings group each Settings page of the account frame shows.
 const SET_GROUP = { set_account: 'Account', set_tracking: 'Tracking', set_targets: 'Targets', set_operations: 'Operations' }
 function accountHead(tabId) {
+  // The account's settings pages read as one page called Settings; which of the
+  // four you are on is the tab strip's job, not the title's.
+  if (SET_GROUP[tabId]) return { title: 'Settings', group: '' }
   const grp = V2_TAB_GROUPS.find(([, ids]) => ids.includes(tabId))
   return { title: ACCOUNT_TAB_LABELS[tabId] || 'Overview', group: grp ? grp[0] : '' }
 }
@@ -16577,6 +16582,22 @@ const DealsActionsView = lazyView(() => import('./views/sales-hub.jsx'), 'DealsA
 
 // Every tab this client can show, before the viewer's own allowances narrow
 // it. Shared by the workspace and the account sidebar so both agree.
+// The account's own settings pages this person may open here, in order. One
+// list, so the tabs on the page and the Settings button never disagree.
+// Visibility decides who sees them (off for Account Admins until switched on);
+// an Account User never gets them.
+export function accountSetPages(client, cfg, authUser) {
+  if (authUser && authUser.role === 'account_user') return []
+  const hid = userHidden(authUser)
+  const has = (id) => !isHiddenTab(hid, id)
+  const c = cfg || {}, cl = client || {}
+  const out = []
+  if (has('set_account')) out.push('set_account')
+  if ((c.ghl || c.meta || cl.meta) && has('set_tracking')) out.push('set_tracking')
+  if ((c.ghl || c.meta || cl.meta || c.google || cl.google) && has('set_targets')) out.push('set_targets')
+  if (has('set_operations')) out.push('set_operations')
+  return out
+}
 function clientTabList(client, cfg, authUser, isClinic) {
   const allTabs = [{ id: 'overall', label: 'Caalano360' }]
   const dashAll = loadDashboard(client.id)
@@ -16598,13 +16619,7 @@ function clientTabList(client, cfg, authUser, isClinic) {
   // enough to have something to say. The tab id stays `optlog` so existing viewer
   // grants and deep links keep pointing at it.
   if (loadOptLog(client.id) || cfg.meta || client.meta || cfg.google || client.google) allTabs.push({ id: 'optlog', label: 'Change Log' })
-  // The account's settings, as pages of the account frame. Visibility decides
-  // who sees them (off for Account Admins until switched on); Account Users
-  // never get them.
-  allTabs.push({ id: 'set_account', label: 'Account' })
-  if (cfg.ghl || cfg.meta || client.meta) allTabs.push({ id: 'set_tracking', label: 'Tracking' })
-  if (cfg.ghl || cfg.meta || client.meta || cfg.google || client.google) allTabs.push({ id: 'set_targets', label: 'Targets' })
-  allTabs.push({ id: 'set_operations', label: 'Operations' })
+  for (const id of accountSetPages(client, cfg, authUser)) allTabs.push({ id, label: ACCOUNT_TAB_LABELS[id] })
   return allowedTabsFE(authUser, allTabs)
 }
 // The account frame's sidebar: this client's areas and their pages, in the
@@ -16615,7 +16630,7 @@ function AccountNav({ client, config, authUser, tab, onTab, canReports, onReport
   useSettingsSync()
   const cfg = ((config && config.clients) || []).find((c) => c.id === client.id) || {}
   const isClinic = useIsClinic(client.id, !!cfg.ghl)
-  const tabs = clientTabList(client, cfg, authUser, isClinic)
+  const tabs = clientTabList(client, cfg, authUser, isClinic).filter((t) => !SET_GROUP[t.id])
   const groups = v2TabGroups(tabs)
   // The sidebar lists the account's sections; only the section holding the
   // open page shows its pages. Pressing another section opens its first page
@@ -16640,7 +16655,7 @@ function AccountNav({ client, config, authUser, tab, onTab, canReports, onReport
     </>
   )
 }
-function ClientWorkspace({ client, index, data, config, range, nonce, wonBasis = 'closed', onBack, authUser, initialTab, onTabChange }) {
+function ClientWorkspace({ client, index, data, config, range, nonce, wonBasis = 'closed', onBack, authUser, initialTab, onTabChange, onSettings }) {
   useSettingsSync()
   const [tab, setTab] = useState(initialTab || 'overall')
   // The sidebar drives the tabs too: follow it when it changes the page.
@@ -16737,7 +16752,7 @@ function ClientWorkspace({ client, index, data, config, range, nonce, wonBasis =
           : tabIntel[curTab] ? <IntelBanner model={tabIntel[curTab]} status="ok" tab={curTab} pipeName={pipeName} range={range} />
             : crmId && INTEL_TABS.has(curTab) ? <IntelBanner model={intel} status={ccForPipes.status} tab={curTab} pipeName={pipeName} range={range} /> : null}
         {!tabs.length && <div className="card empty-deep"><div className="big">🔒</div><b>No pages have been switched on for this account yet.</b><p className="cap">Ask your Caalano contact if you were expecting something here.</p></div>}
-        {SET_GROUP[curTab] && <ClientSettingsPage client={((config && config.clients) || []).find((x) => x.id === client.id) || client} clients={(config && config.clients) || []} currency={data.currency} canManageAccounts={!authUser || authUser.role === 'superadmin'} group={SET_GROUP[curTab]} onDeleted={onBack || (() => {})} />}
+        {SET_GROUP[curTab] && <ClientSettingsPage client={((config && config.clients) || []).find((x) => x.id === client.id) || client} clients={(config && config.clients) || []} currency={data.currency} canManageAccounts={!authUser || authUser.role === 'superadmin'} group={SET_GROUP[curTab]} onGroup={(name) => setTab(SET_TAB_OF[name] || 'set_account')} onExit={onSettings} exitLabel={authUser && isClientRoleFE(authUser.role) ? 'My profile' : 'Agency settings'} onDeleted={onBack || (() => {})} />}
         {curTab === 'overall' && <ExecutiveDashboard clientId={client.id} clientName={client.name} currency={data.currency} range={range} nonce={nonce} onNav={setTab} authUser={authUser} wonBasis={wonBasis} pipe={pipe} onPipe={setPipe} pipes={pipes} />}
         {curTab === 'custom' && dash && <ExecutiveDashboard key={`custom:${dash.updatedAt || ''}`} clientId={client.id} clientName={client.name} currency={data.currency} range={range} nonce={nonce} onNav={setTab} authUser={authUser} wonBasis={wonBasis} pipe={pipe} onPipe={setPipe} pipes={pipes} layout={dash} />}
         {curTab === 'users' && <UsersView clientId={client.id} range={range} nonce={nonce} currency={data.currency} wonBasis={wonBasis} pipe={pipe} onPipe={setPipe} />}
@@ -19610,6 +19625,12 @@ function Dashboard({ authUser, authEnabled, onLogout, realUser, onViewAs }) {
     // way back from Reports, instead of collapsing to a single button.
     : (isViewer ? ((urlClientId && myClients.find((c) => c.id === urlClientId)) || myClients[0] || picked) : picked)
   const inAccount = curView === 'clients' && !!curPicked
+  // The account settings this person may open for the account they are in. Empty
+  // at agency level, and empty for anyone not granted them, which is what makes
+  // the Settings button below read the frame.
+  const acctSetPages = curPicked && (inAccount || isViewer)
+    ? accountSetPages(curPicked, ((cfgMerged && cfgMerged.clients) || []).find((c) => c.id === curPicked.id) || {}, authUser)
+    : []
   const noPick = curView === 'clients' && !curPicked
   const idx = curPicked ? Math.max(0, baseClients.findIndex((c) => c.id === curPicked.id)) : 0
   return (
@@ -19653,7 +19674,12 @@ function Dashboard({ authUser, authEnabled, onLogout, realUser, onViewAs }) {
           {isViewer && !curPicked && canReports && <button className={curView === 'reports' ? 'active' : ''} onClick={() => go('reports')}><span className="ic"><NavIcon name="monthly" /></span>Monthly Reports</button>}
         </nav>
         <div className="side-foot">
-          <button className={`settings-btn ${view === 'settings' ? 'active' : ''}`} onClick={() => go('settings')}><span className="ic"><NavIcon name="settings" /></span>Settings</button>
+          {/* One Settings button, reading the frame you are in: inside an account it
+              opens that account's settings, at agency level the agency's. The page
+              it opens carries a way back to the other one. */}
+          <button className={`settings-btn ${acctSetPages.length ? (inAccount && SET_GROUP[clientTab] ? 'active' : '') : (view === 'settings' ? 'active' : '')}`}
+            onClick={() => (acctSetPages.length ? openTab(acctSetPages[0]) : go('settings'))}>
+            <span className="ic"><NavIcon name="settings" /></span>{acctSetPages.length ? 'Account settings' : (isViewer ? 'Settings' : 'Agency settings')}</button>
           {realUser && realUser.role === 'superadmin' && onViewAs ? <ViewAsControl current={authUser && authUser.viewAs ? authUser : null} onViewAs={onViewAs} /> : null}
           {authUser && <div className="side-user"><span className="side-user-av">{(authUser.name || authUser.email || '?').trim().charAt(0).toUpperCase()}</span><div className="side-user-txt"><b>{authUser.name || authUser.email}</b><span>{roleLabelOf(authUser)}</span></div><button className="side-user-out" onClick={onLogout} title="Sign out">Sign out</button></div>}
           {/* Two deliberate lines rather than one that wraps mid-timestamp - the
@@ -19712,7 +19738,7 @@ function Dashboard({ authUser, authEnabled, onLogout, realUser, onViewAs }) {
           {curView === 'reports' && isViewer && canReports && <ClientReports clients={myClients} currency={data.currency} authUser={authUser} />}
           {curView === 'social' && !isViewer && <SocialDashboard clients={visibleClients} range={range} nonce={refreshKey} />}
           {curView === 'settings' && <SettingsPage config={cfgMerged} enabled={enabled} setEnabled={setEnabled} restricted={restricted} setRestricted={setRestricted} currency={data.currency} authUser={authUser} authEnabled={authEnabled} theme={theme} setTheme={setTheme} onPick={(c, t) => openClient(baseClients.find((x) => x.id === c.id) || c, t)} />}
-          {curView === 'clients' && curPicked && <ClientWorkspace client={curPicked} index={idx} data={data} config={cfgMerged} range={range} nonce={refreshKey} wonBasis={wonBasis} authUser={authUser} initialTab={clientTab} onTabChange={(t) => { setClientTab(t); writeNavUrl({ v: 'clients', c: curPicked.id, t }, false) }} onBack={isViewer ? null : () => go('overview')} />}
+          {curView === 'clients' && curPicked && <ClientWorkspace onSettings={() => go('settings')} client={curPicked} index={idx} data={data} config={cfgMerged} range={range} nonce={refreshKey} wonBasis={wonBasis} authUser={authUser} initialTab={clientTab} onTabChange={(t) => { setClientTab(t); writeNavUrl({ v: 'clients', c: curPicked.id, t }, false) }} onBack={isViewer ? null : () => go('overview')} />}
           {curView === 'clients' && !curPicked && !isViewer && <div className="card empty-deep hub-choose"><b>Choose a client to get started.</b></div>}
           {curView === 'clients' && !curPicked && isViewer && <div className="card empty-deep"><div className="big">👋</div><b>No report is assigned to your account yet.</b><p style={{ maxWidth: 460, margin: '8px auto 0' }}>Your Caalano admin will assign your client dashboard shortly.</p></div>}
         </ErrorBoundary>

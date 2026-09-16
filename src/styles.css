@@ -4477,6 +4477,11 @@ td.lm-ker-n { font-weight: 600; color: var(--muted); font-variant-numeric: tabul
 /* Settings as a page of the account frame: the same split, inside a card. */
 .set-page { padding: 0; overflow: hidden; }
 .set-page .set-nav { top: 8px; max-height: none; }
+.set-page .set-sections { padding: 14px 18px 0; }
+.set-acct-sections { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.set-acct-exit { margin-left: auto; background: none; border: 0; color: var(--muted); font-size: 12px; font-weight: 600; cursor: pointer; padding: 6px 8px; border-radius: 8px; }
+.set-acct-exit:hover { color: var(--brand); background: var(--panel-2); }
+.set-page .subtabs.set-subtabs { margin: 0 18px 0; }
 .set-page .m-body { padding: 18px 22px; }
 @media (max-width: 760px) {
   .set-split { grid-template-columns: 1fr; }

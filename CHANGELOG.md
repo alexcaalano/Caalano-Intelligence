@@ -16,6 +16,15 @@ git commit that produced it, so any version can be redeployed or reverted to.
 
 The version number also appears in the app sidebar. Newest first.
 
+## v3.680.0 - 2026-09-16 (commit PENDING)
+
+One Settings button at the foot of the sidebar, reading the frame you are in.
+
+- **Dynamic Settings.** Inside an account it reads **Account settings** and opens that account's settings. At agency level it reads **Agency settings** and opens the agency's. A client-side person without account settings still gets **Settings**, their own profile.
+- **The account sidebar is five sections again** - Overview, Acquisition, Audience, Sales, Appointments. The Settings section is gone from the list; the button at the bottom is how you get there.
+- **Account, Tracking, Targets and Operations are tabs across the top of the Settings page**, with that group's pages as a second row beneath, the same shape as Agency Settings. The page is titled Settings, with the client under it.
+- **No dead end.** The account settings page carries a link to Agency settings, or My profile for a client-side person, so the other one is always a click away.
+
 ## v3.679.0 - 2026-09-16 (commit cab2bcd)
 
 A client-side person now sees exactly what Visibility says, on every page.

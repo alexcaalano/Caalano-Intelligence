@@ -2439,7 +2439,8 @@ export function DashboardBuilder({ client: c }) {
     </div>
   )
 }
-function ClientSettingsBody({ client: c, names, currency, canManageAccounts, onClose, onOpen, onRelink, group, embedded }) {
+const ACCOUNT_SET_GROUPS = ['Account', 'Tracking', 'Targets', 'Operations']
+function ClientSettingsBody({ client: c, names, currency, canManageAccounts, onClose, onOpen, onRelink, group, embedded, onGroup, onExit, exitLabel }) {
   const canLink = (c.meta || c.google) && c.ghl
   const nm = (kind, id) => (names && id ? names[kind][normId(id)] : null)
   useSettingsSync()
@@ -2504,23 +2505,7 @@ function ClientSettingsBody({ client: c, names, currency, canManageAccounts, onC
     const n = shown[(i + (e.key === 'ArrowDown' ? 1 : shown.length - 1)) % shown.length]
     if (n) setTab(n[0])
   }
-  const split = (
-        <div className="set-split">
-          <nav className="set-nav" aria-label="Client settings" onKeyDown={onNavKey}>
-            {groups.map((g) => (
-              <div className="set-nav-grp" key={g}>
-                <div className="set-nav-glab">{g}</div>
-                {shown.filter((t) => t[2] === g).map(([k, lbl, , hint]) => (
-                  <button key={k} className={tabOn === k ? 'on' : ''} onClick={() => setTab(k)}>
-                    <span className="set-nav-l">{lbl}</span><span className="set-nav-h">{hint}</span>
-                  </button>
-                ))}
-              </div>
-            ))}
-          </nav>
-          <select className="set-nav-select" value={tabOn} onChange={(e) => setTab(e.target.value)} aria-label="Client settings section">
-            {groups.map((g) => <optgroup key={g} label={g}>{shown.filter((t) => t[2] === g).map(([k, lbl]) => <option key={k} value={k}>{lbl}</option>)}</optgroup>)}
-          </select>
+  const body = (
         <div className="m-body set-tabbody">
           {tabOn === 'summary' && <div className="set-summary">
             <div className="set-details">
@@ -2569,9 +2554,43 @@ function ClientSettingsBody({ client: c, names, currency, canManageAccounts, onC
           {tabOn === 'optlog' && <div className="set-tabpane"><div className="set-sec-t">Optimisation Log - Google Sheet</div><OptLogSettings clientId={c.id} /></div>}
           {tabOn === 'diagnostics' && <div className="set-tabpane"><ClientTrackingDiagnostics clientId={c.id} currency={currency} embedded nonce={sig} /></div>}
         </div>
+  )
+  const split = (
+        <div className="set-split">
+          <nav className="set-nav" aria-label="Client settings" onKeyDown={onNavKey}>
+            {groups.map((g) => (
+              <div className="set-nav-grp" key={g}>
+                <div className="set-nav-glab">{g}</div>
+                {shown.filter((t) => t[2] === g).map(([k, lbl, , hint]) => (
+                  <button key={k} className={tabOn === k ? 'on' : ''} onClick={() => setTab(k)}>
+                    <span className="set-nav-l">{lbl}</span><span className="set-nav-h">{hint}</span>
+                  </button>
+                ))}
+              </div>
+            ))}
+          </nav>
+          <select className="set-nav-select" value={tabOn} onChange={(e) => setTab(e.target.value)} aria-label="Client settings section">
+            {groups.map((g) => <optgroup key={g} label={g}>{shown.filter((t) => t[2] === g).map(([k, lbl]) => <option key={k} value={k}>{lbl}</option>)}</optgroup>)}
+          </select>
+        {body}
         </div>
   )
-  if (embedded) return <div className="card set-page">{split}</div>
+  if (embedded) return (
+    <div className="card set-page">
+      <div className="set-sections set-acct-sections">
+        {ACCOUNT_SET_GROUPS.filter((g) => tabs.some((t) => t[2] === g)).map((g) => (
+          <button key={g} type="button" className={group === g ? 'on' : ''} onClick={() => onGroup && onGroup(g)}>{g}</button>
+        ))}
+        {onExit ? <button type="button" className="set-acct-exit" onClick={onExit}>{exitLabel || 'Agency settings'} ↗</button> : null}
+      </div>
+      {shown.length > 1 ? (
+        <div className="subtabs set-subtabs">
+          {shown.map(([k, lbl, , hint]) => <button key={k} className={tabOn === k ? 'active' : ''} title={hint} onClick={() => setTab(k)}>{lbl}</button>)}
+        </div>
+      ) : null}
+      {body}
+    </div>
+  )
   return (
     <div className="modal-bg" onClick={onClose}>
       <div className="modal set-modal" onClick={(e) => e.stopPropagation()}>
@@ -2592,12 +2611,12 @@ export function SettingsEditModal(props) { return <ClientSettingsBody {...props}
 // One Settings page of the account frame: the group's tabs, as a page. The
 // same editors as the modal; "Edit linked accounts" opens the linking modal
 // here, and deleting the client hands control back to the shell.
-export function ClientSettingsPage({ client, clients, currency, canManageAccounts, group, onDeleted }) {
+export function ClientSettingsPage({ client, clients, currency, canManageAccounts, group, onGroup, onExit, exitLabel, onDeleted }) {
   const names = useDiscoverNames()
   const [relink, setRelink] = useState(false)
   return (
     <>
-      <ClientSettingsBody key={group || 'all'} client={client} names={names} currency={currency} canManageAccounts={canManageAccounts} group={group} embedded onClose={onDeleted} onRelink={() => setRelink(true)} />
+      <ClientSettingsBody key={group || 'all'} client={client} names={names} currency={currency} canManageAccounts={canManageAccounts} group={group} onGroup={onGroup} onExit={onExit} exitLabel={exitLabel} embedded onClose={onDeleted} onRelink={() => setRelink(true)} />
       {relink && <AddClientModal existing={clients || []} editClient={client} onClose={() => setRelink(false)} />}
     </>
   )

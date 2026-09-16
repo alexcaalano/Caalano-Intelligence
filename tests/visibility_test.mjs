@@ -53,7 +53,12 @@ assert.ok(V.isDefaultOff('viewer', 'tabs', 'set_account') && !V.isDefaultOff('ad
 {
   const app = fs.readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8')
   const gs = app.indexOf('const V2_TAB_GROUPS = ['); const src = app.slice(gs + 'const V2_TAB_GROUPS = '.length, app.indexOf('\n]\n', gs) + 2)
-  assert.deepEqual(V.VIS_ACCOUNT_GROUPS, new Function('return ' + src)(), 'VIS_ACCOUNT_GROUPS mirrors V2_TAB_GROUPS')
+  // The chart lays out the account view the way the sidebar does, then adds the
+  // account's own settings pages - those are reached from the Settings button,
+  // not from a sidebar section, so the app's list stops before them.
+  const appGroups = new Function('return ' + src)()
+  assert.deepEqual(V.VIS_ACCOUNT_GROUPS.slice(0, appGroups.length), appGroups, 'the chart follows the sidebar groups, in order')
+  assert.deepEqual(V.VIS_ACCOUNT_GROUPS.slice(appGroups.length), [['Settings', ['set_account', 'set_tracking', 'set_targets', 'set_operations']]], 'then the account settings pages')
   const known = new Set([...V.VIS_VIEWS, ...V.VIS_TABS].map((x) => x.id))
   for (const [, ids] of V.VIS_ACCOUNT_GROUPS) for (const id of ids) assert.ok(known.has(id), id + ' is a page Visibility knows')
 }

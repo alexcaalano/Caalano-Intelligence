@@ -4482,6 +4482,22 @@ td.lm-ker-n { font-weight: 600; color: var(--muted); font-variant-numeric: tabul
 .set-acct-exit { margin-left: auto; background: none; border: 0; color: var(--muted); font-size: 12px; font-weight: 600; cursor: pointer; padding: 6px 8px; border-radius: 8px; }
 .set-acct-exit:hover { color: var(--brand); background: var(--panel-2); }
 .set-page .subtabs.set-subtabs { margin: 0 18px 0; }
+@media (max-width: 700px) {
+  /* Settings on a phone: the strips keep the card's own gutter and scroll
+     sideways rather than wrapping into stacked rows, and the panes lose the
+     desktop padding so the fields get the width. */
+  .set-page .set-sections { padding: 10px 12px 0; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+  .set-page .set-sections::-webkit-scrollbar { display: none; }
+  .set-page .set-sections button { white-space: nowrap; }
+  .set-acct-exit { margin-left: 8px; }
+  .set-page .subtabs.set-subtabs { margin: 0; padding: 0 12px; }
+  .set-page .m-body { padding: 14px 12px; }
+  .set-details { gap: 10px; margin-bottom: 12px; padding-bottom: 12px; }
+  .set-field, .set-field-sm { flex: 1 1 100%; }
+  .set-details-save { width: 100%; padding: 11px 16px; }
+  .set-linked-row { align-items: flex-start; gap: 8px; }
+  .set-linked-v { flex-wrap: wrap; }
+}
 .set-page .m-body { padding: 18px 22px; }
 @media (max-width: 760px) {
   .set-split { grid-template-columns: 1fr; }

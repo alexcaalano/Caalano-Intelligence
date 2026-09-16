@@ -16,6 +16,11 @@ git commit that produced it, so any version can be redeployed or reverted to.
 
 The version number also appears in the app sidebar. Newest first.
 
+## v3.681.0 - 2026-09-16 (commit PENDING)
+
+- **No pipeline selector on Settings.** Nothing on those pages reads it, so it no longer sits above them.
+- **Settings on a phone.** The group tabs and the row beneath scroll sideways in one line instead of wrapping into stacked rows, the panes drop the desktop padding, and the fields, the save button and the linked accounts each take the full width.
+
 ## v3.680.0 - 2026-09-16 (commit fbc0ee7)
 
 One Settings button at the foot of the sidebar, reading the frame you are in.

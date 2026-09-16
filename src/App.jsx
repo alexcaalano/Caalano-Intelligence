@@ -36,7 +36,7 @@ const lazyView = (load, name) => {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-export const APP_VERSION = '3.680.0'
+export const APP_VERSION = '3.681.0'
 // The business clock. Every server window is cut on the client's local day
 // (Caalano Systems location timezone), so any day the app derives on its own -
 // preset ranges, "today", CSV dates - must use the same clock rather than the
@@ -16742,7 +16742,8 @@ function ClientWorkspace({ client, index, data, config, range, nonce, wonBasis =
           <div><h2>{client.name} <span className={`tk ${tk.cls}`}>{tk.label}</span> <MaturityBadge clientId={client.id} crmAvg={crmAvgClose} range={range} /></h2><div className="meta">{client.industry}</div></div>
           {/* Above the tab bar, not inside it: the tab bar scrolls sideways on a
               narrow screen and hid the picker off the right edge. */}
-          <PipelinePicker pipes={pipes} value={pipe} onChange={setPipe} className="cw-pipe-top" />
+          {/* Settings are not a report: nothing on those pages reads the pipeline. */}
+          {!SET_GROUP[curTab] ? <PipelinePicker pipes={pipes} value={pipe} onChange={setPipe} className="cw-pipe-top" /> : null}
         </div>
       </div>
       <LoadCtx.Provider value={curTab}><IntelPubCtx.Provider value={intelCtx}><div className="v2-page" style={{ marginTop: 16 }}>
